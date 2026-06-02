@@ -2,7 +2,7 @@
 name: Question
 about: 질문 있어요
 title: "[QnA]"
-labels: question
+labels: ''
 assignees: ''
 
 ---
