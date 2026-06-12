@@ -1,7 +1,7 @@
-package com.saferoute.domain.auth.entity;
+package com.saferoute.domain.user.entity;
 
-import com.saferoute.domain.training.TrainingScenario;
-import com.saferoute.domain.training.TrainingSession;
+import com.saferoute.domain.training.entity.TrainingScenario;
+import com.saferoute.domain.training.entity.TrainingSession;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

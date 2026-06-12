@@ -1,4 +1,4 @@
-package com.saferoute.domain.auth.exception;
+package com.saferoute.domain.user.exception;
 
 import com.saferoute.global.exception.BusinessException;
 import org.springframework.http.HttpStatus;

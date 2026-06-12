@@ -1,6 +1,6 @@
-package com.saferoute.domain.auth.dto;
+package com.saferoute.domain.user.dto;
 
-import com.saferoute.domain.auth.entity.UserRole;
+import com.saferoute.domain.user.entity.UserRole;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;

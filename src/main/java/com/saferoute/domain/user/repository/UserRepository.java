@@ -1,6 +1,6 @@
-package com.saferoute.domain.auth.repository;
+package com.saferoute.domain.user.repository;
 
-import com.saferoute.domain.auth.entity.User;
+import com.saferoute.domain.user.entity.User;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;

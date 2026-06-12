@@ -1,4 +1,4 @@
-package com.saferoute.domain.training;
+package com.saferoute.domain.training.entity;
 
 public enum TrainingStatus {
     RUNNING,

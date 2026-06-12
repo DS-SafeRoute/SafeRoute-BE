@@ -1,15 +1,15 @@
-package com.saferoute.domain.auth.service;
+package com.saferoute.domain.user.service;
 
-import com.saferoute.domain.auth.dto.LoginRequest;
-import com.saferoute.domain.auth.dto.LoginResponse;
-import com.saferoute.domain.auth.dto.SignupRequest;
-import com.saferoute.domain.auth.dto.SignupResponse;
-import com.saferoute.domain.auth.entity.User;
-import com.saferoute.domain.auth.entity.UserRole;
-import com.saferoute.domain.auth.exception.DuplicateEmailException;
-import com.saferoute.domain.auth.exception.DuplicateUsernameException;
-import com.saferoute.domain.auth.exception.InvalidCredentialException;
-import com.saferoute.domain.auth.repository.UserRepository;
+import com.saferoute.domain.user.dto.LoginRequest;
+import com.saferoute.domain.user.dto.LoginResponse;
+import com.saferoute.domain.user.dto.SignupRequest;
+import com.saferoute.domain.user.dto.SignupResponse;
+import com.saferoute.domain.user.entity.User;
+import com.saferoute.domain.user.entity.UserRole;
+import com.saferoute.domain.user.exception.DuplicateEmailException;
+import com.saferoute.domain.user.exception.DuplicateUsernameException;
+import com.saferoute.domain.user.exception.InvalidCredentialException;
+import com.saferoute.domain.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;

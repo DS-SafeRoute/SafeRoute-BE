@@ -1,6 +1,6 @@
-package com.saferoute.domain.training;
+package com.saferoute.domain.training.entity;
 
-import com.saferoute.domain.auth.entity.User;
+import com.saferoute.domain.user.entity.User;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -59,7 +59,7 @@ public class TrainingSession {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "training_scenario_id", nullable = false)
-    private TrainingScenario scenario;
+    private TrainingScenario trainingScenario;
 
     @OneToOne(mappedBy = "trainingSession", cascade = CascadeType.ALL)
     private TrainingReport trainingReport;

@@ -1,4 +1,4 @@
-package com.saferoute.domain.auth.entity;
+package com.saferoute.domain.user.entity;
 
 public enum UserRole {
     MANAGER,

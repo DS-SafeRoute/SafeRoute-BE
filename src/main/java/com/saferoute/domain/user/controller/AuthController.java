@@ -1,10 +1,10 @@
-package com.saferoute.domain.auth.controller;
+package com.saferoute.domain.user.controller;
 
-import com.saferoute.domain.auth.dto.LoginRequest;
-import com.saferoute.domain.auth.dto.LoginResponse;
-import com.saferoute.domain.auth.dto.SignupRequest;
-import com.saferoute.domain.auth.dto.SignupResponse;
-import com.saferoute.domain.auth.service.AuthService;
+import com.saferoute.domain.user.dto.LoginRequest;
+import com.saferoute.domain.user.dto.LoginResponse;
+import com.saferoute.domain.user.dto.SignupRequest;
+import com.saferoute.domain.user.dto.SignupResponse;
+import com.saferoute.domain.user.service.AuthService;
 import com.saferoute.global.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
