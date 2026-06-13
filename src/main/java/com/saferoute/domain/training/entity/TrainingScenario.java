@@ -54,7 +54,7 @@ public class TrainingScenario {
     @JoinColumn(name = "building_id", nullable = false)
     private Building building;
 
-    // ERD 기준 admin_id로 수정 (원본 코드: user_id에서 변경)
+    // ERD 기준 admin_id (팀원 원본 코드의 user_id에서 변경)
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "admin_id", nullable = false)
     private User admin;

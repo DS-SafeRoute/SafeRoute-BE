@@ -37,7 +37,7 @@ out/
 .vscode/
 
 # Local environment config
-application-local.yml
+# application-local.yml
 
 # ignore Wiki repository
 SafeRoute-BE.wiki/
