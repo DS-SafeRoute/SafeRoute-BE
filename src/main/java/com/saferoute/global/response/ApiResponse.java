@@ -8,6 +8,7 @@ package com.saferoute.global.response;
  *   "data": { ... }
  * }
  */
+
 public record ApiResponse<T>(boolean success, String message, T data) {
 
     public static <T> ApiResponse<T> success(String message, T data) {

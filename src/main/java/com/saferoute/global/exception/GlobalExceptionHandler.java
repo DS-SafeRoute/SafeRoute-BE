@@ -29,6 +29,7 @@ public class GlobalExceptionHandler {
     // 그 외 예상하지 못한 예외
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleException(Exception e) {
+
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiResponse.fail("서버 내부 오류가 발생했습니다."));
     }

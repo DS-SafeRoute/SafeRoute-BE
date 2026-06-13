@@ -1,7 +1,9 @@
 package com.saferoute.global.exception;
 
+import lombok.Getter;
 import org.springframework.http.HttpStatus;
 
+@Getter
 public abstract class BusinessException extends RuntimeException {
 
     private final HttpStatus status;
@@ -11,7 +13,4 @@ public abstract class BusinessException extends RuntimeException {
         this.status = status;
     }
 
-    public HttpStatus getStatus() {
-        return status;
-    }
 }
