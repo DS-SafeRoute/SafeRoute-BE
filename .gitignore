@@ -6,9 +6,7 @@ build/
 !**/src/test/**/build/
 
 # application config
-application.yml
 application-*.yml
-application.properties
 application-*.properties
 
 # env
