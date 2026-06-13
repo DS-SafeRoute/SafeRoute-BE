@@ -44,7 +44,7 @@ public class TrainingReport {
     @Column(name = "risk_index",nullable = false)
     private Double riskIndex;
 
-    @Column(name="ai_recommendations", columnDefinition = "jsonb")
+    @Column(name="ai_recommendations", columnDefinition = "TEXT")
     private String aiRecommendations;
 
     @Column(name="pdf_url", length = 1000)
