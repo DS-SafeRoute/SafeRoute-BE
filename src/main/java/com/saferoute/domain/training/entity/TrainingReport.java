@@ -1,5 +1,6 @@
-package com.saferoute.domain.training;
+package com.saferoute.domain.training.entity;
 
+import com.saferoute.domain.training.Grade;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
@@ -14,9 +15,11 @@ import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
+import lombok.Getter;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+@Getter
 @Entity
 @EntityListeners(AuditingEntityListener.class)
 public class TrainingReport {
@@ -43,7 +46,7 @@ public class TrainingReport {
   @Column(name = "risk_index",nullable = false)
   private Double riskIndex;
 
-  @Column(name="ai_recommendations", columnDefinition = "jsonb")
+  @Column(name="ai_recommendations", columnDefinition = "TEXT")
   private String aiRecommendations;
 
   @Column(name="pdf_url", length = 1000)

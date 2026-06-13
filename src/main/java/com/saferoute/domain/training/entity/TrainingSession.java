@@ -1,5 +1,6 @@
-package com.saferoute.domain.training;
+package com.saferoute.domain.training.entity;
 
+import com.saferoute.domain.training.TrainingStatus;
 import com.saferoute.domain.user.User;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -17,9 +18,11 @@ import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
+import lombok.Getter;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+@Getter
 @Entity
 @EntityListeners(AuditingEntityListener.class)
 public class TrainingSession {

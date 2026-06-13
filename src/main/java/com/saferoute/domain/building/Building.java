@@ -1,16 +1,14 @@
-package com.saferoute.domain.training;
+package com.saferoute.domain.building;
 
-import com.saferoute.domain.building.Building;
-import com.saferoute.domain.user.User;
+import com.saferoute.domain.training.entity.TrainingScenario;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
-import jakarta.persistence.FetchType;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -28,8 +26,7 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 @Entity
 @EntityListeners(AuditingEntityListener.class)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class TrainingScenario {
-
+public class Building {
   @Id
   @GeneratedValue
   private UUID id;
@@ -39,13 +36,23 @@ public class TrainingScenario {
   @Column(nullable = false, length = 20)
   private String name;
 
-  @NotNull
-  @Column(name="exp_participants", nullable = false)
-  private Integer expectedParticipants;
+  @NotBlank
+  @Size(min = 8, max = 100)
+  @Column(nullable = false, length = 100)
+  private String address;
 
   @NotNull
-  @Column(name = "scheduled_at")
-  private Instant scheduledAt;
+  @Column(name="total_floors", nullable = false)
+  private Integer totalFloors;
+
+  //건물 타입 (CLASSROOM, CAFETERIA 등)
+  @NotNull
+  @Enumerated(EnumType.STRING)
+  @Column(name = "building_type", nullable = false, length = 20)
+  private BuildingType buildingType;
+
+  @Column(name = "last_trained_at")
+  private Instant lastTrainedAt;
 
   @CreatedDate
   @Column(name = "created_at", nullable = false, updatable = false)
@@ -55,14 +62,6 @@ public class TrainingScenario {
   @Column(name = "updated_at", nullable = false)
   private Instant updatedAt;
 
-  @ManyToOne(fetch = FetchType.LAZY)
-  @JoinColumn(name = "user_id", nullable = false)
-  private User admin;
-
-  @ManyToOne(fetch = FetchType.LAZY)
-  @JoinColumn(name = "building_id", nullable = false)
-  private Building building;
-
-  @OneToMany(mappedBy = "trainingScenario", cascade = CascadeType.ALL, orphanRemoval = true)
-  private List<TrainingSession> trainingSessions = new ArrayList<>();
+  @OneToMany(mappedBy = "building", cascade = CascadeType.ALL, orphanRemoval = true)
+  private List<TrainingScenario> trainingScenarios = new ArrayList<>();
 }
