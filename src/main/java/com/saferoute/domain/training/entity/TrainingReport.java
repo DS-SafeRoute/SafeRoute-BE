@@ -34,22 +34,22 @@ public class TrainingReport {
   @Column(name = "grade", length = 20)
   private Grade grade;
 
-  @Column(name = "survival_rate",nullable = false)
+  @Column(name = "survival_rate", nullable = false)
   private BigDecimal survivalRate;
 
   @Column(name = "avg_evacuation_sec")
   private Integer avgEvacuationSec;
 
-  @Column(name="participant_count", nullable = false)
+  @Column(name = "participant_count", nullable = false)
   private Integer participantCount;
 
-  @Column(name = "risk_index",nullable = false)
+  @Column(name = "risk_index", nullable = false)
   private Double riskIndex;
 
-  @Column(name="ai_recommendations", columnDefinition = "TEXT")
+  @Column(name = "ai_recommendations", columnDefinition = "TEXT")
   private String aiRecommendations;
 
-  @Column(name="pdf_url", length = 1000)
+  @Column(name = "pdf_url", length = 1000)
   private String pdfUrl;
 
   @CreatedDate
@@ -63,4 +63,25 @@ public class TrainingReport {
       unique = true
   )
   private TrainingSession trainingSession;
+
+  public static TrainingReport create(Grade grade,
+      BigDecimal survivalRate,
+      Integer avgEvacuationSec,
+      Integer participantCount,
+      Double riskIndex,
+      String aiRecommendations,
+      String pdfUrl,
+      TrainingSession trainingSession) {
+    TrainingReport report = new TrainingReport();
+    report.grade = grade;
+    report.survivalRate = survivalRate;
+    report.avgEvacuationSec = avgEvacuationSec;
+    report.participantCount = participantCount;
+    report.riskIndex = riskIndex;
+    report.aiRecommendations = aiRecommendations;
+    report.pdfUrl = pdfUrl;
+    report.trainingSession = trainingSession;
+
+    return report;
+  }
 }

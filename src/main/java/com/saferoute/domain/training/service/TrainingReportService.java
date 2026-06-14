@@ -1,9 +1,15 @@
 package com.saferoute.domain.training.service;
 
+import com.saferoute.domain.training.dto.ReportResponse;
 import com.saferoute.domain.training.entity.TrainingReport;
 import com.saferoute.domain.training.dto.RecentTrainingReportResponse;
+import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.repository.TrainingReportRepository;
+import com.saferoute.domain.training.dto.CreateReportRequest;
+import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -13,6 +19,22 @@ import org.springframework.stereotype.Service;
 public class TrainingReportService {
 
   private final TrainingReportRepository trainingReportRepository;
+  private final TrainingSessionRepository trainingSessionRepository;
+
+  public ReportResponse create(CreateReportRequest request, UUID sessionId) {
+    TrainingSession session = trainingSessionRepository.findById(sessionId).orElseThrow(
+        NoSuchElementException::new);
+
+    TrainingReport report = TrainingReport.create(request.getGrade(),
+        request.getSurvivalRate(),
+        request.getAvgEvacuationSec(),
+        request.getParticipantCount(),
+        request.getRiskIndex(),
+        request.getAiRecommendations(),
+        request.getPdfUrl(),
+        session);
+    return ReportResponse.from(trainingReportRepository.save(report));
+  }
 
   public List<RecentTrainingReportResponse> getRecentTrainingReport() {
     List<TrainingReport> reports =
