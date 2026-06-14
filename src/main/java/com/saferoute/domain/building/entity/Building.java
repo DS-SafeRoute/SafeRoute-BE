@@ -1,5 +1,6 @@
 package com.saferoute.domain.building.entity;
 
+import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.training.entity.TrainingScenario;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -72,6 +73,9 @@ public class Building {
 
     @OneToMany(mappedBy = "building", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<TrainingScenario> trainingScenarios = new ArrayList<>();
+
+    @OneToMany(mappedBy = "building", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Floor> floors = new ArrayList<>();
 
     private Building(String name, String address, Integer totalFloors, BuildingType buildingType) {
         this.name = name;
