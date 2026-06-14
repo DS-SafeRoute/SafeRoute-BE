@@ -15,10 +15,14 @@ public class SecurityConfig {
 
         http
                 .csrf(csrf -> csrf.disable())
+                .headers(headers -> headers
+                        .frameOptions(frame -> frame.disable())
+                )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
                                 "/swagger-ui/**",
-                                "/v3/api-docs/**"
+                                "/v3/api-docs/**",
+                                "/h2-console/**"
                         ).permitAll()
                         .anyRequest().permitAll()
                 )

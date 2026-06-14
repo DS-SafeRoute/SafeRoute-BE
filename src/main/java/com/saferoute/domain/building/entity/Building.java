@@ -1,4 +1,4 @@
-package com.saferoute.domain.building;
+package com.saferoute.domain.building.entity;
 
 import com.saferoute.domain.training.entity.TrainingScenario;
 import jakarta.persistence.CascadeType;
