@@ -1,6 +1,5 @@
 package com.saferoute.domain.training.entity;
 
-import com.saferoute.domain.training.entity.TrainingSession;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
@@ -15,9 +14,11 @@ import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
+import lombok.Getter;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+@Getter
 @Entity
 @EntityListeners(AuditingEntityListener.class)
 public class TrainingReport {
@@ -54,11 +55,32 @@ public class TrainingReport {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
-    @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(
-            name = "training_session_id",
-            nullable = false,
-            unique = true
-    )
-    private TrainingSession trainingSession;
+  @OneToOne(fetch = FetchType.LAZY)
+  @JoinColumn(
+      name = "training_session_id",
+      nullable = false,
+      unique = true
+  )
+  private TrainingSession trainingSession;
+
+  public static TrainingReport create(Grade grade,
+      BigDecimal survivalRate,
+      Integer avgEvacuationSec,
+      Integer participantCount,
+      Double riskIndex,
+      String aiRecommendations,
+      String pdfUrl,
+      TrainingSession trainingSession) {
+    TrainingReport report = new TrainingReport();
+    report.grade = grade;
+    report.survivalRate = survivalRate;
+    report.avgEvacuationSec = avgEvacuationSec;
+    report.participantCount = participantCount;
+    report.riskIndex = riskIndex;
+    report.aiRecommendations = aiRecommendations;
+    report.pdfUrl = pdfUrl;
+    report.trainingSession = trainingSession;
+
+    return report;
+  }
 }

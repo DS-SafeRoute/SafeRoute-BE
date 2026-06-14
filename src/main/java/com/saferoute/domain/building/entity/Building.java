@@ -31,10 +31,9 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 @EntityListeners(AuditingEntityListener.class)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Building {
-
-    @Id
-    @GeneratedValue
-    private UUID id;
+  @Id
+  @GeneratedValue
+  private UUID id;
 
     @NotBlank
     @Size(min = 2, max = 20)

@@ -2,7 +2,16 @@ package com.saferoute.domain.user.entity;
 
 import com.saferoute.domain.training.entity.TrainingScenario;
 import com.saferoute.domain.training.entity.TrainingSession;
-import jakarta.persistence.*;
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EntityListeners;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.Id;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.Table;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -17,48 +26,47 @@ import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
-import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 
-@Entity
 @Getter
+@Entity
+@Table(name = "users")
 @EntityListeners(AuditingEntityListener.class)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@Table(name = "users")
 public class User {
 
-    @Id
-    @GeneratedValue
-    private UUID id;
+  @Id
+  @GeneratedValue
+  private UUID id;
 
-    @NotBlank
-    @Size(min = 2, max = 20)
-    @Column(nullable = false, length = 20)
-    private String username;
+  @NotBlank
+  @Size(min = 2, max = 20)
+  @Column(nullable = false, length = 20)
+  private String username;
 
-    @NotBlank
-    @Size(min = 8, max = 100)
-    @Column(nullable = false, length = 100)
-    private String password;
+  @NotBlank
+  @Size(min = 8, max = 100)
+  @Column(nullable = false, length = 100)
+  private String password;
 
-    @Email
-    @NotBlank
-    @Column(nullable = false, unique = true, length = 255)
-    private String email;
+  @Email
+  @NotBlank
+  @Column(nullable = false, unique = true, length = 255)
+  private String email;
 
-    //유저 타입 (MANAGER, NORMAL)
-    @NotNull
-    @Enumerated(EnumType.STRING)
-    @Column(name = "user_role", nullable = false, length = 20)
-    private UserRole role;
+  //유저 타입 (MANAGER, NORMAL)
+  @NotNull
+  @Enumerated(EnumType.STRING)
+  @Column(name = "user_role", nullable = false, length = 20)
+  private UserRole role;
 
-    @NotBlank
-    @Size(min = 5, max = 20)
-    @Column(name = "school_name", nullable = false, length = 20)
-    private String schoolName;
+  @NotBlank
+  @Size(min = 5, max = 20)
+  @Column(name = "school_name", nullable = false, length = 20)
+  private String schoolName;
 
-    @CreatedDate
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
+  @CreatedDate
+  @Column(name = "created_at", nullable = false, updatable = false)
+  private Instant createdAt;
 
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
