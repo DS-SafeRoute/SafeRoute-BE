@@ -6,7 +6,7 @@ import com.saferoute.domain.training.dto.ScenarioResponse;
 import com.saferoute.domain.training.dto.UpdateScenarioRequest;
 import com.saferoute.domain.training.entity.TrainingScenario;
 import com.saferoute.domain.training.repository.TrainingScenarioRepository;
-import com.saferoute.domain.user.User;
+import com.saferoute.domain.user.entity.User;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.util.List;
