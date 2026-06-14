@@ -1,6 +1,6 @@
 package com.saferoute.domain.training.entity;
 
-import com.saferoute.domain.building.Building;
+import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.user.entity.User;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
