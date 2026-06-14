@@ -1,5 +1,6 @@
 package com.saferoute.domain.training.service;
 
+import com.saferoute.domain.training.dto.DashboardStatsResponse;
 import com.saferoute.domain.training.dto.ReportResponse;
 import com.saferoute.domain.training.entity.TrainingReport;
 import com.saferoute.domain.training.dto.RecentTrainingReportResponse;
@@ -54,6 +55,19 @@ public class TrainingReportService {
             report.getGrade()
         ))
         .toList();
+  }
+
+  public DashboardStatsResponse getStats() {
+
+    long totalSessions = trainingSessionRepository.count();
+
+    Object[] result = trainingReportRepository.getStatistics();
+    Double avgSurvivalRate = result[0] != null ? ((Number) result[0]).doubleValue() : 0.0;
+    Double avgEvacuationSec = result[1] != null ? ((Number) result[1]).doubleValue() : 0.0;
+    Long totalParticipants = result[2] != null ? ((Number) result[2]).longValue() : 0L;
+
+    return new DashboardStatsResponse(totalSessions, avgEvacuationSec, avgSurvivalRate,
+        totalParticipants);
   }
 
 }
