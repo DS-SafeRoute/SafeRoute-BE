@@ -1,7 +1,7 @@
 package com.saferoute.domain.training.entity;
 
 import com.saferoute.domain.training.TrainingStatus;
-import com.saferoute.domain.user.User;
+import com.saferoute.domain.user.entity.User;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -27,43 +27,43 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 @EntityListeners(AuditingEntityListener.class)
 public class TrainingSession {
 
-  @Id
-  @GeneratedValue
-  private UUID id;
+    @Id
+    @GeneratedValue
+    private UUID id;
 
-  //훈련 상태 (RUNNING, STOPPED 등)
-  @NotNull
-  @Enumerated(EnumType.STRING)
-  @Column(name = "training_status", nullable = false, length = 20)
-  private TrainingStatus status;
+    //훈련 상태 (RUNNING, STOPPED 등)
+    @NotNull
+    @Enumerated(EnumType.STRING)
+    @Column(name = "training_status", nullable = false, length = 20)
+    private TrainingStatus status;
 
-  @Column(name = "started_at")
-  private Instant startedAt;
+    @Column(name = "started_at")
+    private Instant startedAt;
 
-  @Column(name = "ended_at")
-  private Instant endedAt;
+    @Column(name = "ended_at")
+    private Instant endedAt;
 
-  @Column(name="act_participants", nullable = false)
-  private Integer actualParticipants;
+    @Column(name="act_participants", nullable = false)
+    private Integer actualParticipants;
 
-  @Column(name = "survival_rate",nullable = false)
-  private BigDecimal currentSurvivalRate;
+    @Column(name = "survival_rate",nullable = false)
+    private BigDecimal currentSurvivalRate;
 
-  @Column(name = "avg_evacuation_sec")
-  private Integer currentAvgEvacuationSec;
+    @Column(name = "avg_evacuation_sec")
+    private Integer currentAvgEvacuationSec;
 
-  @CreatedDate
-  @Column(name = "created_at", nullable = false, updatable = false)
-  private Instant createdAt;
+    @CreatedDate
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
 
-  @ManyToOne(fetch = FetchType.LAZY)
-  @JoinColumn(name = "user_id", nullable = false)
-  private User admin;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User admin;
 
   @ManyToOne(fetch = FetchType.LAZY)
   @JoinColumn(name = "training_scenario_id", nullable = false)
   private TrainingScenario scenario;
 
-  @OneToOne(mappedBy = "trainingSession", cascade = CascadeType.ALL)
-  private TrainingReport trainingReport;
+    @OneToOne(mappedBy = "trainingSession", cascade = CascadeType.ALL)
+    private TrainingReport trainingReport;
 }

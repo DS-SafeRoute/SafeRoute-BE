@@ -54,6 +54,10 @@ public class Building {
     @Column(name = "building_type", nullable = false, length = 20)
     private BuildingType buildingType;
 
+    @NotNull
+    @Column(name = "is_active", nullable = false)
+    private Boolean isActive;
+
     @Column(name = "last_trained_at")
     private Instant lastTrainedAt;
 
@@ -65,6 +69,32 @@ public class Building {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-  @OneToMany(mappedBy = "building", cascade = CascadeType.ALL, orphanRemoval = true)
-  private List<TrainingScenario> trainingScenarios = new ArrayList<>();
+    @OneToMany(mappedBy = "building", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<TrainingScenario> trainingScenarios = new ArrayList<>();
+
+    private Building(String name, String address, Integer totalFloors, BuildingType buildingType) {
+        this.name = name;
+        this.address = address;
+        this.totalFloors = totalFloors;
+        this.buildingType = buildingType;
+        this.isActive = true;
+    }
+
+    // 건물 등록용 정적 팩토리 메서드
+    public static Building create(String name, String address, Integer totalFloors, BuildingType buildingType) {
+        return new Building(name, address, totalFloors, buildingType);
+    }
+
+    // 건물 정보 수정
+    public void update(String name, String address, Integer totalFloors, BuildingType buildingType) {
+        this.name = name;
+        this.address = address;
+        this.totalFloors = totalFloors;
+        this.buildingType = buildingType;
+    }
+
+    // 건물 비활성화
+    public void deactivate() {
+        this.isActive = false;
+    }
 }

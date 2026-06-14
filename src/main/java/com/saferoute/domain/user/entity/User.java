@@ -1,4 +1,4 @@
-package com.saferoute.domain.user;
+package com.saferoute.domain.user.entity;
 
 import com.saferoute.domain.training.entity.TrainingScenario;
 import com.saferoute.domain.training.entity.TrainingSession;
@@ -68,13 +68,26 @@ public class User {
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
-  @LastModifiedDate
-  @Column(name = "updated_at", nullable = false)
-  private Instant updatedAt;
+    @LastModifiedDate
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt;
 
-  @OneToMany(mappedBy = "admin", cascade = CascadeType.ALL, orphanRemoval = true)
-  private List<TrainingScenario> trainingScenarios = new ArrayList<>();
+    @OneToMany(mappedBy = "admin", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<TrainingScenario> trainingScenarios = new ArrayList<>();
 
-  @OneToMany(mappedBy = "admin", cascade = CascadeType.ALL, orphanRemoval = true)
-  private List<TrainingSession> trainingSessions = new ArrayList<>();
+    @OneToMany(mappedBy = "admin", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<TrainingSession> trainingSessions = new ArrayList<>();
+
+    private User(String username, String password, String email, UserRole role, String schoolName) {
+        this.username = username;
+        this.password = password;
+        this.email = email;
+        this.role = role;
+        this.schoolName = schoolName;
+    }
+
+    // 회원가입용 정적 팩토리 메서드
+    public static User create(String username, String password, String email, UserRole role, String schoolName) {
+        return new User(username, password, email, role, schoolName);
+    }
 }

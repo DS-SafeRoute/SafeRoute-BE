@@ -1,6 +1,7 @@
 package com.saferoute.domain.training.entity;
 
 import com.saferoute.domain.training.Grade;
+import com.saferoute.domain.training.entity.TrainingSession;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
@@ -24,37 +25,37 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 @EntityListeners(AuditingEntityListener.class)
 public class TrainingReport {
 
-  @Id
-  @GeneratedValue
-  private UUID id;
+    @Id
+    @GeneratedValue
+    private UUID id;
 
-  //훈련 상태 (A, B 등)
-  @NotNull
-  @Enumerated(EnumType.STRING)
-  @Column(name = "grade", length = 20)
-  private Grade grade;
+    //훈련 상태 (A, B 등)
+    @NotNull
+    @Enumerated(EnumType.STRING)
+    @Column(name = "grade", length = 20)
+    private Grade grade;
 
-  @Column(name = "survival_rate", nullable = false)
-  private BigDecimal survivalRate;
+    @Column(name = "survival_rate",nullable = false)
+    private BigDecimal survivalRate;
 
-  @Column(name = "avg_evacuation_sec")
-  private Integer avgEvacuationSec;
+    @Column(name = "avg_evacuation_sec")
+    private Integer avgEvacuationSec;
 
-  @Column(name = "participant_count", nullable = false)
-  private Integer participantCount;
+    @Column(name="participant_count", nullable = false)
+    private Integer participantCount;
 
-  @Column(name = "risk_index", nullable = false)
-  private Double riskIndex;
+    @Column(name = "risk_index",nullable = false)
+    private Double riskIndex;
 
-  @Column(name = "ai_recommendations", columnDefinition = "TEXT")
-  private String aiRecommendations;
+    @Column(name="ai_recommendations", columnDefinition = "TEXT")
+    private String aiRecommendations;
 
-  @Column(name = "pdf_url", length = 1000)
-  private String pdfUrl;
+    @Column(name="pdf_url", length = 1000)
+    private String pdfUrl;
 
-  @CreatedDate
-  @Column(name = "created_at", nullable = false, updatable = false)
-  private Instant createdAt;
+    @CreatedDate
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
 
   @OneToOne(fetch = FetchType.LAZY)
   @JoinColumn(
