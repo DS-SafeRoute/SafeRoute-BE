@@ -5,6 +5,32 @@ build/
 !**/src/main/**/build/
 !**/src/test/**/build/
 
+# application config
+application-*.yml
+application-*.properties
+
+# env
+.env
+
+# logs
+logs/
+*.log
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# coverage
+coverage/
+
+# generated files
+generated/
+
+# upload files
+uploads/
+
 ### STS ###
 .apt_generated
 .classpath

@@ -1,7 +1,8 @@
 package com.saferoute.domain.training.entity;
 
 import com.saferoute.domain.building.Building;
-import com.saferoute.domain.user.User;
+import com.saferoute.domain.user.entity.User;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
@@ -11,10 +12,13 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.OneToMany;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -98,6 +102,8 @@ public class TrainingScenario {
         return building != null ? building.getId() : null;
     }
 
+    @OneToMany(mappedBy = "trainingScenario", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<TrainingSession> trainingSessions = new ArrayList<>();
     public UUID getAdminId() {
         return admin != null ? admin.getId() : null;
     }

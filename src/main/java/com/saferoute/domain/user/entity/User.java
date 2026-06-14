@@ -1,18 +1,15 @@
-package com.saferoute.domain.user;
+package com.saferoute.domain.user.entity;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EntityListeners;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import com.saferoute.domain.training.entity.TrainingScenario;
+import com.saferoute.domain.training.entity.TrainingSession;
+import jakarta.persistence.*;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -20,12 +17,13 @@ import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 
-@Getter
 @Entity
-@Table(name = "users")
+@Getter
 @EntityListeners(AuditingEntityListener.class)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+@Table(name = "users")
 public class User {
 
     @Id
@@ -47,6 +45,7 @@ public class User {
     @Column(nullable = false, unique = true, length = 255)
     private String email;
 
+    //유저 타입 (MANAGER, NORMAL)
     @NotNull
     @Enumerated(EnumType.STRING)
     @Column(name = "user_role", nullable = false, length = 20)
@@ -64,4 +63,23 @@ public class User {
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
+
+    @OneToMany(mappedBy = "admin", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<TrainingScenario> trainingScenarios = new ArrayList<>();
+
+    @OneToMany(mappedBy = "admin", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<TrainingSession> trainingSessions = new ArrayList<>();
+
+    private User(String username, String password, String email, UserRole role, String schoolName) {
+        this.username = username;
+        this.password = password;
+        this.email = email;
+        this.role = role;
+        this.schoolName = schoolName;
+    }
+
+    // 회원가입용 정적 팩토리 메서드
+    public static User create(String username, String password, String email, UserRole role, String schoolName) {
+        return new User(username, password, email, role, schoolName);
+    }
 }
