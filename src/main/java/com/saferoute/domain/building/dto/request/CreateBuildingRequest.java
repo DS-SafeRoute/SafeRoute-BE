@@ -1,4 +1,4 @@
-package com.saferoute.domain.building.dto;
+package com.saferoute.domain.building.dto.request;
 
 import com.saferoute.domain.building.entity.BuildingType;
 import jakarta.validation.constraints.NotBlank;
