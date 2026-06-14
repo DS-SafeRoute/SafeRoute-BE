@@ -1,4 +1,4 @@
-package com.saferoute.domain.building;
+package com.saferoute.domain.building.entity;
 
 public enum BuildingType {
     CLASSROOM,
