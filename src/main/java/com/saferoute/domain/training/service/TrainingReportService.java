@@ -61,7 +61,7 @@ public class TrainingReportService {
 
     long totalSessions = trainingSessionRepository.count();
 
-    Object[] result = trainingReportRepository.getStatistics();
+    Object[] result = trainingReportRepository.getStatistics().get(0);
     Double avgSurvivalRate = result[0] != null ? ((Number) result[0]).doubleValue() : 0.0;
     Double avgEvacuationSec = result[1] != null ? ((Number) result[1]).doubleValue() : 0.0;
     Long totalParticipants = result[2] != null ? ((Number) result[2]).longValue() : 0L;

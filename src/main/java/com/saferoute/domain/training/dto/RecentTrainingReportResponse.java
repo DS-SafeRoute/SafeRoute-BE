@@ -1,6 +1,6 @@
 package com.saferoute.domain.training.dto;
 
-import com.saferoute.domain.training.Grade;
+import com.saferoute.domain.training.entity.Grade;
 import java.math.BigDecimal;
 import java.time.Instant;
 

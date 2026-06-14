@@ -1,6 +1,5 @@
 package com.saferoute.domain.training.entity;
 
-import com.saferoute.domain.training.TrainingStatus;
 import com.saferoute.domain.user.entity.User;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;

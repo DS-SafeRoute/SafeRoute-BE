@@ -19,5 +19,5 @@ public interface TrainingReportRepository extends JpaRepository<TrainingReport, 
   List<TrainingReport> findRecentReports(Pageable pageable);
 
   @Query("SELECT COALESCE(AVG(r.survivalRate), 0), COALESCE(AVG(r.avgEvacuationSec), 0), COALESCE(SUM(r.participantCount), 0) FROM TrainingReport r")
-  Object[] getStatistics();
+  List<Object[]> getStatistics();
 }

@@ -1,7 +1,5 @@
 package com.saferoute.domain.training.entity;
 
-import com.saferoute.domain.training.Grade;
-import com.saferoute.domain.training.entity.TrainingSession;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;

@@ -1,6 +1,6 @@
 package com.saferoute.domain.training.dto;
 
-import com.saferoute.domain.training.TrainingStatus;
+import com.saferoute.domain.training.entity.TrainingStatus;
 import com.saferoute.domain.training.entity.TrainingSession;
 import java.time.Instant;
 import lombok.Builder;
