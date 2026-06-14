@@ -9,6 +9,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import jakarta.persistence.OneToMany;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -24,11 +25,13 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
-@Entity
 @Getter
+@Entity
+@Table(name = "buildings")
 @EntityListeners(AuditingEntityListener.class)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Building {
+
     @Id
     @GeneratedValue
     private UUID id;
@@ -44,10 +47,9 @@ public class Building {
     private String address;
 
     @NotNull
-    @Column(name="total_floors", nullable = false)
+    @Column(name = "total_floors", nullable = false)
     private Integer totalFloors;
 
-    //건물 타입 (CLASSROOM, CAFETERIA 등)
     @NotNull
     @Enumerated(EnumType.STRING)
     @Column(name = "building_type", nullable = false, length = 20)

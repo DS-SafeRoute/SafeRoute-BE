@@ -1,0 +1,67 @@
+package com.saferoute.domain.user;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EntityListeners;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+import java.time.Instant;
+import java.util.UUID;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
+@Getter
+@Entity
+@Table(name = "users")
+@EntityListeners(AuditingEntityListener.class)
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class User {
+
+    @Id
+    @GeneratedValue
+    private UUID id;
+
+    @NotBlank
+    @Size(min = 2, max = 20)
+    @Column(nullable = false, length = 20)
+    private String username;
+
+    @NotBlank
+    @Size(min = 8, max = 100)
+    @Column(nullable = false, length = 100)
+    private String password;
+
+    @Email
+    @NotBlank
+    @Column(nullable = false, unique = true, length = 255)
+    private String email;
+
+    @NotNull
+    @Enumerated(EnumType.STRING)
+    @Column(name = "user_role", nullable = false, length = 20)
+    private UserRole role;
+
+    @NotBlank
+    @Size(min = 5, max = 20)
+    @Column(name = "school_name", nullable = false, length = 20)
+    private String schoolName;
+
+    @CreatedDate
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
+
+    @LastModifiedDate
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt;
+}
