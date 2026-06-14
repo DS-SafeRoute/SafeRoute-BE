@@ -1,13 +1,14 @@
 package com.saferoute.domain.training.service;
 
 import com.saferoute.domain.building.entity.Building;
+import com.saferoute.domain.building.repository.BuildingRepository;
 import com.saferoute.domain.training.dto.CreateScenarioRequest;
 import com.saferoute.domain.training.dto.ScenarioResponse;
 import com.saferoute.domain.training.dto.UpdateScenarioRequest;
 import com.saferoute.domain.training.entity.TrainingScenario;
 import com.saferoute.domain.training.repository.TrainingScenarioRepository;
 import com.saferoute.domain.user.entity.User;
-import jakarta.persistence.EntityManager;
+import com.saferoute.domain.user.repository.UserRepository;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -22,7 +23,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -37,7 +37,10 @@ class TrainingScenarioServiceTest {
     private TrainingScenarioRepository scenarioRepository;
 
     @Mock
-    private EntityManager entityManager;
+    private BuildingRepository buildingRepository;
+
+    @Mock
+    private UserRepository userRepository;
 
     private final UUID scenarioId = UUID.randomUUID();
     private final UUID buildingId = UUID.randomUUID();
@@ -114,11 +117,8 @@ class TrainingScenarioServiceTest {
         given(building.getId()).willReturn(buildingId);
         given(admin.getId()).willReturn(adminId);
 
-        // EntityManager.getReference() 가 mock 객체 반환하도록 설정
-        given(entityManager.getReference(eq(Building.class), eq(buildingId)))
-                .willReturn(building);
-        given(entityManager.getReference(eq(User.class), eq(adminId)))
-                .willReturn(admin);
+        given(buildingRepository.findById(buildingId)).willReturn(Optional.of(building));
+        given(userRepository.findById(adminId)).willReturn(Optional.of(admin));
 
         TrainingScenario savedScenario = TrainingScenario.create(
                 "새시나리오", 30, scheduledAt, false, building, admin);
@@ -131,6 +131,37 @@ class TrainingScenarioServiceTest {
         assertThat(result.getName()).isEqualTo("새시나리오");
         assertThat(result.getBuildingId()).isEqualTo(buildingId);
         verify(scenarioRepository).save(any(TrainingScenario.class));
+    }
+
+    @Test
+    @DisplayName("시나리오 생성 - 건물이 없으면 예외 발생")
+    void createScenario_buildingNotFound() {
+        // given
+        CreateScenarioRequest request = new CreateScenarioRequest(
+                "새시나리오", buildingId, 30, scheduledAt, false, adminId);
+        given(buildingRepository.findById(buildingId)).willReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> scenarioService.createScenario(request))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("건물을 찾을 수 없습니다.");
+    }
+
+    @Test
+    @DisplayName("시나리오 생성 - 유저가 없으면 예외 발생")
+    void createScenario_userNotFound() {
+        // given
+        CreateScenarioRequest request = new CreateScenarioRequest(
+                "새시나리오", buildingId, 30, scheduledAt, false, adminId);
+
+        Building building = mock(Building.class);
+        given(buildingRepository.findById(buildingId)).willReturn(Optional.of(building));
+        given(userRepository.findById(adminId)).willReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> scenarioService.createScenario(request))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("유저를 찾을 수 없습니다.");
     }
 
     @Test

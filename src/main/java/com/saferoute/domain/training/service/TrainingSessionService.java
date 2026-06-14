@@ -1,6 +1,6 @@
 package com.saferoute.domain.training.service;
 
-import com.saferoute.domain.building.Building;
+import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.training.dto.CreateSessionRequest;
 import com.saferoute.domain.training.dto.RunningSessionResponse;
 import com.saferoute.domain.training.dto.ScheduledSessionResponse;
