@@ -7,5 +7,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface MapNodeJpaRepository extends JpaRepository<MapNode, UUID> {
 
-    List<MapNode> findByFloorId(UUID floorId);
+    List<MapNode> findAllByFloor_Id(UUID floorId);
 }

@@ -15,7 +15,10 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 @Entity
 @Getter
-@Table(name = "map_nodes")
+@Table(
+        name = "map_nodes",
+        uniqueConstraints = @UniqueConstraint(name = "uk_map_node_floor_code", columnNames = {"floor_id", "code"})
+)
 @EntityListeners(AuditingEntityListener.class)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class MapNode {
@@ -34,10 +37,12 @@ public class MapNode {
     @Column(name = "type", nullable = false, length = 20)
     private NodeType type;
 
+    // UI에 표시할 사람이 읽는 위치명 (예: "왼쪽 복도", "301호 앞") - 층 번호는 포함하지 않음
     @NotBlank
     @Column(name = "name", nullable = false, length = 100)
     private String name;
 
+    // 0.0~1.0 정규화 좌표 (도면 가로/세로 기준)
     @Column(name = "pos_x", nullable = false)
     private double x;
 

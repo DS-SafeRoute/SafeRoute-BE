@@ -43,6 +43,23 @@ public class Floor {
     @Column(name = "processed_at")
     private Instant processedAt;
 
+    // 화재 확산 Grid 계산용 — 세그멘테이션 완료 후 채워짐 (그 전엔 null)
+    @Column(name = "grid_cell_size_meter")
+    private Double gridCellSizeMeter;
+
+    @Column(name = "grid_rows")
+    private Integer gridRows;
+
+    @Column(name = "grid_columns")
+    private Integer gridColumns;
+
+    // 원본 도면 픽셀 크기 (프론트 렌더링 좌표 변환용, 없어도 무방)
+    @Column(name = "plan_width_px")
+    private Integer planWidthPx;
+
+    @Column(name = "plan_height_px")
+    private Integer planHeightPx;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -65,5 +82,15 @@ public class Floor {
     // 도면(층) 등록용 정적 팩토리 메서드
     public static Floor create(Building building, Integer floorNum, String mapImageUrl) {
         return new Floor(building, floorNum, mapImageUrl);
+    }
+
+    // 세그멘테이션 완료 후 그리드 구성 정보 반영
+    public void applyGridConfig(Double gridCellSizeMeter, Integer gridRows, Integer gridColumns,
+                                Integer planWidthPx, Integer planHeightPx) {
+        this.gridCellSizeMeter = gridCellSizeMeter;
+        this.gridRows = gridRows;
+        this.gridColumns = gridColumns;
+        this.planWidthPx = planWidthPx;
+        this.planHeightPx = planHeightPx;
     }
 }

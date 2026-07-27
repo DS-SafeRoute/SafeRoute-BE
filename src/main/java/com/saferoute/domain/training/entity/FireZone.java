@@ -1,11 +1,8 @@
 package com.saferoute.domain.training.entity;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EntityListeners;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import com.saferoute.domain.evacuation.graph.entity.MapNode;
+import com.saferoute.domain.floor.entity.Floor;
+import jakarta.persistence.*;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
 import java.util.UUID;
@@ -26,17 +23,17 @@ public class FireZone {
     @GeneratedValue
     private UUID id;
 
-    @NotNull
-    @Column(name = "scenario_id", nullable = false)
-    private UUID scenarioId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "scenario_id", nullable = false)
+    private TrainingScenario scenario;
 
-    @NotNull
-    @Column(name = "floor_map_id", nullable = false)
-    private UUID floorMapId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "floor_id", nullable = false)
+    private Floor floor;
 
-    @NotNull
-    @Column(name = "node_id", nullable = false)
-    private UUID nodeId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "node_id", nullable = false)
+    private MapNode node;
 
     @NotNull
     @Column(name = "is_manual_add", nullable = false)
@@ -46,13 +43,19 @@ public class FireZone {
     @Column(name = "added_at", nullable = false, updatable = false)
     private Instant addedAt;
 
-    public static FireZone create(UUID scenarioId, UUID floorMapId,
-                                  UUID nodeId, Boolean isManualAdd) {
-        FireZone zone = new FireZone();
-        zone.scenarioId = scenarioId;
-        zone.floorMapId = floorMapId;
-        zone.nodeId = nodeId;
-        zone.isManualAdd = isManualAdd != null ? isManualAdd : false;
-        return zone;
+    private FireZone(TrainingScenario scenario, Floor floor, MapNode node, Boolean isManualAdd) {
+        this.scenario = scenario;
+        this.floor = floor;
+        this.node = node;
+        this.isManualAdd = isManualAdd != null ? isManualAdd : false;
     }
+
+    // 화재구역 등록용 정적 팩토리 메서드
+    public static FireZone create(TrainingScenario scenario, Floor floor, MapNode node, Boolean isManualAdd) {
+        return new FireZone(scenario, floor, node, isManualAdd);
+    }
+
+    public UUID getScenarioId() { return scenario != null ? scenario.getId() : null; }
+    public UUID getFloorId() { return floor != null ? floor.getId() : null; }
+    public UUID getNodeId() { return node != null ? node.getId() : null; }
 }

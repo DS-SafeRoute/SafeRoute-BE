@@ -5,7 +5,8 @@ import com.saferoute.domain.user.dto.LoginResponse;
 import com.saferoute.domain.user.dto.SignupRequest;
 import com.saferoute.domain.user.dto.SignupResponse;
 import com.saferoute.domain.user.service.UserService;
-import com.saferoute.global.response.ApiResponse;
+import com.saferoute.global.api.response.ApiResponse;
+import com.saferoute.global.api.response.UserSuccessCode;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -27,13 +28,13 @@ public class UserController {
     public ResponseEntity<ApiResponse<SignupResponse>> signup(@Valid @RequestBody SignupRequest request) {
         SignupResponse response = userService.signup(request);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("회원가입에 성공했습니다.", response));
+                .body(ApiResponse.success(UserSuccessCode.SIGNUP_COMPLETED, response));
     }
 
     // 로그인: JWT 없이 자격 증명만 확인 후 사용자 정보를 반환
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<LoginResponse>> login(@Valid @RequestBody LoginRequest request) {
         LoginResponse response = userService.login(request);
-        return ResponseEntity.ok(ApiResponse.success("로그인에 성공했습니다.", response));
+        return ResponseEntity.ok(ApiResponse.success(UserSuccessCode.LOGIN_COMPLETED, response));
     }
 }

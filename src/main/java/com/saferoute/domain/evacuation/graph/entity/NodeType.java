@@ -5,5 +5,6 @@ public enum NodeType {
     ROOM,
     HALLWAY,
     DOOR,
+    EXIT,
     CUSTOM
 }

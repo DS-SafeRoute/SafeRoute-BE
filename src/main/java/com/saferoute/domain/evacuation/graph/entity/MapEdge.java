@@ -22,16 +22,17 @@ public class MapEdge {
     @GeneratedValue
     private UUID id;
 
+    // 실제 거리 (미터 단위, 0보다 커야 함)
     @Column(name = "distance", nullable = false)
     private double distance;
 
-    // 화재구역 통제 시 true로 전환 (Dijkstra 계산에서 이 엣지 제외)
-    @Column(name = "blocked", nullable = false)
-    private boolean blocked;
+    // 통로 기준 수용 인원 (1 이상)
+    @Column(name = "capacity", nullable = false)
+    private int capacity;
 
-    // IoT 유도등 디바이스 ID (IoT 디바이스 엔티티 생기면 FK 관계로 교체 예정) (미정)
-    @Column(name = "guide_light_id")
-    private UUID guideLightId;
+    // 양방향 통행 가능 여부
+    @Column(name = "bidirectional", nullable = false)
+    private boolean bidirectional;
 
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -53,16 +54,26 @@ public class MapEdge {
     @JoinColumn(name = "to_node_id", nullable = false)
     private MapNode toNode;
 
-    private MapEdge(Floor floor, MapNode fromNode, MapNode toNode, double distance) {
+    private MapEdge(Floor floor, MapNode fromNode, MapNode toNode, double distance,
+                    int capacity, boolean bidirectional) {
+        if (distance <= 0) {
+            throw new IllegalArgumentException("distance는 0보다 커야 합니다.");
+        }
+        if (capacity < 1) {
+            throw new IllegalArgumentException("capacity는 1 이상이어야 합니다.");
+        }
         this.floor = floor;
         this.fromNode = fromNode;
         this.toNode = toNode;
         this.distance = distance;
-        this.blocked = false;
+        this.capacity = capacity;
+        this.bidirectional = bidirectional;
     }
 
     // 그래프 엣지(통로) 등록용 정적 팩토리 메서드
-    public static MapEdge create(Floor floor, MapNode fromNode, MapNode toNode, double distance) {
-        return new MapEdge(floor, fromNode, toNode, distance);
+    // blocked/fireRisk/congestion 등 훈련별 동적 값은 여기서 초기화하지 않음 (서버 메모리에서 관리)
+    public static MapEdge create(Floor floor, MapNode fromNode, MapNode toNode,
+                                 double distance, int capacity, boolean bidirectional) {
+        return new MapEdge(floor, fromNode, toNode, distance, capacity, bidirectional);
     }
 }

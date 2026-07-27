@@ -4,10 +4,12 @@ import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.building.dto.response.BuildingResponse;
 import com.saferoute.domain.building.dto.request.CreateBuildingRequest;
 import com.saferoute.domain.building.dto.request.UpdateBuildingRequest;
-import com.saferoute.domain.building.exception.BuildingNotFoundException;
 import com.saferoute.domain.building.repository.BuildingRepository;
 import java.util.List;
 import java.util.UUID;
+
+import com.saferoute.global.api.error.BuildingErrorCode;
+import com.saferoute.global.api.exception.ApiException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -58,6 +60,6 @@ public class BuildingService {
 
     private Building findBuildingById(UUID buildingId) {
         return buildingRepository.findById(buildingId)
-                .orElseThrow(() -> new BuildingNotFoundException(buildingId));
+                .orElseThrow(() -> new ApiException(BuildingErrorCode.BUILDING_NOT_FOUND));
     }
 }
