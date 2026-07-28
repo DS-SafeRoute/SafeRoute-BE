@@ -3,6 +3,7 @@ package com.saferoute.domain.evacuation.graph.entity;
 import com.saferoute.domain.floor.entity.Floor;
 import jakarta.persistence.*;
 import java.time.Instant;
+import java.util.Objects;
 import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -13,7 +14,10 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 @Entity
 @Getter
-@Table(name = "map_edges")
+@Table(
+        name = "map_edges",
+        uniqueConstraints = @UniqueConstraint(name = "uk_map_edge_from_to", columnNames = {"from_node_id", "to_node_id"})
+)
 @EntityListeners(AuditingEntityListener.class)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class MapEdge {
@@ -61,6 +65,15 @@ public class MapEdge {
         }
         if (capacity < 1) {
             throw new IllegalArgumentException("capacity는 1 이상이어야 합니다.");
+        }
+        // self-loop 방지: 같은 노드로 시작/도착하는 엣지는 A* 계산 시 무한 루프를 유발함
+        if (Objects.equals(fromNode.getId(), toNode.getId())) {
+            throw new IllegalArgumentException("fromNode와 toNode는 서로 달라야 합니다. (self-loop 불가)");
+        }
+        // 서로 다른 층에 속한 노드끼리 엣지를 만들면 존재하지 않는 층간 이동 경로가 생성됨
+        if (!fromNode.getFloor().getId().equals(floor.getId())
+                || !toNode.getFloor().getId().equals(floor.getId())) {
+            throw new IllegalArgumentException("fromNode와 toNode는 엣지가 속한 층(floor)과 동일해야 합니다.");
         }
         this.floor = floor;
         this.fromNode = fromNode;
