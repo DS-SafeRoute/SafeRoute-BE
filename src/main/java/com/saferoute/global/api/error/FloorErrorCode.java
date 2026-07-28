@@ -9,7 +9,8 @@ import org.springframework.http.HttpStatus;
 @RequiredArgsConstructor
 public enum FloorErrorCode implements BaseErrorCode {
 
-    FLOOR_NOT_FOUND(HttpStatus.NOT_FOUND, "FLOOR001", "도면을 찾을 수 없습니다.");
+    FLOOR_NOT_FOUND(HttpStatus.NOT_FOUND, "FLOOR001", "도면을 찾을 수 없습니다."),
+    DUPLICATE_FLOOR_NUM(HttpStatus.CONFLICT, "FLOOR002", "이미 등록된 층 번호입니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

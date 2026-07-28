@@ -22,6 +22,7 @@ public class FloorService {
 
     private final FloorRepository floorRepository;
     private final BuildingRepository buildingRepository;
+    private final FloorCleanupService floorCleanupService;
 
     public List<FloorResponse> getFloors(UUID buildingId) {
         validateBuildingExists(buildingId);
@@ -35,6 +36,8 @@ public class FloorService {
         Building building = buildingRepository.findById(buildingId)
                 .orElseThrow(() -> new ApiException(BuildingErrorCode.BUILDING_NOT_FOUND));
 
+        validateDuplicateFloorNum(buildingId, request.floorNum());
+
         Floor floor = Floor.create(building, request.floorNum(), request.mapImageUrl());
         return FloorResponse.from(floorRepository.save(floor));
     }
@@ -43,14 +46,23 @@ public class FloorService {
         return FloorResponse.from(findFloor(buildingId, floorId));
     }
 
+    // 생성 시 중복 층 검증 + 삭제 전 자식 정리
     @Transactional
     public void deleteFloor(UUID buildingId, UUID floorId) {
-        floorRepository.delete(findFloor(buildingId, floorId));
+        Floor floor = findFloor(buildingId, floorId);
+        floorCleanupService.cleanupFloorChildren(floor.getId());
+        floorRepository.delete(floor);
     }
 
     private void validateBuildingExists(UUID buildingId) {
         if (!buildingRepository.existsById(buildingId)) {
             throw new ApiException(BuildingErrorCode.BUILDING_NOT_FOUND);
+        }
+    }
+
+    private void validateDuplicateFloorNum(UUID buildingId, Integer floorNum) {
+        if (floorRepository.existsByBuilding_IdAndFloorNum(buildingId, floorNum)) {
+            throw new ApiException(FloorErrorCode.DUPLICATE_FLOOR_NUM);
         }
     }
 

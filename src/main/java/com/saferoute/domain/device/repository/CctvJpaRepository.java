@@ -10,4 +10,5 @@ public interface CctvJpaRepository extends JpaRepository<Cctv, UUID> {
     List<Cctv> findAllByFloor_Id(UUID floorId);
     Optional<Cctv> findByCode(String code);
     List<Cctv> findAllByMonitoredEdge_Id(UUID mapEdgeId);
+    void deleteAllByFloor_Id(UUID floorId);
 }

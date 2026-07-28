@@ -7,4 +7,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface FloorGridCellRepository extends JpaRepository<FloorGridCell, UUID> {
     List<FloorGridCell> findAllByFloor_Id(UUID floorId);
+    void deleteAllByFloor_Id(UUID floorId);
 }

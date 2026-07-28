@@ -8,5 +8,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface MapEdgeJpaRepository extends JpaRepository<MapEdge, UUID> {
 
     List<MapEdge> findAllByFloor_Id(UUID floorId);
+    void deleteAllByFloor_Id(UUID floorId);
 
 }

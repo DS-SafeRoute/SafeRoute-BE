@@ -10,4 +10,5 @@ public interface IoTLightJpaRepository extends JpaRepository<IoTLight, UUID> {
     List<IoTLight> findAllByFloor_Id(UUID floorId);
     Optional<IoTLight> findByCode(String code);
     List<IoTLight> findAllByDecisionNode_Id(UUID mapNodeId);
+    void deleteAllByFloor_Id(UUID floorId);
 }
