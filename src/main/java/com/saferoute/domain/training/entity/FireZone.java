@@ -1,6 +1,6 @@
 package com.saferoute.domain.training.entity;
 
-import com.saferoute.domain.evacuation.graph.entity.MapNode;
+import com.saferoute.domain.evacuation.grid.entity.FloorGridCell;
 import com.saferoute.domain.floor.entity.Floor;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotNull;
@@ -31,9 +31,10 @@ public class FireZone {
     @JoinColumn(name = "floor_id", nullable = false)
     private Floor floor;
 
+    // 화재 확산 시뮬레이션이 셀 단위(BFS)로 도니까, 시작점부터 GridCell로 직결
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "node_id", nullable = false)
-    private MapNode node;
+    @JoinColumn(name = "grid_cell_id", nullable = false)
+    private FloorGridCell gridCell;
 
     @NotNull
     @Column(name = "is_manual_add", nullable = false)
@@ -43,19 +44,19 @@ public class FireZone {
     @Column(name = "added_at", nullable = false, updatable = false)
     private Instant addedAt;
 
-    private FireZone(TrainingScenario scenario, Floor floor, MapNode node, Boolean isManualAdd) {
+    private FireZone(TrainingScenario scenario, Floor floor, FloorGridCell gridCell, Boolean isManualAdd) {
         this.scenario = scenario;
         this.floor = floor;
-        this.node = node;
+        this.gridCell = gridCell;
         this.isManualAdd = isManualAdd != null ? isManualAdd : false;
     }
 
     // 화재구역 등록용 정적 팩토리 메서드
-    public static FireZone create(TrainingScenario scenario, Floor floor, MapNode node, Boolean isManualAdd) {
-        return new FireZone(scenario, floor, node, isManualAdd);
+    public static FireZone create(TrainingScenario scenario, Floor floor, FloorGridCell gridCell, Boolean isManualAdd) {
+        return new FireZone(scenario, floor, gridCell, isManualAdd);
     }
 
     public UUID getScenarioId() { return scenario != null ? scenario.getId() : null; }
     public UUID getFloorId() { return floor != null ? floor.getId() : null; }
-    public UUID getNodeId() { return node != null ? node.getId() : null; }
+    public UUID getGridCellId() { return gridCell != null ? gridCell.getId() : null; }
 }

@@ -1,0 +1,40 @@
+# 로컬에서 이미지를 직접 빌드해서 Postgres와 함께 띄우는 구성.
+# EC2용 docker-compose.yml과 달리 이미지를 pull하지 않고 로컬 소스로 build한다.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: saferoute-postgres
+    environment:
+      POSTGRES_DB: saferoute
+      POSTGRES_USER: saferoute
+      POSTGRES_PASSWORD: saferoute
+    ports:
+      - "5432:5432"
+    volumes:
+      - saferoute-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U saferoute -d saferoute"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: saferoute-be
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      TZ: UTC
+      DB_URL: jdbc:postgresql://postgres:5432/saferoute
+      DB_USERNAME: saferoute
+      DB_PASSWORD: saferoute
+    restart: unless-stopped
+
+volumes:
+  saferoute-pgdata:
