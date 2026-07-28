@@ -16,7 +16,10 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 @Entity
 @Getter
-@Table(name = "floors")
+@Table(
+        name = "floors",
+        uniqueConstraints = @UniqueConstraint(name = "uk_floor_building_floornum", columnNames = {"building_id", "floor_num"})
+)
 @EntityListeners(AuditingEntityListener.class)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Floor {
@@ -29,7 +32,7 @@ public class Floor {
     @Column(name = "floor_num", nullable = false)
     private Integer floorNum;
 
-    @NotBlank
+    // 도면 이미지 없이 층만 먼저 등록 가능한 설계이므로 @NotBlank를 걸지 않음 (null 허용)
     @Size(max = 1000)
     @Column(name = "map_image_url", length = 1000)
     private String mapImageUrl;
@@ -53,7 +56,7 @@ public class Floor {
     @Column(name = "grid_columns")
     private Integer gridColumns;
 
-    // 원본 도면 픽셀 크기 (프론트 렌더링 좌표 변환용, 없어도 무방)
+    // 원본 도면 픽셀 크기 (프론트 렌더링 좌표 변환용)
     @Column(name = "plan_width_px")
     private Integer planWidthPx;
 
