@@ -1,0 +1,27 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+
+# S3Config 는 컨텍스트 로딩 시점에 값이 필요하므로 더미값을 넣는다.
+# 실제 S3 호출은 테스트에서 하지 않으므로 아무 값이나 형식만 맞으면 된다.
+aws:
+  region: ap-northeast-2
+  s3:
+    bucket: test-bucket
+    presigned-url-expiration: 10m
+  credentials:
+    access-key: test
+    secret-key: test
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
