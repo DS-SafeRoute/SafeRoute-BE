@@ -17,7 +17,7 @@ public interface FloorGridCellRepository extends JpaRepository<FloorGridCell, UU
     Optional<FloorGridCell> findByFloor_IdAndRowIndexAndColumnIndex(UUID floorId, int rowIndex, int columnIndex);
 
     // 현재 화재 중인 셀 (확산 시뮬레이션 tick 대상)
-    List<FloorGridCell> findAllByFloor_IdAndFiredTrue(UUID floorId);
+    List<FloorGridCell> findAllByFloor_IdAndIsFiredTrue(UUID floorId);
 
     // 사용자 지정 구역에 속한 셀 목록 (UserZone 단방향이므로 여기서 조회)
     List<FloorGridCell> findAllByUserZone_Id(UUID userZoneId);
