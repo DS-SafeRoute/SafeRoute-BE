@@ -1,13 +1,14 @@
 package com.saferoute.domain.training.service;
 
 import com.saferoute.domain.building.entity.Building;
+import com.saferoute.domain.building.repository.BuildingRepository;
 import com.saferoute.domain.training.dto.CreateScenarioRequest;
 import com.saferoute.domain.training.dto.ScenarioResponse;
 import com.saferoute.domain.training.dto.UpdateScenarioRequest;
 import com.saferoute.domain.training.entity.TrainingScenario;
 import com.saferoute.domain.training.repository.TrainingScenarioRepository;
 import com.saferoute.domain.user.entity.User;
-import jakarta.persistence.EntityManager;
+import com.saferoute.domain.user.repository.UserRepository;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -21,7 +22,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class TrainingScenarioService {
 
     private final TrainingScenarioRepository scenarioRepository;
-    private final EntityManager entityManager;
+    private final BuildingRepository buildingRepository;
+    private final UserRepository userRepository;
 
     // 목록 조회
     public List<ScenarioResponse> getScenarios() {
@@ -38,12 +40,10 @@ public class TrainingScenarioService {
     // 생성
     @Transactional
     public ScenarioResponse createScenario(CreateScenarioRequest request) {
-        // TODO: BuildingRepository, UserRepository 구현 후 findById()로 교체
-        // 현재는 Repository 미구현으로 getReference() 임시 사용 (DB 조회 없이 FK만 세팅)
-        Building building = entityManager.getReference(
-                Building.class, request.getBuildingId());
-        User admin = entityManager.getReference(
-                User.class, request.getAdminId());
+        Building building = buildingRepository.findById(request.getBuildingId())
+                .orElseThrow(() -> new RuntimeException("건물을 찾을 수 없습니다."));
+        User admin = userRepository.findById(request.getAdminId())
+                .orElseThrow(() -> new RuntimeException("유저를 찾을 수 없습니다."));
 
         TrainingScenario scenario = TrainingScenario.create(
                 request.getName(),

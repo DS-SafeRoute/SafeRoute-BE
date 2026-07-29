@@ -67,43 +67,44 @@ public class TrainingScenario {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
-  @LastModifiedDate
-  @Column(name = "updated_at", nullable = false)
-  private Instant updatedAt;
+    @LastModifiedDate
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt;
 
-  public static TrainingScenario create(String name,
-      Integer expectedParticipants,
-      Instant scheduledAt,
-      Boolean isTemplate,
-      Building building,
-      User admin) {
-    TrainingScenario scenario = new TrainingScenario();
-    scenario.name = name;
-    scenario.expectedParticipants = expectedParticipants;
-    scenario.scheduledAt = scheduledAt;
-    scenario.isTemplate = isTemplate != null ? isTemplate : false;
-    scenario.building = building;
-    scenario.admin = admin;
-    return scenario;
-  }
+    @OneToMany(mappedBy = "scenario", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<TrainingSession> trainingSessions = new ArrayList<>();
 
-  public void update(String name,
-      Integer expectedParticipants,
-      Instant scheduledAt,
-      Boolean isTemplate) {
-    if (name != null) this.name = name;
-    if (expectedParticipants != null) this.expectedParticipants = expectedParticipants;
-    if (scheduledAt != null) this.scheduledAt = scheduledAt;
-    if (isTemplate != null) this.isTemplate = isTemplate;
-  }
+    public static TrainingScenario create(String name,
+            Integer expectedParticipants,
+            Instant scheduledAt,
+            Boolean isTemplate,
+            Building building,
+            User admin) {
+        TrainingScenario scenario = new TrainingScenario();
+        scenario.name = name;
+        scenario.expectedParticipants = expectedParticipants;
+        scenario.scheduledAt = scheduledAt;
+        scenario.isTemplate = isTemplate != null ? isTemplate : false;
+        scenario.building = building;
+        scenario.admin = admin;
+        return scenario;
+    }
+
+    public void update(String name,
+            Integer expectedParticipants,
+            Instant scheduledAt,
+            Boolean isTemplate) {
+        if (name != null) this.name = name;
+        if (expectedParticipants != null) this.expectedParticipants = expectedParticipants;
+        if (scheduledAt != null) this.scheduledAt = scheduledAt;
+        if (isTemplate != null) this.isTemplate = isTemplate;
+    }
 
     // 응답용 getter
     public UUID getBuildingId() {
         return building != null ? building.getId() : null;
     }
 
-  @OneToMany(mappedBy = "scenario", cascade = CascadeType.ALL, orphanRemoval = true)
-  private List<TrainingSession> trainingSessions = new ArrayList<>();
     public UUID getAdminId() {
         return admin != null ? admin.getId() : null;
     }
