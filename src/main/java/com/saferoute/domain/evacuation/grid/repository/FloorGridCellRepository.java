@@ -2,10 +2,31 @@ package com.saferoute.domain.evacuation.grid.repository;
 
 import com.saferoute.domain.evacuation.grid.entity.FloorGridCell;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface FloorGridCellRepository extends JpaRepository<FloorGridCell, UUID> {
+
     List<FloorGridCell> findAllByFloor_Id(UUID floorId);
+
+    // 화재 확산 시 rowIndex/columnIndex 로 인접 셀 탐색
+    Optional<FloorGridCell> findByFloor_IdAndRowIndexAndColumnIndex(UUID floorId, int rowIndex, int columnIndex);
+
+    // 현재 화재 중인 셀 (확산 시뮬레이션 tick 대상)
+    List<FloorGridCell> findAllByFloor_IdAndFiredTrue(UUID floorId);
+
+    // 사용자 지정 구역에 속한 셀 목록 (UserZone 단방향이므로 여기서 조회)
+    List<FloorGridCell> findAllByUserZone_Id(UUID userZoneId);
+
+    // 훈련 종료 시 화재 상태 일괄 초기화.
+    // FloorGridCell.fired 는 정적 도면 데이터에 얹은 동적 상태이므로 반드시 호출해야 한다.
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update FloorGridCell c set c.fired = false where c.floor.id = :floorId and c.fired = true")
+    int resetFiredByFloorId(@Param("floorId") UUID floorId);
+
     void deleteAllByFloor_Id(UUID floorId);
 }

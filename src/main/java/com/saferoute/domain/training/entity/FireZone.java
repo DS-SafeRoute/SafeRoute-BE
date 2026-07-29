@@ -9,6 +9,8 @@ import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
@@ -23,17 +25,22 @@ public class FireZone {
     @GeneratedValue
     private UUID id;
 
+    // 시나리오 자체는 도면과 별개로 살아있어야 하므로 scenario는 CASCADE 걸지 않음
+    // 도면이 지워져도 시나리오는 남고, 그 안의 이 FireZone만 정리되는걸로
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "scenario_id", nullable = false)
     private TrainingScenario scenario;
 
+    // 도면이 삭제되면 그 도면에 걸린 화재구역 설정도 삭제
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "floor_id", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private Floor floor;
 
     // 화재 확산 시뮬레이션이 셀 단위(BFS)로 도니까, 시작점부터 GridCell로 직결
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "grid_cell_id", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private FloorGridCell gridCell;
 
     @NotNull

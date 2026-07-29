@@ -22,7 +22,6 @@ public class FloorService {
 
     private final FloorRepository floorRepository;
     private final BuildingRepository buildingRepository;
-    private final FloorCleanupService floorCleanupService;
 
     public List<FloorResponse> getFloors(UUID buildingId) {
         validateBuildingExists(buildingId);
@@ -46,12 +45,9 @@ public class FloorService {
         return FloorResponse.from(findFloor(buildingId, floorId));
     }
 
-    // 생성 시 중복 층 검증 + 삭제 전 자식 정리
     @Transactional
     public void deleteFloor(UUID buildingId, UUID floorId) {
-        Floor floor = findFloor(buildingId, floorId);
-        floorCleanupService.cleanupFloorChildren(floor.getId());
-        floorRepository.delete(floor);
+        floorRepository.delete(findFloor(buildingId, floorId));
     }
 
     private void validateBuildingExists(UUID buildingId) {

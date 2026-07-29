@@ -2,14 +2,26 @@ package com.saferoute.domain.evacuation.grid.repository;
 
 import com.saferoute.domain.evacuation.grid.entity.NodeGridCell;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface NodeGridCellRepository extends JpaRepository<NodeGridCell, UUID> {
 
     // 특정 셀 안에 어떤 노드들이 있는지 (도면 클릭 시 "여기 뭐 있나" 표시용)
     List<NodeGridCell> findAllByGridCell_Id(UUID gridCellId);
 
-    // 특정 노드가 어느 셀(들)에 걸쳐있는지
-    List<NodeGridCell> findAllByNode_Id(UUID nodeId);
+    // 노드 하나는 셀 하나에만 소속되므로 단건 조회
+    Optional<NodeGridCell> findByNode_Id(UUID nodeId);
+
+    // 혼잡도 처리 시 CCTV customNode -> 셀 조회용
+    List<NodeGridCell> findAllByNode_IdIn(List<UUID> nodeIds);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from NodeGridCell ngc where ngc.node.id in "
+            + "(select n.id from MapNode n where n.floor.id = :floorId)")
+    void deleteAllByFloorId(@Param("floorId") UUID floorId);
 }
