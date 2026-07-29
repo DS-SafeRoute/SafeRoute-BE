@@ -63,7 +63,7 @@ class S3ServiceTest {
         PutObjectRequest request = requestCaptor.getValue();
         assertThat(request.bucket()).isEqualTo("test-bucket");
         assertThat(request.key())
-                .startsWith("test-uploads/")
+                .startsWith("floor-plans/")
                 .endsWith("-sample_image.png");
         assertThat(request.contentType()).isEqualTo("image/png");
         assertThat(request.contentLength()).isEqualTo(file.getSize());

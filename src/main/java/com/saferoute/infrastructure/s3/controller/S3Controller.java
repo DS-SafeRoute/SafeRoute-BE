@@ -4,6 +4,7 @@ import com.saferoute.global.api.response.ApiResponse;
 import com.saferoute.global.api.response.S3SuccessCode;
 import com.saferoute.infrastructure.s3.dto.S3UploadResponse;
 import com.saferoute.infrastructure.s3.service.S3Service;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -14,8 +15,9 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+@Tag(name = "S3 파일 업로드", description = "도면 이미지 등 S3 업로드 관련 API")
 @RestController
-@RequestMapping("/api/v1/test/s3")
+@RequestMapping("/api/v1/s3")
 @RequiredArgsConstructor
 public class S3Controller {
 

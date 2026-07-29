@@ -17,7 +17,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 @Service
 public class S3Service {
 
-    private static final String TEST_UPLOAD_PREFIX = "test-uploads/";
+    private static final String FLOOR_PLAN_PREFIX = "floor-plans/";
 
     private final S3Client s3Client;
     private final S3Properties s3Properties;
@@ -69,7 +69,7 @@ public class S3Service {
             filename = "file";
         }
 
-        return TEST_UPLOAD_PREFIX + UUID.randomUUID() + "-" + filename;
+        return FLOOR_PLAN_PREFIX + UUID.randomUUID() + "-" + filename;
     }
 
     private String resolveContentType(String contentType) {
