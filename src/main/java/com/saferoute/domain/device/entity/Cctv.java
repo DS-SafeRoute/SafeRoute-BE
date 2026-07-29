@@ -1,7 +1,7 @@
 package com.saferoute.domain.device.entity;
 
-import com.saferoute.domain.evacuation.graph.entity.MapEdge;
-import com.saferoute.domain.floor.entity.Floor;
+import com.saferoute.domain.evacuation.graph.entity.MapNode;
+import com.saferoute.domain.evacuation.graph.entity.NodeType;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import java.time.Instant;
@@ -9,17 +9,16 @@ import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
-// CCTV 영상 ROI/스트리밍은 이 엔티티에 저장하지 않음 (엣지 디바이스가 로컬 처리, 서버로는 집계 수치만 전송)
+// 혼잡도 반영 경로: CCTV code -> customNode -> NodeGridCell -> FloorGridCell -> MapEdgeGridCell -> MapEdge
 @Entity
 @Getter
-@Table(
-        name = "cctvs",
-        uniqueConstraints = @UniqueConstraint(name = "uk_cctv_floor_code", columnNames = {"floor_id", "code"})
-)
+@Table(name = "cctvs")
 @EntityListeners(AuditingEntityListener.class)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Cctv {
@@ -28,26 +27,22 @@ public class Cctv {
     @GeneratedValue
     private UUID id;
 
-    // 엣지 디바이스가 자동 보고하는 식별자 (MAC/시리얼 등). 관리자가 IP로 수동 등록하지 않음
+    // 엣지 디바이스가 자동 보고하는 식별자 (MAC/시리얼 등). 관리자가 IP로 수동 등록하지 않음.
+    // 라즈베리파이가 이 값만 보내오므로 시스템 전역에서 유일해야 한다.
     @NotBlank
-    @Column(name = "code", nullable = false, length = 50)
+    @Column(name = "code", nullable = false, length = 50, unique = true)
     private String code;
 
     @NotBlank
     @Column(name = "name", nullable = false, length = 100)
     private String name;
 
-    // 도면 위 CCTV 아이콘 표시 좌표 (0.0~1.0)
-    @Column(name = "pos_x", nullable = false)
-    private double x;
-
-    @Column(name = "pos_y", nullable = false)
-    private double y;
-
-    // 이 CCTV가 혼잡도를 감지하는 통로 (설치 위치와는 다른 의미)
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "monitored_edge_id", nullable = false)
-    private MapEdge monitoredEdge;
+    // 도면상 설치 위치 노드(CUSTOM). 좌표와 층 정보의 단일 원천.
+    // customNode가 CASCADE로 지워질 때 Cctv/IoTLight도 같이 지워지게함.
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "custom_node_id", nullable = false, unique = true)
+    @OnDelete(action = OnDeleteAction.CASCADE)
+    private MapNode customNode;
 
     @Column(name = "enabled", nullable = false)
     private boolean enabled;
@@ -60,27 +55,27 @@ public class Cctv {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "floor_id", nullable = false)
-    private Floor floor;
-
-    private Cctv(Floor floor, String code, String name, double x, double y, MapEdge monitoredEdge) {
-        this.floor = floor;
+    private Cctv(String code, String name, MapNode customNode) {
+        validateCustomNode(customNode);
         this.code = code;
         this.name = name;
-        this.x = x;
-        this.y = y;
-        this.monitoredEdge = monitoredEdge;
+        this.customNode = customNode;
         this.enabled = true;
     }
 
-    public static Cctv create(Floor floor, String code, String name, double x, double y, MapEdge monitoredEdge) {
-        return new Cctv(floor, code, name, x, y, monitoredEdge);
+    // 기기 등록용 정적 팩토리 메서드. 층은 customNode 로부터 결정되므로 따로 받지 않는다.
+    public static Cctv create(String code, String name, MapNode customNode) {
+        return new Cctv(code, name, customNode);
     }
 
-    // 관리자가 도면에서 감시 통로를 재지정할 때
-    public void reassignMonitoredEdge(MapEdge monitoredEdge) {
-        this.monitoredEdge = monitoredEdge;
+    // 도면에서 기기 위치를 옮겼을 때 (새 CUSTOM 노드로 교체)
+    public void relocate(MapNode customNode) {
+        validateCustomNode(customNode);
+        this.customNode = customNode;
+    }
+
+    public void rename(String name) {
+        this.name = name;
     }
 
     public void disable() {
@@ -89,5 +84,16 @@ public class Cctv {
 
     public void enable() {
         this.enabled = true;
+    }
+
+    // FK만으로는 NodeType을 강제할 수 없으므로 생성/변경 시점에 도메인 레벨에서 검증한다.
+    // Service에서 getReferenceById로 얻은 프록시를 넘기지 말 것 (getType() 접근 시 초기화 발생)
+    private static void validateCustomNode(MapNode customNode) {
+        if (customNode == null) {
+            throw new IllegalArgumentException("CCTV의 customNode는 필수입니다.");
+        }
+        if (customNode.getType() != NodeType.CUSTOM) {
+            throw new IllegalArgumentException("CCTV의 customNode는 NodeType.CUSTOM 이어야 합니다.");
+        }
     }
 }
