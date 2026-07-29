@@ -70,10 +70,10 @@ public class Building {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    @OneToMany(mappedBy = "building", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = "building")
     private List<TrainingScenario> trainingScenarios = new ArrayList<>();
 
-    @OneToMany(mappedBy = "building", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = "building")
     private List<Floor> floors = new ArrayList<>();
 
     private Building(String name, String address, Integer totalFloors, BuildingType buildingType) {
@@ -100,5 +100,9 @@ public class Building {
     // 건물 비활성화
     public void deactivate() {
         this.isActive = false;
+    }
+
+    public void activate() {
+        this.isActive = true;
     }
 }
