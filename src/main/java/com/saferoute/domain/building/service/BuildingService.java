@@ -5,14 +5,13 @@ import com.saferoute.domain.building.dto.response.BuildingResponse;
 import com.saferoute.domain.building.dto.request.CreateBuildingRequest;
 import com.saferoute.domain.building.dto.request.UpdateBuildingRequest;
 import com.saferoute.domain.building.repository.BuildingRepository;
-import com.saferoute.domain.floor.entity.Floor;
-import com.saferoute.domain.floor.service.FloorCleanupService;
 import java.util.List;
 import java.util.UUID;
 
 import com.saferoute.global.api.error.BuildingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,7 +20,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class BuildingService {
 
     private final BuildingRepository buildingRepository;
-    private final FloorCleanupService floorCleanupService;
 
     @Transactional
     public BuildingResponse createBuilding(CreateBuildingRequest request) {
@@ -56,17 +54,17 @@ public class BuildingService {
         findBuildingById(buildingId).deactivate();
     }
 
+    // TrainingScenario.building 에는 CASCADE가 없으므로, 이 건물을 참조하는 훈련 기록이
+    // 하나라도 있으면 DB가 FK 위반으로 삭제를 막는다 — 그 경우 deactivateBuilding()을 쓸 것.
     @Transactional
     public void deleteBuilding(UUID buildingId) {
         Building building = findBuildingById(buildingId);
-        // Floor -> MapNode/MapEdge/Cctv/IoTLight/FireZone/FloorGridCell 는 cascade 매핑이 없으므로
-        // Building 삭제 시 JPA가 Floor는 cascade로 지워도 그 하위 자식은 알지 못해 FK 위반이 난다.
-        // 따라서 각 층의 자식들을 먼저 정리한 뒤 building을 삭제한다. (Floor 자체는 Building의
-        // cascade=ALL, orphanRemoval=true로 정상 삭제됨)
-        for (Floor floor : building.getFloors()) {
-            floorCleanupService.cleanupFloorChildren(floor.getId());
+        try {
+            buildingRepository.delete(building);
+            buildingRepository.flush(); // 트랜잭션 커밋 전에 FK 위반을 여기서 확인
+        } catch (DataIntegrityViolationException e) {
+            throw new ApiException(BuildingErrorCode.BUILDING_HAS_TRAINING_HISTORY);
         }
-        buildingRepository.delete(building);
     }
 
     private Building findBuildingById(UUID buildingId) {

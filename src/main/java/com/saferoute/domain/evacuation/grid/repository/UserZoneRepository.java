@@ -14,6 +14,4 @@ public interface UserZoneRepository extends JpaRepository<UserZone, UUID> {
 
     // 같은 층 안에서만 이름 중복 검사 (다른 층은 같은 이름 허용)
     boolean existsByFloor_IdAndName(UUID floorId, String name);
-
-    void deleteAllByFloor_Id(UUID floorId);
 }

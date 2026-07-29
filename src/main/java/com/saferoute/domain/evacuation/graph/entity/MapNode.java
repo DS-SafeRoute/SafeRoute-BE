@@ -46,7 +46,7 @@ public class MapNode {
     private String name;
 
     // 0.0~1.0 정규화 좌표 (도면 가로/세로 기준)
-    // CCTV / IoT 유도등의 도면상 좌표도 이 값을 단일 원천으로 사용한다.
+    // CCTV / IoT 유도등의 도면상 좌표도 이 값을 사용한다.
     @Column(name = "pos_x", nullable = false)
     private double x;
 

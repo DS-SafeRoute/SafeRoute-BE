@@ -72,7 +72,7 @@ public class MapEdge {
 
     // 그래프 엣지(통로) 등록용 정적 팩토리 메서드
     // blocked/fireRisk/congestion 등 훈련별 동적 값은 여기서 초기화하지 않음 (서버 메모리에서 관리)
-    // 혼잡도는 MapEdgeGridCell로 연결된 FloorGridCell의 면적 기준으로 계산되므로 capacity를 두지 않는다.
+    // 혼잡도는 MapEdgeGridCell로 연결된 FloorGridCell의 면적 기준으로 계산되므로 capacity를 제외
     public static MapEdge create(Floor floor, MapNode fromNode, MapNode toNode,
                                  double distance, boolean bidirectional) {
         return new MapEdge(floor, fromNode, toNode, distance, bidirectional);

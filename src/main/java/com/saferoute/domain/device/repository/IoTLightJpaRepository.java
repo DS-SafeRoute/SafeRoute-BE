@@ -24,9 +24,4 @@ public interface IoTLightJpaRepository extends JpaRepository<IoTLight, UUID> {
 
     // 경로 설정이 아직 안 된 기기 (훈련 시작 전 점검용)
     List<IoTLight> findAllByCustomNode_Floor_IdAndDecisionNodeIsNull(UUID floorId);
-
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("delete from IoTLight l where l.customNode.id in "
-            + "(select n.id from MapNode n where n.floor.id = :floorId)")
-    void deleteAllByFloorId(@Param("floorId") UUID floorId);
 }

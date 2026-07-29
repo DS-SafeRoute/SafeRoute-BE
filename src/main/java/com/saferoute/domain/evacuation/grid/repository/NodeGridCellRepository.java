@@ -5,9 +5,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Modifying;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
 
 public interface NodeGridCellRepository extends JpaRepository<NodeGridCell, UUID> {
 
@@ -19,9 +16,4 @@ public interface NodeGridCellRepository extends JpaRepository<NodeGridCell, UUID
 
     // 혼잡도 처리 시 CCTV customNode -> 셀 조회용
     List<NodeGridCell> findAllByNode_IdIn(List<UUID> nodeIds);
-
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("delete from NodeGridCell ngc where ngc.node.id in "
-            + "(select n.id from MapNode n where n.floor.id = :floorId)")
-    void deleteAllByFloorId(@Param("floorId") UUID floorId);
 }

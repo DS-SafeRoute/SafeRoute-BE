@@ -25,8 +25,6 @@ public interface FloorGridCellRepository extends JpaRepository<FloorGridCell, UU
     // 훈련 종료 시 화재 상태 일괄 초기화.
     // FloorGridCell.fired 는 정적 도면 데이터에 얹은 동적 상태이므로 반드시 호출해야 한다.
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("update FloorGridCell c set c.fired = false where c.floor.id = :floorId and c.fired = true")
+    @Query("update FloorGridCell c set c.isFired = false where c.floor.id = :floorId and c.isFired = true")
     int resetFiredByFloorId(@Param("floorId") UUID floorId);
-
-    void deleteAllByFloor_Id(UUID floorId);
 }

@@ -16,9 +16,4 @@ public interface MapEdgeGridCellRepository extends JpaRepository<MapEdgeGridCell
     List<MapEdgeGridCell> findAllByGridCell_IdIn(List<UUID> gridCellIds);
 
     List<MapEdgeGridCell> findAllByMapEdge_Id(UUID mapEdgeId);
-
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("delete from MapEdgeGridCell megc where megc.mapEdge.id in "
-            + "(select e.id from MapEdge e where e.floor.id = :floorId)")
-    void deleteAllByFloorId(@Param("floorId") UUID floorId);
 }

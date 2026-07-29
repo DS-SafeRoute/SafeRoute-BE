@@ -73,7 +73,8 @@ public class Building {
     @OneToMany(mappedBy = "building")
     private List<TrainingScenario> trainingScenarios = new ArrayList<>();
 
-    @OneToMany(mappedBy = "building")
+    // 도면(층)은 저장 전파만 허용, 삭제 전파는 하지 않는다.
+    @OneToMany(mappedBy = "building", cascade = {CascadeType.PERSIST, CascadeType.MERGE})
     private List<Floor> floors = new ArrayList<>();
 
     private Building(String name, String address, Integer totalFloors, BuildingType buildingType) {

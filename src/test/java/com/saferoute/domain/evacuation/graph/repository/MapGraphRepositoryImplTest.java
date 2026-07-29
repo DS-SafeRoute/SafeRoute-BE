@@ -57,15 +57,14 @@ class MapGraphRepositoryImplTest {
         Floor floor = mock(Floor.class);
         MapNode from = mock(MapNode.class);
         MapNode to = mock(MapNode.class);
-        MapEdge savedEdge = MapEdge.create(floor, from, to, 8.0, 10, true);
+        MapEdge savedEdge = MapEdge.create(floor, from, to, 8.0,true);
         given(mapEdgeJpaRepository.save(any(MapEdge.class))).willReturn(savedEdge);
 
         // when
-        MapEdge result = mapGraphRepository.addEdge(floor, from, to, 8.0, 10, true);
+        MapEdge result = mapGraphRepository.addEdge(floor, from, to, 8.0,true);
 
         // then
         assertThat(result.getDistance()).isEqualTo(8.0);
-        assertThat(result.getCapacity()).isEqualTo(10);
         assertThat(result.isBidirectional()).isTrue();
         verify(mapEdgeJpaRepository).save(any(MapEdge.class));
     }

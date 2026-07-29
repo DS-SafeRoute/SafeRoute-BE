@@ -14,7 +14,7 @@ public interface MapGraphRepository {
             double x, double y, boolean isExitTarget);
 
     // 엣지 추가 (계단/방 사이 통로)
-    MapEdge addEdge(Floor floor, MapNode fromNode, MapNode toNode, double distance, int capacity, boolean bidirectional);
+    MapEdge addEdge(Floor floor, MapNode fromNode, MapNode toNode, double distance, boolean bidirectional);
 
     // 특정 층의 노드 전체 조회
     List<MapNode> findNodesByFloor(UUID floorId);

@@ -20,12 +20,4 @@ public interface CctvJpaRepository extends JpaRepository<Cctv, UUID> {
     boolean existsByCode(String code);
 
     Optional<Cctv> findByCustomNode_Id(UUID customNodeId);
-
-    // 벌크 삭제는 JPQL로 작성한다.
-    // JPQL DELETE 문에서는 암시적 조인(c.customNode.floor.id)이 허용되지 않으므로 서브쿼리를 쓴다.
-    // c.customNode.id 는 FK 컬럼 직접 접근이라 조인이 발생하지 않아 안전하다.
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("delete from Cctv c where c.customNode.id in "
-            + "(select n.id from MapNode n where n.floor.id = :floorId)")
-    void deleteAllByFloorId(@Param("floorId") UUID floorId);
 }
