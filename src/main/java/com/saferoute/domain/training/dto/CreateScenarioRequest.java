@@ -1,5 +1,6 @@
 package com.saferoute.domain.training.dto;
 
+import com.saferoute.domain.training.entity.FireSpreadSpeed;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -31,4 +32,7 @@ public class CreateScenarioRequest {
 
     @NotNull
     private UUID adminId;
+
+    // 미지정 시 Service에서 MEDIUM으로 기본 처리
+    private FireSpreadSpeed fireSpreadSpeed;
 }

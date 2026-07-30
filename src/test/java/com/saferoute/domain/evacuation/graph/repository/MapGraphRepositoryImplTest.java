@@ -51,21 +51,21 @@ class MapGraphRepositoryImplTest {
     }
 
     @Test
-    @DisplayName("두 노드를 엣지로 연결하면 거리 속성이 저장된다")
+    @DisplayName("두 노드를 엣지로 연결하면 거리/수용인원/양방향 속성이 저장된다")
     void addEdge_success() {
         // given
         Floor floor = mock(Floor.class);
         MapNode from = mock(MapNode.class);
         MapNode to = mock(MapNode.class);
-        MapEdge savedEdge = MapEdge.create(floor, from, to, 8.0);
+        MapEdge savedEdge = MapEdge.create(floor, from, to, 8.0,true);
         given(mapEdgeJpaRepository.save(any(MapEdge.class))).willReturn(savedEdge);
 
         // when
-        MapEdge result = mapGraphRepository.addEdge(floor, from, to, 8.0);
+        MapEdge result = mapGraphRepository.addEdge(floor, from, to, 8.0,true);
 
         // then
         assertThat(result.getDistance()).isEqualTo(8.0);
-        assertThat(result.isBlocked()).isFalse();
+        assertThat(result.isBidirectional()).isTrue();
         verify(mapEdgeJpaRepository).save(any(MapEdge.class));
     }
 
@@ -75,8 +75,8 @@ class MapGraphRepositoryImplTest {
         // given
         MapNode node = mock(MapNode.class);
         MapEdge edge = mock(MapEdge.class);
-        given(mapNodeJpaRepository.findByFloorId(floorId)).willReturn(List.of(node));
-        given(mapEdgeJpaRepository.findByFloorId(floorId)).willReturn(List.of(edge));
+        given(mapNodeJpaRepository.findAllByFloor_Id(floorId)).willReturn(List.of(node));
+        given(mapEdgeJpaRepository.findAllByFloor_Id(floorId)).willReturn(List.of(edge));
 
         // when
         List<MapNode> nodes = mapGraphRepository.findNodesByFloor(floorId);

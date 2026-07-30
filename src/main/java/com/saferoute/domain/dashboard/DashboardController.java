@@ -1,9 +1,9 @@
 package com.saferoute.domain.dashboard;
 
 import com.saferoute.domain.training.dto.DashboardStatsResponse;
-import com.saferoute.domain.training.dto.RecentTrainingReportResponse;
+import com.saferoute.domain.report.dto.RecentTrainingReportResponse;
 import com.saferoute.domain.training.dto.TrainingStatusResponse;
-import com.saferoute.domain.training.service.TrainingReportService;
+import com.saferoute.domain.report.service.TrainingReportService;
 import com.saferoute.domain.training.service.TrainingSessionService;
 import java.util.List;
 import java.util.UUID;

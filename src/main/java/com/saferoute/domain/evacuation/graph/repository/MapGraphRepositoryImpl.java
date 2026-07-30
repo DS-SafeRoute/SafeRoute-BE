@@ -18,24 +18,24 @@ public class MapGraphRepositoryImpl implements MapGraphRepository {
 
     @Override
     public MapNode addNode(Floor floor, String code, NodeType type, String name,
-            double x, double y, boolean isExitTarget) {
+                           double x, double y, boolean isExitTarget) {
         MapNode node = MapNode.create(floor, code, type, name, x, y, isExitTarget);
         return mapNodeJpaRepository.save(node);
     }
 
     @Override
-    public MapEdge addEdge(Floor floor, MapNode fromNode, MapNode toNode, double distance) {
-        MapEdge edge = MapEdge.create(floor, fromNode, toNode, distance);
+    public MapEdge addEdge(Floor floor, MapNode fromNode, MapNode toNode, double distance, boolean bidirectional) {
+        MapEdge edge = MapEdge.create(floor, fromNode, toNode, distance, bidirectional);
         return mapEdgeJpaRepository.save(edge);
     }
 
     @Override
     public List<MapNode> findNodesByFloor(UUID floorId) {
-        return mapNodeJpaRepository.findByFloorId(floorId);
+        return mapNodeJpaRepository.findAllByFloor_Id(floorId);
     }
 
     @Override
     public List<MapEdge> findEdgesByFloor(UUID floorId) {
-        return mapEdgeJpaRepository.findByFloorId(floorId);
+        return mapEdgeJpaRepository.findAllByFloor_Id(floorId);
     }
 }

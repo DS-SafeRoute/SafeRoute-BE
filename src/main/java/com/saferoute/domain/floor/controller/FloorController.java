@@ -3,7 +3,8 @@ package com.saferoute.domain.floor.controller;
 import com.saferoute.domain.floor.dto.request.CreateFloorRequest;
 import com.saferoute.domain.floor.dto.response.FloorResponse;
 import com.saferoute.domain.floor.service.FloorService;
-import com.saferoute.global.response.ApiResponse;
+import com.saferoute.global.api.response.ApiResponse;
+import com.saferoute.global.api.response.FloorSuccessCode;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
@@ -22,7 +23,7 @@ public class FloorController {
     // 건물별 도면 목록 조회
     @GetMapping
     public ResponseEntity<ApiResponse<List<FloorResponse>>> getFloors(@PathVariable UUID buildingId) {
-        return ResponseEntity.ok(ApiResponse.success(floorService.getFloors(buildingId)));
+        return ResponseEntity.ok(ApiResponse.success(FloorSuccessCode.FLOOR_LIST_FOUND, floorService.getFloors(buildingId)));
     }
 
     // 도면(층) 등록
@@ -33,7 +34,7 @@ public class FloorController {
     ) {
         FloorResponse response = floorService.createFloor(buildingId, request);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("도면 등록에 성공했습니다.", response));
+                .body(ApiResponse.success(FloorSuccessCode.FLOOR_CREATED, response));
     }
 
     // 도면 상세 조회
@@ -42,7 +43,7 @@ public class FloorController {
             @PathVariable UUID buildingId,
             @PathVariable UUID floorId
     ) {
-        return ResponseEntity.ok(ApiResponse.success(floorService.getFloor(buildingId, floorId)));
+        return ResponseEntity.ok(ApiResponse.success(FloorSuccessCode.FLOOR_DETAIL_FOUND, floorService.getFloor(buildingId, floorId)));
     }
 
     // 도면 삭제
@@ -52,6 +53,6 @@ public class FloorController {
             @PathVariable UUID floorId
     ) {
         floorService.deleteFloor(buildingId, floorId);
-        return ResponseEntity.ok(ApiResponse.success("도면이 삭제되었습니다.", null));
+        return ResponseEntity.ok(ApiResponse.success(FloorSuccessCode.FLOOR_DELETED, null));
     }
 }

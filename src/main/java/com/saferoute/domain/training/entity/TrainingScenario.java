@@ -2,10 +2,11 @@ package com.saferoute.domain.training.entity;
 
 import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.user.entity.User;
-import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
@@ -54,6 +55,13 @@ public class TrainingScenario {
     @Column(name = "is_template", nullable = false)
     private Boolean isTemplate = false;
 
+    // 화재 확산 속도. 발화점(FireZone)마다가 아니라 시나리오 전체에 하나로 적용된다.
+    // 확산 시뮬레이션의 tick 간격을 결정한다. (FAST < MEDIUM < SLOW 순으로 주기가 짧음)
+    @NotNull
+    @Enumerated(EnumType.STRING)
+    @Column(name = "fire_spread_speed", nullable = false, length = 10)
+    private FireSpreadSpeed fireSpreadSpeed;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "building_id", nullable = false)
     private Building building;
@@ -71,33 +79,39 @@ public class TrainingScenario {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    @OneToMany(mappedBy = "scenario", cascade = CascadeType.ALL, orphanRemoval = true)
+    // 훈련 세션은 시나리오와 생명주기를 공유하지 않는다.
+    // 시나리오를 지워도 과거 훈련 기록은 보존되어야 하므로 Cascade를 걸지 않는다.
+    @OneToMany(mappedBy = "scenario")
     private List<TrainingSession> trainingSessions = new ArrayList<>();
 
     public static TrainingScenario create(String name,
-            Integer expectedParticipants,
-            Instant scheduledAt,
-            Boolean isTemplate,
-            Building building,
-            User admin) {
+                                          Integer expectedParticipants,
+                                          Instant scheduledAt,
+                                          Boolean isTemplate,
+                                          FireSpreadSpeed fireSpreadSpeed,
+                                          Building building,
+                                          User admin) {
         TrainingScenario scenario = new TrainingScenario();
         scenario.name = name;
         scenario.expectedParticipants = expectedParticipants;
         scenario.scheduledAt = scheduledAt;
         scenario.isTemplate = isTemplate != null ? isTemplate : false;
+        scenario.fireSpreadSpeed = fireSpreadSpeed != null ? fireSpreadSpeed : FireSpreadSpeed.MEDIUM;
         scenario.building = building;
         scenario.admin = admin;
         return scenario;
     }
 
     public void update(String name,
-            Integer expectedParticipants,
-            Instant scheduledAt,
-            Boolean isTemplate) {
+                       Integer expectedParticipants,
+                       Instant scheduledAt,
+                       Boolean isTemplate,
+                       FireSpreadSpeed fireSpreadSpeed) {
         if (name != null) this.name = name;
         if (expectedParticipants != null) this.expectedParticipants = expectedParticipants;
         if (scheduledAt != null) this.scheduledAt = scheduledAt;
         if (isTemplate != null) this.isTemplate = isTemplate;
+        if (fireSpreadSpeed != null) this.fireSpreadSpeed = fireSpreadSpeed;
     }
 
     // 응답용 getter

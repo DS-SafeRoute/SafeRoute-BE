@@ -1,6 +1,8 @@
 package com.saferoute.domain.training.dto;
 
 import java.time.Instant;
+
+import com.saferoute.domain.training.entity.FireSpreadSpeed;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -14,4 +16,5 @@ public class UpdateScenarioRequest {
     private Integer expectedParticipants;
     private Instant scheduledAt;
     private Boolean isTemplate;
+    private FireSpreadSpeed fireSpreadSpeed;
 }

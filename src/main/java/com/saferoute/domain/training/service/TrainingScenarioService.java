@@ -50,6 +50,7 @@ public class TrainingScenarioService {
                 request.getExpectedParticipants(),
                 request.getScheduledAt(),
                 request.getIsTemplate(),
+                request.getFireSpreadSpeed(),
                 building,
                 admin
         );
@@ -64,7 +65,8 @@ public class TrainingScenarioService {
                 request.getName(),
                 request.getExpectedParticipants(),
                 request.getScheduledAt(),
-                request.getIsTemplate()
+                request.getIsTemplate(),
+                request.getFireSpreadSpeed()
         );
         return ScenarioResponse.from(scenario);
     }

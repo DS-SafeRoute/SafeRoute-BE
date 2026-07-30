@@ -5,12 +5,18 @@ build/
 !**/src/main/**/build/
 !**/src/test/**/build/
 
-# application config
-application-*.yml
-application-*.properties
-
-# env
+# Environment variables and secrets #
 .env
+.env.*
+src/main/resources/application-local.yml
+src/main/resources/application-local.yaml
+src/main/resources/application-secret.yml
+src/main/resources/application-secret.yaml
+*.pem
+*.key
+*.p12
+*.jks
+*-service-account.json
 
 # logs
 logs/
@@ -61,9 +67,6 @@ out/
 
 ### VS Code ###
 .vscode/
-
-# Local environment config
-# application-local.yml
 
 # ignore Wiki repository
 SafeRoute-BE.wiki/

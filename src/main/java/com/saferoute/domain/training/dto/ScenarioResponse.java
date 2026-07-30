@@ -1,5 +1,6 @@
 package com.saferoute.domain.training.dto;
 
+import com.saferoute.domain.training.entity.FireSpreadSpeed;
 import com.saferoute.domain.training.entity.TrainingScenario;
 import java.time.Instant;
 import java.util.UUID;
@@ -17,6 +18,7 @@ public class ScenarioResponse {
     private Integer expectedParticipants;
     private Instant scheduledAt;
     private Boolean isTemplate;
+    private FireSpreadSpeed fireSpreadSpeed;
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -29,6 +31,7 @@ public class ScenarioResponse {
                 .expectedParticipants(scenario.getExpectedParticipants())
                 .scheduledAt(scenario.getScheduledAt())
                 .isTemplate(scenario.getIsTemplate())
+                .fireSpreadSpeed(scenario.getFireSpreadSpeed())
                 .createdAt(scenario.getCreatedAt())
                 .updatedAt(scenario.getUpdatedAt())
                 .build();
