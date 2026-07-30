@@ -12,6 +12,8 @@ import java.util.UUID;
 import com.saferoute.global.api.error.BuildingErrorCode;
 import com.saferoute.global.api.error.FloorErrorCode;
 import com.saferoute.global.api.exception.ApiException;
+import com.saferoute.infrastructure.s3.dto.S3UploadResponse;
+import com.saferoute.infrastructure.s3.service.S3Service;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +24,7 @@ public class FloorService {
 
     private final FloorRepository floorRepository;
     private final BuildingRepository buildingRepository;
+    private final S3Service s3Service;
 
     public List<FloorResponse> getFloors(UUID buildingId) {
         validateBuildingExists(buildingId);
@@ -31,13 +34,26 @@ public class FloorService {
     }
 
     @Transactional
-    public FloorResponse createFloor(UUID buildingId, CreateFloorRequest request) {
+    public FloorResponse createFloor(
+            UUID buildingId,
+            CreateFloorRequest request
+    ) {
         Building building = buildingRepository.findById(buildingId)
-                .orElseThrow(() -> new ApiException(BuildingErrorCode.BUILDING_NOT_FOUND));
+                .orElseThrow(() ->
+                        new ApiException(BuildingErrorCode.BUILDING_NOT_FOUND)
+                );
 
         validateDuplicateFloorNum(buildingId, request.floorNum());
 
-        Floor floor = Floor.create(building, request.floorNum(), request.mapImageUrl());
+        S3UploadResponse uploadResult =
+                s3Service.upload(request.file());
+
+        Floor floor = Floor.create(
+                building,
+                request.floorNum(),
+                uploadResult.key()
+        );
+
         return FloorResponse.from(floorRepository.save(floor));
     }
 

@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -27,12 +28,13 @@ public class FloorController {
     }
 
     // 도면(층) 등록
-    @PostMapping
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<FloorResponse>> createFloor(
             @PathVariable UUID buildingId,
-            @Valid @RequestBody CreateFloorRequest request
+            @Valid @ModelAttribute CreateFloorRequest request
     ) {
         FloorResponse response = floorService.createFloor(buildingId, request);
+
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(FloorSuccessCode.FLOOR_CREATED, response));
     }

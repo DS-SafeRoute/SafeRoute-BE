@@ -34,8 +34,8 @@ public class Floor {
 
     // 도면 이미지 없이 층만 먼저 등록 가능한 설계이므로 @NotBlank를 걸지 않음 (null 허용)
     @Size(max = 1000)
-    @Column(name = "map_image_url", length = 1000)
-    private String mapImageUrl;
+    @Column(name = "map_image_key", length = 1000)
+    private String mapImageKey;
 
     //세그멘테이션 처리 상태 (PENDING, PROCESSING, DONE, FAILED)
     @NotNull
@@ -75,16 +75,16 @@ public class Floor {
     @JoinColumn(name = "building_id", nullable = false)
     private Building building;
 
-    private Floor(Building building, Integer floorNum, String mapImageUrl) {
+    private Floor(Building building, Integer floorNum, String mapImageKey) {
         this.building = building;
         this.floorNum = floorNum;
-        this.mapImageUrl = mapImageUrl;
+        this.mapImageKey = mapImageKey;
         this.segmentationStatus = SegmentationStatus.PENDING;
     }
 
     // 도면(층) 등록용 정적 팩토리 메서드
-    public static Floor create(Building building, Integer floorNum, String mapImageUrl) {
-        return new Floor(building, floorNum, mapImageUrl);
+    public static Floor create(Building building, Integer floorNum, String mapImageKey) {
+        return new Floor(building, floorNum, mapImageKey);
     }
 
     // 세그멘테이션 완료 후 그리드 구성 정보 반영
