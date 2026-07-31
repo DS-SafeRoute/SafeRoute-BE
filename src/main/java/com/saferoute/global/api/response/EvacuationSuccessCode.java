@@ -1,0 +1,20 @@
+package com.saferoute.global.api.response;
+
+import com.saferoute.global.api.code.BaseCode;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+
+@Getter
+@RequiredArgsConstructor
+public enum EvacuationSuccessCode implements BaseCode {
+
+    MAP_NODE_CREATED(HttpStatus.CREATED, "EVAC_SUCCESS_001", "노드가 생성되었습니다."),
+    MAP_NODE_DELETED(HttpStatus.OK, "EVAC_SUCCESS_002", "노드가 삭제되었습니다."),
+    MAP_EDGE_CREATED(HttpStatus.CREATED, "EVAC_SUCCESS_003", "엣지가 생성되었습니다."),
+    MAP_EDGE_DELETED(HttpStatus.OK, "EVAC_SUCCESS_004", "엣지가 삭제되었습니다.");
+
+    private final HttpStatus httpStatus;
+    private final String code;
+    private final String message;
+}
