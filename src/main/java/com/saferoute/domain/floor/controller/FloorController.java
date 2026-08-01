@@ -41,7 +41,7 @@ public class FloorController {
     }
 
     // 도면 등록
-    @PostMapping(path = "{/upload}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PostMapping(path = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<FloorResponse>> uploadFloor(
         @PathVariable UUID buildingId,
         @Valid @ModelAttribute UploadFloorRequest request

@@ -2,7 +2,6 @@ package com.saferoute.domain.floor.entity;
 
 import com.saferoute.domain.building.entity.Building;
 import jakarta.persistence.*;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
@@ -92,6 +91,10 @@ public class Floor {
   // 도면(층) 등록용 정적 팩토리 메서드
   public static Floor create(Building building, Integer floorNum) {
     return new Floor(building, floorNum);
+  }
+
+  public void updateSegmentationStatus(SegmentationStatus status) {
+    this.segmentationStatus = status;
   }
 
   public void upload(double realHeight,
