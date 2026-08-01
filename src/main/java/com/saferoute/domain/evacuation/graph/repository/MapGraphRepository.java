@@ -5,6 +5,7 @@ import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.evacuation.graph.entity.NodeType;
 import com.saferoute.domain.floor.entity.Floor;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface MapGraphRepository {
@@ -21,4 +22,19 @@ public interface MapGraphRepository {
 
     // 특정 층의 엣지 전체 조회
     List<MapEdge> findEdgesByFloor(UUID floorId);
+
+    // 노드 단건 조회 (수정/삭제/엣지 생성 시 참조용)
+    Optional<MapNode> findNodeById(UUID nodeId);
+
+    // 엣지 단건 조회 (삭제 시 참조용)
+    Optional<MapEdge> findEdgeById(UUID edgeId);
+
+    // 노드 위치 수정 (드래그 편집)
+    MapNode updateNodePosition(MapNode node, double x, double y);
+
+    // 노드 삭제 - 연결된 엣지도 함께 삭제(cascade)
+    void deleteNode(MapNode node);
+
+    // 엣지 삭제
+    void deleteEdge(MapEdge edge);
 }
