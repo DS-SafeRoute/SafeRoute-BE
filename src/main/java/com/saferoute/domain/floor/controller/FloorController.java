@@ -1,6 +1,7 @@
 package com.saferoute.domain.floor.controller;
 
 import com.saferoute.domain.floor.dto.request.CreateFloorRequest;
+import com.saferoute.domain.floor.dto.request.UploadFloorRequest;
 import com.saferoute.domain.floor.dto.response.FloorResponse;
 import com.saferoute.domain.floor.service.FloorService;
 import com.saferoute.global.api.response.ApiResponse;
@@ -27,8 +28,8 @@ public class FloorController {
         return ResponseEntity.ok(ApiResponse.success(FloorSuccessCode.FLOOR_LIST_FOUND, floorService.getFloors(buildingId)));
     }
 
-    // 도면(층) 등록
-    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    // 층 등록
+    @PostMapping
     public ResponseEntity<ApiResponse<FloorResponse>> createFloor(
             @PathVariable UUID buildingId,
             @Valid @ModelAttribute CreateFloorRequest request
@@ -37,6 +38,18 @@ public class FloorController {
 
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(FloorSuccessCode.FLOOR_CREATED, response));
+    }
+
+    // 도면 등록
+    @PostMapping(path = "{/upload}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<FloorResponse>> uploadFloor(
+        @PathVariable UUID buildingId,
+        @Valid @ModelAttribute UploadFloorRequest request
+    ) {
+        FloorResponse response = floorService.uploadFloor(buildingId, request);
+
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(ApiResponse.success(FloorSuccessCode.FLOOR_CREATED, response));
     }
 
     // 도면 상세 조회
