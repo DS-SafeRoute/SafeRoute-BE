@@ -1,29 +1,25 @@
 package com.saferoute.domain.training.entity;
 
+import com.saferoute.domain.report.entity.TrainingReport;
 import com.saferoute.domain.user.entity.User;
-import jakarta.persistence.CascadeType;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EntityListeners;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.OneToOne;
+import jakarta.persistence.*;
 import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
+
+import lombok.AccessLevel;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 @Getter
 @Entity
+@Table(name = "training_sessions")
 @EntityListeners(AuditingEntityListener.class)
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class TrainingSession {
 
   @Id
@@ -55,6 +51,10 @@ public class TrainingSession {
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
+  @LastModifiedDate
+  @Column(name = "updated_at", nullable = false)
+  private Instant updatedAt;
+
   @ManyToOne(fetch = FetchType.LAZY)
   @JoinColumn(name = "user_id", nullable = false)
   private User admin;
@@ -66,12 +66,32 @@ public class TrainingSession {
   @OneToOne(mappedBy = "trainingSession", cascade = CascadeType.ALL)
   private TrainingReport trainingReport;
 
+  private TrainingSession(TrainingStatus status, Instant startedAt, User admin, TrainingScenario scenario) {
+    this.status = status;
+    this.startedAt = startedAt;
+    this.admin = admin;
+    this.scenario = scenario;
+  }
+
+  // 훈련 세션 생성용 정적 팩토리 메서드
   public static TrainingSession create(TrainingStatus status, Instant startedAt, User admin, TrainingScenario scenario) {
-    TrainingSession session = new TrainingSession();
-    session.status = status;
-    session.startedAt = startedAt;
-    session.admin = admin;
-    session.scenario = scenario;
-    return session;
+    return new TrainingSession(status, startedAt, admin, scenario);
+  }
+
+  // 훈련 정상 종료
+  public void complete(Instant endedAt) {
+    this.status = TrainingStatus.COMPLETED;
+    this.endedAt = endedAt;
+  }
+
+  // 관리자에 의한 강제 종료
+  public void stop(Instant endedAt) {
+    this.status = TrainingStatus.STOPPED;
+    this.endedAt = endedAt;
+  }
+
+  public void fail(Instant endedAt) {
+    this.status = TrainingStatus.FAILED;
+    this.endedAt = endedAt;
   }
 }

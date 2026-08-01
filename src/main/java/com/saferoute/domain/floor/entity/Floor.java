@@ -16,7 +16,10 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 @Entity
 @Getter
-@Table(name = "floors")
+@Table(
+        name = "floors",
+        uniqueConstraints = @UniqueConstraint(name = "uk_floor_building_floornum", columnNames = {"building_id", "floor_num"})
+)
 @EntityListeners(AuditingEntityListener.class)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Floor {
@@ -29,10 +32,10 @@ public class Floor {
     @Column(name = "floor_num", nullable = false)
     private Integer floorNum;
 
-    @NotBlank
+    // 도면 이미지 없이 층만 먼저 등록 가능한 설계이므로 @NotBlank를 걸지 않음 (null 허용)
     @Size(max = 1000)
-    @Column(name = "map_image_url", length = 1000)
-    private String mapImageUrl;
+    @Column(name = "map_image_key", length = 1000)
+    private String mapImageKey;
 
     //세그멘테이션 처리 상태 (PENDING, PROCESSING, DONE, FAILED)
     @NotNull
@@ -42,6 +45,23 @@ public class Floor {
 
     @Column(name = "processed_at")
     private Instant processedAt;
+
+    // 화재 확산 Grid 계산용 — 세그멘테이션 완료 후 채워짐 (그 전엔 null)
+    @Column(name = "grid_cell_size_meter")
+    private Double gridCellSizeMeter;
+
+    @Column(name = "grid_rows")
+    private Integer gridRows;
+
+    @Column(name = "grid_columns")
+    private Integer gridColumns;
+
+    // 원본 도면 픽셀 크기 (프론트 렌더링 좌표 변환용)
+    @Column(name = "plan_width_px")
+    private Integer planWidthPx;
+
+    @Column(name = "plan_height_px")
+    private Integer planHeightPx;
 
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -55,15 +75,25 @@ public class Floor {
     @JoinColumn(name = "building_id", nullable = false)
     private Building building;
 
-    private Floor(Building building, Integer floorNum, String mapImageUrl) {
+    private Floor(Building building, Integer floorNum, String mapImageKey) {
         this.building = building;
         this.floorNum = floorNum;
-        this.mapImageUrl = mapImageUrl;
+        this.mapImageKey = mapImageKey;
         this.segmentationStatus = SegmentationStatus.PENDING;
     }
 
     // 도면(층) 등록용 정적 팩토리 메서드
-    public static Floor create(Building building, Integer floorNum, String mapImageUrl) {
-        return new Floor(building, floorNum, mapImageUrl);
+    public static Floor create(Building building, Integer floorNum, String mapImageKey) {
+        return new Floor(building, floorNum, mapImageKey);
+    }
+
+    // 세그멘테이션 완료 후 그리드 구성 정보 반영
+    public void applyGridConfig(Double gridCellSizeMeter, Integer gridRows, Integer gridColumns,
+                                Integer planWidthPx, Integer planHeightPx) {
+        this.gridCellSizeMeter = gridCellSizeMeter;
+        this.gridRows = gridRows;
+        this.gridColumns = gridColumns;
+        this.planWidthPx = planWidthPx;
+        this.planHeightPx = planHeightPx;
     }
 }

@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import lombok.AccessLevel;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.CreatedDate;
@@ -40,7 +41,7 @@ public class User {
 
   @NotBlank
   @Size(min = 2, max = 20)
-  @Column(nullable = false, length = 20)
+  @Column(nullable = false, unique = true, length = 20)
   private String username;
 
   @NotBlank

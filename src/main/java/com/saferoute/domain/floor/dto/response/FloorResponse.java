@@ -8,7 +8,7 @@ import java.util.UUID;
 public record FloorResponse(
         UUID id,
         Integer floorNum,
-        String mapImageUrl,
+        String mapImageKey,
         SegmentationStatus segmentationStatus,
         Instant processedAt,
         Instant createdAt,
@@ -18,7 +18,7 @@ public record FloorResponse(
         return new FloorResponse(
                 floor.getId(),
                 floor.getFloorNum(),
-                floor.getMapImageUrl(),
+                floor.getMapImageKey(),
                 floor.getSegmentationStatus(),
                 floor.getProcessedAt(),
                 floor.getCreatedAt(),

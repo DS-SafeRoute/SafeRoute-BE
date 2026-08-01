@@ -1,9 +1,10 @@
 package com.saferoute.domain.floor.dto.request;
 
 import jakarta.validation.constraints.NotNull;
+import org.springframework.web.multipart.MultipartFile;
 
 public record CreateFloorRequest(
         // 도면 이미지 없이 층만 먼저 등록 가능
         @NotNull Integer floorNum,
-        String mapImageUrl
+        @NotNull MultipartFile file
 ) {}
