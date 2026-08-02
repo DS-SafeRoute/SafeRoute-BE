@@ -22,16 +22,26 @@ import com.saferoute.global.api.error.EvacuationErrorCode;
 import com.saferoute.global.api.error.FloorErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import java.util.UUID;
+
+import com.saferoute.global.security.JwtAuthenticationFilter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.FilterType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-@WebMvcTest(MapGraphEditController.class)
+@WebMvcTest(
+        controllers = EvacuationRouteController.class,
+        excludeFilters = @ComponentScan.Filter(
+                type = FilterType.ASSIGNABLE_TYPE,
+                classes = JwtAuthenticationFilter.class
+        )
+)
 @AutoConfigureMockMvc(addFilters = false)
 class MapGraphEditControllerTest {
 

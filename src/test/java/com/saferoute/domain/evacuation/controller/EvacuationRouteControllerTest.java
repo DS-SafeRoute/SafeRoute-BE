@@ -16,17 +16,27 @@ import com.saferoute.global.api.error.EvacuationErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import java.util.List;
 import java.util.UUID;
+
+import com.saferoute.global.security.JwtAuthenticationFilter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.FilterType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
-@WebMvcTest(EvacuationRouteController.class)
+@WebMvcTest(
+        controllers = EvacuationRouteController.class,
+        excludeFilters = @ComponentScan.Filter(
+                type = FilterType.ASSIGNABLE_TYPE,
+                classes = JwtAuthenticationFilter.class
+        )
+)
 @AutoConfigureMockMvc(addFilters = false) // Security 필터는 HTTP 매핑/예외 응답 검증과 무관하니 비활성화
 class EvacuationRouteControllerTest {
 
