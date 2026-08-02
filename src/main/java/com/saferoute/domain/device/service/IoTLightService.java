@@ -53,6 +53,7 @@ public class IoTLightService {
         return IoTLightResponse.from(light);
     }
 
+    @Transactional(readOnly = true)
     public List<IoTLightResponse> getLights(UUID floorId) {
         List<IoTLight> lights = floorId != null
                 ? iotLightJpaRepository.findAllByCustomNode_Floor_Id(floorId)
@@ -60,6 +61,7 @@ public class IoTLightService {
         return lights.stream().map(IoTLightResponse::from).toList();
     }
 
+    @Transactional(readOnly = true)
     public IoTLightResponse getLight(UUID lightId) {
         return IoTLightResponse.from(findLightOrThrow(lightId));
     }
