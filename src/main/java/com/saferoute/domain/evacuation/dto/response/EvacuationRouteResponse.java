@@ -1,4 +1,4 @@
-package com.saferoute.domain.evacuation.service.dto.response;
+package com.saferoute.domain.evacuation.dto.response;
 
 import com.saferoute.domain.evacuation.graph.dto.response.MapNodeResponse;
 import com.saferoute.domain.evacuation.service.EvacuationRoute;

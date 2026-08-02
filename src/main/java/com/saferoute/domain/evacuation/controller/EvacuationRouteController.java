@@ -2,7 +2,7 @@ package com.saferoute.domain.evacuation.controller;
 
 import com.saferoute.domain.evacuation.service.EvacuationRoute;
 import com.saferoute.domain.evacuation.service.EvacuationRouteService;
-import com.saferoute.domain.evacuation.service.dto.response.EvacuationRouteResponse;
+import com.saferoute.domain.evacuation.dto.response.EvacuationRouteResponse;
 import com.saferoute.global.api.response.ApiResponse;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
