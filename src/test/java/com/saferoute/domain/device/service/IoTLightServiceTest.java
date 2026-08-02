@@ -219,6 +219,24 @@ class IoTLightServiceTest {
     }
 
     @Test
+    @DisplayName("leftEdge와 rightEdge가 같으면 예외가 발생한다 (500이 아닌 400)")
+    void configureGuidance_sameLeftAndRightEdge_throws() {
+        // given
+        MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
+        IoTLight light = createLight("LIGHT_001", customNode);
+        UUID decisionNodeId = UUID.randomUUID();
+        UUID sameEdgeId = UUID.randomUUID();
+        ConfigureGuidanceRequest request = new ConfigureGuidanceRequest(decisionNodeId, sameEdgeId, sameEdgeId);
+
+        given(iotLightJpaRepository.findById(light.getId())).willReturn(Optional.of(light));
+
+        // when & then: decisionNode/엣지 조회 전에 걸러지므로 관련 mock 없이도 검증 가능
+        assertThatThrownBy(() -> iotLightService.configureGuidance(light.getId(), request))
+                .isInstanceOf(ApiException.class)
+                .hasMessage(IoTLightErrorCode.INVALID_GUIDANCE_EDGE.getMessage());
+    }
+
+    @Test
     @DisplayName("존재하지 않는 decisionNode로 설정하려 하면 예외가 발생한다")
     void configureGuidance_decisionNodeNotFound_throws() {
         // given

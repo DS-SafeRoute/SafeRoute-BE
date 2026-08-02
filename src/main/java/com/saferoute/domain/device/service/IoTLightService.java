@@ -68,6 +68,12 @@ public class IoTLightService {
     public IoTLightResponse configureGuidance(UUID lightId, ConfigureGuidanceRequest request) {
         IoTLight light = findLightOrThrow(lightId);
 
+        // leftEdge/rightEdge가 같은 엣지면 IoTLight.configureGuidance()가 IllegalArgumentException을
+        // 던지는데 GlobalExceptionHandler가 이를 500으로 처리하므로 여기서 먼저 ApiException으로 막는다.
+        if (request.leftEdgeId().equals(request.rightEdgeId())) {
+            throw new ApiException(IoTLightErrorCode.INVALID_GUIDANCE_EDGE);
+        }
+
         MapNode decisionNode = mapNodeJpaRepository.findById(request.decisionNodeId())
                 .orElseThrow(() -> new ApiException(IoTLightErrorCode.DECISION_NODE_NOT_FOUND));
         MapEdge leftEdge = mapEdgeJpaRepository.findById(request.leftEdgeId())
