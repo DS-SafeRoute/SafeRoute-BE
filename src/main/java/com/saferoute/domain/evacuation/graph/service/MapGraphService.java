@@ -58,7 +58,20 @@ public class MapGraphService {
     @Transactional
     public void deleteNode(UUID nodeId) {
         MapNode node = findNodeOrThrow(nodeId);
+        validateNotLastExitNode(node);
         mapGraphRepository.deleteNode(node);
+    }
+
+    // 대상 노드가 EXIT 대상(isExitTarget)이고, 해당 층에 남은 EXIT 대상 노드가 1개뿐이면 삭제 금지
+    // (출구가 여러 개인 층에서 하나를 지우는 정상 편집은 허용, 마지막 하나만 보호)
+    private void validateNotLastExitNode(MapNode node) {
+        if (!node.isExitTarget()) {
+            return;
+        }
+        long exitCount = mapGraphRepository.countExitTargetNodesByFloor(node.getFloor().getId());
+        if (exitCount <= 1) {
+            throw new ApiException(EvacuationErrorCode.EXIT_NODE_DELETE_NOT_ALLOWED);
+        }
     }
 
     // 엣지 연결 (fromNode가 속한 floor를 그대로 사용, room-hallway 직접 연결은 Repository에서 검증)

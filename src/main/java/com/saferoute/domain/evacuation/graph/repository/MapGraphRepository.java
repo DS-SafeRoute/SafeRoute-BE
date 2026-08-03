@@ -26,6 +26,9 @@ public interface MapGraphRepository {
     // 노드 단건 조회 (수정/삭제/엣지 생성 시 참조용)
     Optional<MapNode> findNodeById(UUID nodeId);
 
+    // 해당 층의 EXIT 대상(isExitTarget=true) 노드 개수 - 마지막 EXIT 삭제 방지 체크용
+    long countExitTargetNodesByFloor(UUID floorId);
+
     // 엣지 단건 조회 (삭제 시 참조용)
     Optional<MapEdge> findEdgeById(UUID edgeId);
 
