@@ -68,7 +68,7 @@ public class JwtTokenProvider {
 
         try {
             return Keys.hmacShaKeyFor(Decoders.BASE64.decode(encodedSecret));
-        } catch (IllegalArgumentException exception) {
+        } catch (IllegalArgumentException | io.jsonwebtoken.security.InvalidKeyException exception) {
             throw new IllegalStateException(
                     "JWT_SECRET은 Base64 인코딩된 256비트 이상의 키여야 합니다.",
                     exception

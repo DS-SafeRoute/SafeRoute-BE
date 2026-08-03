@@ -2,6 +2,7 @@ package com.saferoute.infrastructure.websocket.config;
 
 import com.saferoute.infrastructure.websocket.security.StompAuthChannelInterceptor;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
@@ -19,6 +20,10 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final StompAuthChannelInterceptor stompAuthChannelInterceptor;
 
+    // 관리자 대시보드 Origin만 허용
+    @Value("${websocket.allowed-origin-patterns:*}")
+    private String[] allowedOriginPatterns;
+
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         // 브라우저 STOMP 클라이언트에서 Authorization 헤더는 CONNECT 프레임으로 전달되므로
@@ -29,7 +34,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         // (allowedOriginPatterns("*")와 allowCredentials(true)를 함께 쓰지 않기 위함)
         // 프론트가 SockJS fallback을 요구하면 이후 .withSockJS()를 추가한다.
         registry.addEndpoint("/ws")
-                .setAllowedOriginPatterns("*");
+                .setAllowedOriginPatterns(allowedOriginPatterns);
     }
 
     @Override

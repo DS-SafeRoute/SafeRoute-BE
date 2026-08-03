@@ -21,10 +21,19 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
+    private static final String WEBSOCKET_PATH_PREFIX = "/ws";
 
     private final JwtTokenProvider jwtTokenProvider;
     private final CustomUserDetailsService userDetailsService;
     private final JwtAuthenticationEntryPoint authenticationEntryPoint;
+
+    // WebSocket handshake(/ws)는 STOMP CONNECT 프레임 단계(StompAuthChannelInterceptor)에서별도로 인증한다.
+    // 이 필터가 handshake 요청까지 처리하면, Authorization 헤더가 없거나 형식이 이상한 경우 handshake 자체가 여기서 401로 막혀버려
+    // STOMP 레이어까지 요청이 도달하지 못한다.
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        return request.getRequestURI().startsWith(WEBSOCKET_PATH_PREFIX);
+    }
 
     @Override
     protected void doFilterInternal(

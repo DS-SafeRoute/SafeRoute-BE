@@ -36,3 +36,12 @@ aws:
   s3:
     bucket: ${S3_BUCKET:project10-87-ohio-s3}
     presigned-url-expiration: 1m
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never

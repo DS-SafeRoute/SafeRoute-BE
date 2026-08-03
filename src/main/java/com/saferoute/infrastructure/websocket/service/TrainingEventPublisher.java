@@ -46,6 +46,11 @@ public class TrainingEventPublisher {
 
     // DB 트랜잭션이 실제로 커밋된 이후에만 이벤트를 발행한다.
     // 트랜잭션이 롤백되면 발행하지 않는다.
+    // afterCommit() 콜백은 커밋이 끝난 뒤 같은 스레드에서 즉시 실행되므로,
+    // 여기서 예외가 그대로 튀어나가면 DB 반영은 이미 끝났는데도 호출자에게는
+    // 마치 요청 전체가 실패한 것처럼 보일 수 있다. 그래서 발행 실패는 여기서
+    // 잡아서 로그만 남기고 삼킨다 — WebSocket 발행 실패가 REST 응답/트랜잭션
+    // 성공 여부에 영향을 주면 안 되기 때문이다.
     public void publishTrainingStatusUpdatedAfterCommit(TrainingSession session) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
             publishTrainingStatusUpdated(session);
@@ -56,7 +61,15 @@ public class TrainingEventPublisher {
                 new TransactionSynchronization() {
                     @Override
                     public void afterCommit() {
-                        publishTrainingStatusUpdated(session);
+                        try {
+                            publishTrainingStatusUpdated(session);
+                        } catch (RuntimeException exception) {
+                            log.error(
+                                    "커밋 후 훈련 상태 이벤트 발행 실패: sessionId={}",
+                                    session.getId(),
+                                    exception
+                            );
+                        }
                     }
                 }
         );
