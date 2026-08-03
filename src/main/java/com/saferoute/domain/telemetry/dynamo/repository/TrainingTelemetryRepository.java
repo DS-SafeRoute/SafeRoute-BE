@@ -9,11 +9,13 @@ import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
+import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
 
 @Repository
 public class TrainingTelemetryRepository {
 
     private static final String SORT_KEY_PREFIX = "TELEMETRY#";
+    static final int DEFAULT_QUERY_LIMIT = 100;
 
     private final DynamoDbTable<TrainingTelemetryItem> table;
 
@@ -32,6 +34,13 @@ public class TrainingTelemetryRepository {
     }
 
     public List<TrainingTelemetryItem> findAllBySessionId(String sessionId) {
+        return findAllBySessionId(sessionId, DEFAULT_QUERY_LIMIT);
+    }
+
+    public List<TrainingTelemetryItem> findAllBySessionId(
+            String sessionId,
+            int limit
+    ) {
         QueryConditional condition = QueryConditional.sortBeginsWith(
                 Key.builder()
                         .partitionValue(TrainingTelemetryItem.buildPk(sessionId))
@@ -39,10 +48,18 @@ public class TrainingTelemetryRepository {
                         .build()
         );
 
-        return table.query(condition)
-                .items()
+        validateLimit(limit);
+
+        QueryEnhancedRequest request = QueryEnhancedRequest.builder()
+                .queryConditional(condition)
+                .limit(limit)
+                .build();
+
+        return table.query(request)
                 .stream()
-                .toList();
+                .findFirst()
+                .map(page -> page.items())
+                .orElseGet(List::of);
     }
 
     public void delete(TrainingTelemetryItem item) {
@@ -52,5 +69,13 @@ public class TrainingTelemetryRepository {
                         .sortValue(item.getSk())
                         .build()
         );
+    }
+
+    private void validateLimit(int limit) {
+        if (limit <= 0) {
+            throw new IllegalArgumentException(
+                    "limit must be greater than zero"
+            );
+        }
     }
 }

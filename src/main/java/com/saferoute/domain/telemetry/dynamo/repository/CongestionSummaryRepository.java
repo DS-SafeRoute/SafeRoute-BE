@@ -9,11 +9,13 @@ import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
+import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
 
 @Repository
 public class CongestionSummaryRepository {
 
     private static final String SORT_KEY_PREFIX = "CONGESTION_SUMMARY#";
+    static final int DEFAULT_QUERY_LIMIT = 100;
 
     private final DynamoDbTable<CongestionSummaryItem> table;
 
@@ -32,6 +34,13 @@ public class CongestionSummaryRepository {
     }
 
     public List<CongestionSummaryItem> findAllBySessionId(String sessionId) {
+        return findAllBySessionId(sessionId, DEFAULT_QUERY_LIMIT);
+    }
+
+    public List<CongestionSummaryItem> findAllBySessionId(
+            String sessionId,
+            int limit
+    ) {
         QueryConditional condition = QueryConditional.sortBeginsWith(
                 Key.builder()
                         .partitionValue(CongestionSummaryItem.buildPk(sessionId))
@@ -39,15 +48,24 @@ public class CongestionSummaryRepository {
                         .build()
         );
 
-        return table.query(condition)
-                .items()
-                .stream()
-                .toList();
+        return queryFirstPage(condition, limit);
     }
 
     public List<CongestionSummaryItem> findAllBySessionIdAndEdgeId(
             String sessionId,
             String edgeId
+    ) {
+        return findAllBySessionIdAndEdgeId(
+                sessionId,
+                edgeId,
+                DEFAULT_QUERY_LIMIT
+        );
+    }
+
+    public List<CongestionSummaryItem> findAllBySessionIdAndEdgeId(
+            String sessionId,
+            String edgeId,
+            int limit
     ) {
         String edgePrefix = SORT_KEY_PREFIX + edgeId + "#";
 
@@ -58,10 +76,7 @@ public class CongestionSummaryRepository {
                         .build()
         );
 
-        return table.query(condition)
-                .items()
-                .stream()
-                .toList();
+        return queryFirstPage(condition, limit);
     }
 
     public void delete(CongestionSummaryItem item) {
@@ -71,5 +86,31 @@ public class CongestionSummaryRepository {
                         .sortValue(item.getSk())
                         .build()
         );
+    }
+
+    private List<CongestionSummaryItem> queryFirstPage(
+            QueryConditional condition,
+            int limit
+    ) {
+        validateLimit(limit);
+
+        QueryEnhancedRequest request = QueryEnhancedRequest.builder()
+                .queryConditional(condition)
+                .limit(limit)
+                .build();
+
+        return table.query(request)
+                .stream()
+                .findFirst()
+                .map(page -> page.items())
+                .orElseGet(List::of);
+    }
+
+    private void validateLimit(int limit) {
+        if (limit <= 0) {
+            throw new IllegalArgumentException(
+                    "limit must be greater than zero"
+            );
+        }
     }
 }
