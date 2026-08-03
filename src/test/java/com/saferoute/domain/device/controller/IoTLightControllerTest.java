@@ -19,6 +19,8 @@ import com.saferoute.domain.device.service.IoTLightService;
 import com.saferoute.global.api.error.FloorErrorCode;
 import com.saferoute.global.api.error.IoTLightErrorCode;
 import com.saferoute.global.api.exception.ApiException;
+import com.saferoute.global.config.SecurityConfig;
+import com.saferoute.global.security.JwtAuthenticationFilter;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -26,10 +28,22 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.FilterType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-@WebMvcTest(IoTLightController.class)
+// JwtAuthenticationFilter는 Filter 타입이라 @WebMvcTest 슬라이스에 기본으로 딸려 들어오는데,
+// 그 생성자가 필요로 하는 JwtTokenProvider/CustomUserDetailsService/JwtAuthenticationEntryPoint는
+// 평범한 @Component/@Service라 슬라이스에 안 올라와서 NoSuchBeanDefinitionException이 난다.
+// addFilters=false로 어차피 필터를 실제로 적용하지 않으므로, 필터/보안 설정 자체를 슬라이스에서 뺀다.
+@WebMvcTest(
+        controllers = IoTLightController.class,
+        excludeFilters = @ComponentScan.Filter(
+                type = FilterType.ASSIGNABLE_TYPE,
+                classes = {JwtAuthenticationFilter.class, SecurityConfig.class}
+        )
+)
 @AutoConfigureMockMvc(addFilters = false)
 class IoTLightControllerTest {
 
@@ -55,11 +69,9 @@ class IoTLightControllerTest {
     @Test
     @DisplayName("POST /lights - 유도등을 등록하면 201을 반환한다")
     void createLight_success() throws Exception {
-        // given
         CreateIoTLightRequest request = new CreateIoTLightRequest(floorId, "복도1 유도등", 0.3, 0.4);
         given(iotLightService.createLight(any())).willReturn(sampleResponse());
 
-        // when & then
         mockMvc.perform(post("/api/v1/lights")
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
@@ -71,12 +83,10 @@ class IoTLightControllerTest {
     @Test
     @DisplayName("POST /lights - 층이 없으면 404를 반환한다")
     void createLight_floorNotFound() throws Exception {
-        // given
         CreateIoTLightRequest request = new CreateIoTLightRequest(floorId, "복도1 유도등", 0.3, 0.4);
         given(iotLightService.createLight(any()))
                 .willThrow(new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
 
-        // when & then
         mockMvc.perform(post("/api/v1/lights")
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
