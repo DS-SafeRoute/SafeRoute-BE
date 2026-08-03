@@ -11,6 +11,11 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.H2Dialect
 
+jwt:
+  secret: c2FmZXJvdXRlLXRlc3Qtand0LXNlY3JldC1rZXktMzItYnl0ZXM=
+  issuer: saferoute
+  access-token-expiration: 1h
+
 # S3Config 는 컨텍스트 로딩 시점에 값이 필요하므로 더미값을 넣는다.
 # 실제 S3 호출은 테스트에서 하지 않으므로 아무 값이나 형식만 맞으면 된다.
 aws:

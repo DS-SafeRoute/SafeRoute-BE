@@ -26,8 +26,22 @@ springdoc:
     operations-sorter: method
     tags-sorter: alpha
 
+jwt:
+  secret: ${JWT_SECRET}
+  issuer: saferoute
+  access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION:1h}
+
 aws:
   region: ${AWS_REGION:us-east-2}
   s3:
     bucket: ${S3_BUCKET:project10-87-ohio-s3}
     presigned-url-expiration: 1m
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never

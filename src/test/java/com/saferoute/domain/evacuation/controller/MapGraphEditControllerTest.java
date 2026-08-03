@@ -27,12 +27,18 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-@WebMvcTest(MapGraphEditController.class)
-@AutoConfigureMockMvc(addFilters = false)
+@SpringBootTest
+@AutoConfigureMockMvc
+@WithMockUser(
+        username = "manager@test.com",
+        roles = "MANAGER"
+)
 class MapGraphEditControllerTest {
 
     @Autowired
@@ -48,20 +54,64 @@ class MapGraphEditControllerTest {
     private final UUID nodeId = UUID.randomUUID();
     private final UUID edgeId = UUID.randomUUID();
 
-    // === createNode ===
+    @Test
+    @WithMockUser(username = "normal@test.com", roles = "NORMAL")
+    @DisplayName("일반 사용자는 노드를 생성할 수 없다")
+    void createNode_normalUser_returnsForbidden() throws Exception {
+        mockMvc.perform(post("/api/v1/floors/{floorId}/nodes", floorId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                            {
+                              "code": "ROOM1",
+                              "type": "ROOM",
+                              "name": "방1",
+                              "x": 0,
+                              "y": 0,
+                              "isExitTarget": false
+                            }
+                            """))
+                .andExpect(status().isForbidden());
+    }
 
     @Test
     @DisplayName("POST /nodes - 노드를 생성하면 201을 반환한다")
     void createNode_success() throws Exception {
-        // given
-        CreateMapNodeRequest request = new CreateMapNodeRequest("ROOM1", NodeType.ROOM, "방1", 0.0, 0.0, false);
-        MapNodeResponse response = new MapNodeResponse(nodeId, "ROOM1", NodeType.ROOM, "방1", 0.0, 0.0, false);
-        given(mapGraphService.createNode(eq(floorId), any())).willReturn(response);
+        CreateMapNodeRequest request = new CreateMapNodeRequest(
+                "ROOM1",
+                NodeType.ROOM,
+                "방1",
+                0.0,
+                0.0,
+                false
+        );
 
-        // when & then
-        mockMvc.perform(post("/api/v1/floors/{floorId}/nodes", floorId)
-                        .contentType("application/json")
-                        .content(objectMapper.writeValueAsString(request)))
+        MapNodeResponse response = new MapNodeResponse(
+                nodeId,
+                "ROOM1",
+                NodeType.ROOM,
+                "방1",
+                0.0,
+                0.0,
+                false
+        );
+
+        given(
+                mapGraphService.createNode(
+                        eq(floorId),
+                        any()
+                )
+        ).willReturn(response);
+
+        mockMvc.perform(
+                        post(
+                                "/api/v1/floors/{floorId}/nodes",
+                                floorId
+                        )
+                                .contentType("application/json")
+                                .content(
+                                        objectMapper.writeValueAsString(request)
+                                )
+                )
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.isSuccess").value(true))
                 .andExpect(jsonPath("$.result.code").value("ROOM1"));
@@ -70,48 +120,106 @@ class MapGraphEditControllerTest {
     @Test
     @DisplayName("POST /nodes - code가 비어있으면 400을 반환한다")
     void createNode_blankCode_returnsBadRequest() throws Exception {
-        // given: code가 빈 문자열이라 @NotBlank 검증에 걸림
         String invalidJson = """
-                {"code":"","type":"ROOM","name":"방1","x":0,"y":0,"isExitTarget":false}
+                {
+                  "code": "",
+                  "type": "ROOM",
+                  "name": "방1",
+                  "x": 0,
+                  "y": 0,
+                  "isExitTarget": false
+                }
                 """;
 
-        // when & then
-        mockMvc.perform(post("/api/v1/floors/{floorId}/nodes", floorId)
-                        .contentType("application/json")
-                        .content(invalidJson))
+        mockMvc.perform(
+                        post(
+                                "/api/v1/floors/{floorId}/nodes",
+                                floorId
+                        )
+                                .contentType("application/json")
+                                .content(invalidJson)
+                )
                 .andExpect(status().isBadRequest());
     }
 
     @Test
     @DisplayName("POST /nodes - 층이 없으면 404를 반환한다")
     void createNode_floorNotFound() throws Exception {
-        // given
-        CreateMapNodeRequest request = new CreateMapNodeRequest("ROOM1", NodeType.ROOM, "방1", 0.0, 0.0, false);
-        given(mapGraphService.createNode(eq(floorId), any()))
-                .willThrow(new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
+        CreateMapNodeRequest request = new CreateMapNodeRequest(
+                "ROOM1",
+                NodeType.ROOM,
+                "방1",
+                0.0,
+                0.0,
+                false
+        );
 
-        // when & then
-        mockMvc.perform(post("/api/v1/floors/{floorId}/nodes", floorId)
-                        .contentType("application/json")
-                        .content(objectMapper.writeValueAsString(request)))
+        given(
+                mapGraphService.createNode(
+                        eq(floorId),
+                        any()
+                )
+        ).willThrow(
+                new ApiException(
+                        FloorErrorCode.FLOOR_NOT_FOUND
+                )
+        );
+
+        mockMvc.perform(
+                        post(
+                                "/api/v1/floors/{floorId}/nodes",
+                                floorId
+                        )
+                                .contentType("application/json")
+                                .content(
+                                        objectMapper.writeValueAsString(request)
+                                )
+                )
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.message", containsString("도면을 찾을 수 없습니다")));
+                .andExpect(
+                        jsonPath(
+                                "$.message",
+                                containsString("도면을 찾을 수 없습니다")
+                        )
+                );
     }
-
-    // === updateNodePosition ===
 
     @Test
     @DisplayName("PATCH /nodes/{nodeId} - 위치를 수정하면 200을 반환한다")
     void updateNodePosition_success() throws Exception {
-        // given
-        UpdateMapNodePositionRequest request = new UpdateMapNodePositionRequest(10.0, 20.0);
-        MapNodeResponse response = new MapNodeResponse(nodeId, "ROOM1", NodeType.ROOM, "방1", 10.0, 20.0, false);
-        given(mapGraphService.updateNodePosition(eq(nodeId), any())).willReturn(response);
+        UpdateMapNodePositionRequest request =
+                new UpdateMapNodePositionRequest(
+                        10.0,
+                        20.0
+                );
 
-        // when & then
-        mockMvc.perform(patch("/api/v1/nodes/{nodeId}", nodeId)
-                        .contentType("application/json")
-                        .content(objectMapper.writeValueAsString(request)))
+        MapNodeResponse response = new MapNodeResponse(
+                nodeId,
+                "ROOM1",
+                NodeType.ROOM,
+                "방1",
+                10.0,
+                20.0,
+                false
+        );
+
+        given(
+                mapGraphService.updateNodePosition(
+                        eq(nodeId),
+                        any()
+                )
+        ).willReturn(response);
+
+        mockMvc.perform(
+                        patch(
+                                "/api/v1/nodes/{nodeId}",
+                                nodeId
+                        )
+                                .contentType("application/json")
+                                .content(
+                                        objectMapper.writeValueAsString(request)
+                                )
+                )
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.x").value(10.0))
                 .andExpect(jsonPath("$.result.y").value(20.0));
@@ -120,25 +228,45 @@ class MapGraphEditControllerTest {
     @Test
     @DisplayName("PATCH /nodes/{nodeId} - 노드가 없으면 404를 반환한다")
     void updateNodePosition_notFound() throws Exception {
-        // given
-        UpdateMapNodePositionRequest request = new UpdateMapNodePositionRequest(10.0, 20.0);
-        given(mapGraphService.updateNodePosition(eq(nodeId), any()))
-                .willThrow(new ApiException(EvacuationErrorCode.MAP_NODE_NOT_FOUND));
+        UpdateMapNodePositionRequest request =
+                new UpdateMapNodePositionRequest(
+                        10.0,
+                        20.0
+                );
 
-        // when & then
-        mockMvc.perform(patch("/api/v1/nodes/{nodeId}", nodeId)
-                        .contentType("application/json")
-                        .content(objectMapper.writeValueAsString(request)))
+        given(
+                mapGraphService.updateNodePosition(
+                        eq(nodeId),
+                        any()
+                )
+        ).willThrow(
+                new ApiException(
+                        EvacuationErrorCode.MAP_NODE_NOT_FOUND
+                )
+        );
+
+        mockMvc.perform(
+                        patch(
+                                "/api/v1/nodes/{nodeId}",
+                                nodeId
+                        )
+                                .contentType("application/json")
+                                .content(
+                                        objectMapper.writeValueAsString(request)
+                                )
+                )
                 .andExpect(status().isNotFound());
     }
-
-    // === deleteNode ===
 
     @Test
     @DisplayName("DELETE /nodes/{nodeId} - 노드를 삭제하면 200을 반환한다")
     void deleteNode_success() throws Exception {
-        // when & then
-        mockMvc.perform(delete("/api/v1/nodes/{nodeId}", nodeId))
+        mockMvc.perform(
+                        delete(
+                                "/api/v1/nodes/{nodeId}",
+                                nodeId
+                        )
+                )
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true));
     }
@@ -146,12 +274,18 @@ class MapGraphEditControllerTest {
     @Test
     @DisplayName("DELETE /nodes/{nodeId} - 노드가 없으면 404를 반환한다")
     void deleteNode_notFound() throws Exception {
-        // given
-        Mockito.doThrow(new ApiException(EvacuationErrorCode.MAP_NODE_NOT_FOUND))
-                .when(mapGraphService).deleteNode(nodeId);
+        Mockito.doThrow(
+                new ApiException(
+                        EvacuationErrorCode.MAP_NODE_NOT_FOUND
+                )
+        ).when(mapGraphService).deleteNode(nodeId);
 
-        // when & then
-        mockMvc.perform(delete("/api/v1/nodes/{nodeId}", nodeId))
+        mockMvc.perform(
+                        delete(
+                                "/api/v1/nodes/{nodeId}",
+                                nodeId
+                        )
+                )
                 .andExpect(status().isNotFound());
     }
 
@@ -168,22 +302,38 @@ class MapGraphEditControllerTest {
                 .andExpect(jsonPath("$.message", containsString("마지막 출구 노드")));
     }
 
-    // === createEdge ===
-
     @Test
     @DisplayName("POST /edges - 엣지를 생성하면 201을 반환한다")
     void createEdge_success() throws Exception {
-        // given
         UUID fromNodeId = UUID.randomUUID();
         UUID toNodeId = UUID.randomUUID();
-        CreateMapEdgeRequest request = new CreateMapEdgeRequest(fromNodeId, toNodeId, 5.0, true);
-        MapEdgeResponse response = new MapEdgeResponse(edgeId, fromNodeId, toNodeId, 5.0, true);
-        given(mapGraphService.createEdge(any())).willReturn(response);
 
-        // when & then
-        mockMvc.perform(post("/api/v1/edges")
-                        .contentType("application/json")
-                        .content(objectMapper.writeValueAsString(request)))
+        CreateMapEdgeRequest request = new CreateMapEdgeRequest(
+                fromNodeId,
+                toNodeId,
+                5.0,
+                true
+        );
+
+        MapEdgeResponse response = new MapEdgeResponse(
+                edgeId,
+                fromNodeId,
+                toNodeId,
+                5.0,
+                true
+        );
+
+        given(
+                mapGraphService.createEdge(any())
+        ).willReturn(response);
+
+        mockMvc.perform(
+                        post("/api/v1/edges")
+                                .contentType("application/json")
+                                .content(
+                                        objectMapper.writeValueAsString(request)
+                                )
+                )
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.result.distance").value(5.0));
     }
@@ -191,26 +341,46 @@ class MapGraphEditControllerTest {
     @Test
     @DisplayName("POST /edges - room-hallway 직접 연결이면 400을 반환한다")
     void createEdge_invalidConnection_returnsBadRequest() throws Exception {
-        // given
-        CreateMapEdgeRequest request = new CreateMapEdgeRequest(UUID.randomUUID(), UUID.randomUUID(), 5.0, true);
-        given(mapGraphService.createEdge(any()))
-                .willThrow(new ApiException(EvacuationErrorCode.INVALID_MAP_EDGE_CONNECTION));
+        CreateMapEdgeRequest request = new CreateMapEdgeRequest(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                5.0,
+                true
+        );
 
-        // when & then
-        mockMvc.perform(post("/api/v1/edges")
-                        .contentType("application/json")
-                        .content(objectMapper.writeValueAsString(request)))
+        given(
+                mapGraphService.createEdge(any())
+        ).willThrow(
+                new ApiException(
+                        EvacuationErrorCode.INVALID_MAP_EDGE_CONNECTION
+                )
+        );
+
+        mockMvc.perform(
+                        post("/api/v1/edges")
+                                .contentType("application/json")
+                                .content(
+                                        objectMapper.writeValueAsString(request)
+                                )
+                )
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message", containsString("DOOR 노드를 통해서만")));
+                .andExpect(
+                        jsonPath(
+                                "$.message",
+                                containsString("DOOR 노드를 통해서만")
+                        )
+                );
     }
-
-    // === deleteEdge ===
 
     @Test
     @DisplayName("DELETE /edges/{edgeId} - 엣지를 삭제하면 200을 반환한다")
     void deleteEdge_success() throws Exception {
-        // when & then
-        mockMvc.perform(delete("/api/v1/edges/{edgeId}", edgeId))
+        mockMvc.perform(
+                        delete(
+                                "/api/v1/edges/{edgeId}",
+                                edgeId
+                        )
+                )
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true));
     }
@@ -218,12 +388,18 @@ class MapGraphEditControllerTest {
     @Test
     @DisplayName("DELETE /edges/{edgeId} - 엣지가 없으면 404를 반환한다")
     void deleteEdge_notFound() throws Exception {
-        // given
-        Mockito.doThrow(new ApiException(EvacuationErrorCode.MAP_EDGE_NOT_FOUND))
-                .when(mapGraphService).deleteEdge(edgeId);
+        Mockito.doThrow(
+                new ApiException(
+                        EvacuationErrorCode.MAP_EDGE_NOT_FOUND
+                )
+        ).when(mapGraphService).deleteEdge(edgeId);
 
-        // when & then
-        mockMvc.perform(delete("/api/v1/edges/{edgeId}", edgeId))
+        mockMvc.perform(
+                        delete(
+                                "/api/v1/edges/{edgeId}",
+                                edgeId
+                        )
+                )
                 .andExpect(status().isNotFound());
     }
 }
