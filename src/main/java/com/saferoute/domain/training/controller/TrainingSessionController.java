@@ -2,8 +2,6 @@ package com.saferoute.domain.training.controller;
 
 import com.saferoute.domain.training.dto.CreateSessionRequest;
 import com.saferoute.domain.training.dto.TrainingSessionResponse;
-import com.saferoute.domain.training.entity.TrainingSession;
-import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.training.service.TrainingSessionService;
 import java.util.UUID;
 
