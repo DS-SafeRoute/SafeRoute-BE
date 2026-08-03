@@ -2,6 +2,7 @@ package com.saferoute.domain.telemetry.dynamo.repository;
 
 import com.saferoute.domain.telemetry.dynamo.entity.TrainingEventItem;
 import java.util.List;
+import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Repository;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
@@ -37,10 +38,7 @@ public class TrainingEventRepository {
         return findAllBySessionId(sessionId, DEFAULT_QUERY_LIMIT);
     }
 
-    public List<TrainingEventItem> findAllBySessionId(
-            String sessionId,
-            int limit
-    ) {
+    public List<TrainingEventItem> findAllBySessionId(String sessionId, int limit) {
         QueryConditional condition = QueryConditional.sortBeginsWith(
                 Key.builder()
                         .partitionValue(TrainingEventItem.buildPk(sessionId))
@@ -56,10 +54,10 @@ public class TrainingEventRepository {
                 .build();
 
         return table.query(request)
+                .items()
                 .stream()
-                .findFirst()
-                .map(page -> page.items())
-                .orElseGet(List::of);
+                .limit(limit)
+                .collect(Collectors.toList());
     }
 
     public void delete(TrainingEventItem item) {
@@ -73,9 +71,7 @@ public class TrainingEventRepository {
 
     private void validateLimit(int limit) {
         if (limit <= 0) {
-            throw new IllegalArgumentException(
-                    "limit must be greater than zero"
-            );
+            throw new IllegalArgumentException("limit은 0보다 커야합니다.");
         }
     }
 }
