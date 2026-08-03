@@ -22,13 +22,18 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
-@WebMvcTest(MapGraphController.class)
-@AutoConfigureMockMvc(addFilters = false) // Security 필터는 HTTP 매핑/예외 응답 검증과 무관하니 비활성화
+@SpringBootTest
+@AutoConfigureMockMvc
+@WithMockUser(
+        username = "normal@test.com",
+        roles = "MANAGER"
+)
 class MapGraphControllerTest {
 
     @Autowired
@@ -38,6 +43,7 @@ class MapGraphControllerTest {
     private MapGraphService mapGraphService;
 
     private final UUID floorId = UUID.randomUUID();
+
     private Floor floor;
     private MapNode room1;
     private MapNode door1;
@@ -49,28 +55,72 @@ class MapGraphControllerTest {
         door1 = createNode("DOOR1", NodeType.DOOR, true);
     }
 
-    private MapNode createNode(String code, NodeType type, boolean isExitTarget) {
-        MapNode node = MapNode.create(floor, code, type, code, 0, 0, isExitTarget);
-        ReflectionTestUtils.setField(node, "id", UUID.randomUUID());
+    private MapNode createNode(
+            String code,
+            NodeType type,
+            boolean isExitTarget
+    ) {
+        MapNode node = MapNode.create(
+                floor,
+                code,
+                type,
+                code,
+                0,
+                0,
+                isExitTarget
+        );
+
+        ReflectionTestUtils.setField(
+                node,
+                "id",
+                UUID.randomUUID()
+        );
+
         return node;
     }
 
-    private MapEdge createEdge(MapNode from, MapNode to, double distance) {
-        MapEdge edge = MapEdge.create(floor, from, to, distance, true);
-        ReflectionTestUtils.setField(edge, "id", UUID.randomUUID());
+    private MapEdge createEdge(
+            MapNode from,
+            MapNode to,
+            double distance
+    ) {
+        MapEdge edge = MapEdge.create(
+                floor,
+                from,
+                to,
+                distance,
+                true
+        );
+
+        ReflectionTestUtils.setField(
+                edge,
+                "id",
+                UUID.randomUUID()
+        );
+
         return edge;
     }
 
     @Test
     @DisplayName("GET /graph - 층의 노드/엣지 전체를 반환한다")
     void getGraph_success() throws Exception {
-        // given
         MapEdge edge = createEdge(room1, door1, 2);
-        given(mapGraphService.getFloorGraph(floorId))
-                .willReturn(FloorGraphResponse.of(List.of(room1, door1), List.of(edge)));
 
-        // when & then
-        mockMvc.perform(get("/api/v1/floors/{floorId}/graph", floorId))
+        given(
+                mapGraphService.getFloorGraph(floorId)
+        ).willReturn(
+                FloorGraphResponse.of(
+                        List.of(room1, door1),
+                        List.of(edge)
+                )
+        );
+
+        mockMvc.perform(
+                        get(
+                                "/api/v1/floors/{floorId}/graph",
+                                floorId
+                        )
+                )
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true))
                 .andExpect(jsonPath("$.result.nodes.length()").value(2))
@@ -82,13 +132,27 @@ class MapGraphControllerTest {
     @Test
     @DisplayName("GET /graph - 층이 없으면 404를 반환한다")
     void getGraph_floorNotFound() throws Exception {
-        // given
-        given(mapGraphService.getFloorGraph(floorId)).willThrow(new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
+        given(
+                mapGraphService.getFloorGraph(floorId)
+        ).willThrow(
+                new ApiException(
+                        FloorErrorCode.FLOOR_NOT_FOUND
+                )
+        );
 
-        // when & then
-        mockMvc.perform(get("/api/v1/floors/{floorId}/graph", floorId))
+        mockMvc.perform(
+                        get(
+                                "/api/v1/floors/{floorId}/graph",
+                                floorId
+                        )
+                )
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.isSuccess").value(false))
-                .andExpect(jsonPath("$.message", containsString("도면을 찾을 수 없습니다")));
+                .andExpect(
+                        jsonPath(
+                                "$.message",
+                                containsString("도면을 찾을 수 없습니다")
+                        )
+                );
     }
 }

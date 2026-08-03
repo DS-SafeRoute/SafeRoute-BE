@@ -26,6 +26,11 @@ springdoc:
     operations-sorter: method
     tags-sorter: alpha
 
+jwt:
+  secret: ${JWT_SECRET}
+  issuer: saferoute
+  access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION:1h}
+
 aws:
   region: ${AWS_REGION:us-east-2}
 
@@ -35,3 +40,12 @@ aws:
 
   dynamodb:
     table-name: ${DYNAMODB_TABLE:saferoute-telemetry}
+    
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
