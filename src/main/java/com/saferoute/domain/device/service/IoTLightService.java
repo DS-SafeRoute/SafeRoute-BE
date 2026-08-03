@@ -36,21 +36,25 @@ public class IoTLightService {
         Floor floor = floorRepository.findById(request.floorId())
                 .orElseThrow(() -> new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
 
-        if (iotLightJpaRepository.existsByCode(request.code())) {
-            throw new ApiException(IoTLightErrorCode.DUPLICATE_LIGHT_CODE);
-        }
+        String code = generateLightCode();
 
         // customNode의 code/name은 유도등 자체의 code/name을 그대로 사용한다.
         // IoTLight.code는 시스템 전역 유일이 보장되므로 MapNode의 (floor, code) 유니크 제약도 자동 충족된다.
         MapNode customNode = mapNodeJpaRepository.save(
-                MapNode.createCustom(floor, request.code(), request.name(), request.x(), request.y())
+                MapNode.createCustom(floor, code, request.name(), request.x(), request.y())
         );
 
         IoTLight light = iotLightJpaRepository.save(
-                IoTLight.create(request.code(), request.name(), customNode)
+                IoTLight.create(code, request.name(), customNode)
         );
 
         return IoTLightResponse.from(light);
+    }
+
+    // 유도등 code는 기기가 보고하는 시리얼이 아니라 서버가 등록 시점에 채번하는 식별자다 (예: LIGHT_001).
+    private String generateLightCode() {
+        long seq = iotLightJpaRepository.count() + 1;
+        return "LIGHT_%03d".formatted(seq);
     }
 
     @Transactional(readOnly = true)

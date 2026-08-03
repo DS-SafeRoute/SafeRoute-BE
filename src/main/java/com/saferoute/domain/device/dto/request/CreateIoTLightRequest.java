@@ -6,7 +6,6 @@ import java.util.UUID;
 
 public record CreateIoTLightRequest(
         @NotNull UUID floorId,
-        @NotBlank String code,
         @NotBlank String name,
         @NotNull Double x,
         @NotNull Double y

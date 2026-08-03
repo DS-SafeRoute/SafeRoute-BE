@@ -56,7 +56,7 @@ class IoTLightControllerTest {
     @DisplayName("POST /lights - 유도등을 등록하면 201을 반환한다")
     void createLight_success() throws Exception {
         // given
-        CreateIoTLightRequest request = new CreateIoTLightRequest(floorId, "LIGHT_001", "복도1 유도등", 0.3, 0.4);
+        CreateIoTLightRequest request = new CreateIoTLightRequest(floorId, "복도1 유도등", 0.3, 0.4);
         given(iotLightService.createLight(any())).willReturn(sampleResponse());
 
         // when & then
@@ -72,7 +72,7 @@ class IoTLightControllerTest {
     @DisplayName("POST /lights - 층이 없으면 404를 반환한다")
     void createLight_floorNotFound() throws Exception {
         // given
-        CreateIoTLightRequest request = new CreateIoTLightRequest(floorId, "LIGHT_001", "복도1 유도등", 0.3, 0.4);
+        CreateIoTLightRequest request = new CreateIoTLightRequest(floorId, "복도1 유도등", 0.3, 0.4);
         given(iotLightService.createLight(any()))
                 .willThrow(new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
 
@@ -85,10 +85,10 @@ class IoTLightControllerTest {
     }
 
     @Test
-    @DisplayName("POST /lights - code가 비어있으면 400을 반환한다")
-    void createLight_blankCode_returnsBadRequest() throws Exception {
+    @DisplayName("POST /lights - name이 비어있으면 400을 반환한다")
+    void createLight_blankName_returnsBadRequest() throws Exception {
         String invalidJson = """
-                {"floorId":"%s","code":"","name":"복도1 유도등","x":0.3,"y":0.4}
+                {"floorId":"%s","name":"","x":0.3,"y":0.4}
                 """.formatted(floorId);
 
         mockMvc.perform(post("/api/v1/lights")

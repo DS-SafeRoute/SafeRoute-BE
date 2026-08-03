@@ -86,12 +86,12 @@ class IoTLightServiceTest {
     @DisplayName("유도등을 등록하면 도면 위치 노드가 함께 생성된다")
     void createLight_success() {
         // given
-        CreateIoTLightRequest request = new CreateIoTLightRequest(floorId, "LIGHT_001", "복도1 유도등", 0.3, 0.4);
+        CreateIoTLightRequest request = new CreateIoTLightRequest(floorId, "복도1 유도등", 0.3, 0.4);
         MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
         IoTLight savedLight = createLight("LIGHT_001", customNode);
 
         given(floorRepository.findById(floorId)).willReturn(Optional.of(floor));
-        given(iotLightJpaRepository.existsByCode("LIGHT_001")).willReturn(false);
+        given(iotLightJpaRepository.count()).willReturn(0L);
         given(mapNodeJpaRepository.save(any(MapNode.class))).willReturn(customNode);
         given(iotLightJpaRepository.save(any(IoTLight.class))).willReturn(savedLight);
 
@@ -105,30 +105,36 @@ class IoTLightServiceTest {
     }
 
     @Test
+    @DisplayName("등록할 때마다 code가 순번대로 자동 생성된다")
+    void createLight_generatesSequentialCode() {
+        // given
+        CreateIoTLightRequest request = new CreateIoTLightRequest(floorId, "복도1 유도등", 0.3, 0.4);
+        MapNode customNode = createNode("LIGHT_006", NodeType.CUSTOM);
+        IoTLight savedLight = createLight("LIGHT_006", customNode);
+
+        given(floorRepository.findById(floorId)).willReturn(Optional.of(floor));
+        given(iotLightJpaRepository.count()).willReturn(5L);
+        given(mapNodeJpaRepository.save(any(MapNode.class))).willReturn(customNode);
+        given(iotLightJpaRepository.save(any(IoTLight.class))).willReturn(savedLight);
+
+        // when
+        IoTLightResponse response = iotLightService.createLight(request);
+
+        // then
+        assertThat(response.code()).isEqualTo("LIGHT_006");
+    }
+
+    @Test
     @DisplayName("존재하지 않는 층에 등록하려 하면 예외가 발생한다")
     void createLight_floorNotFound_throws() {
         // given
-        CreateIoTLightRequest request = new CreateIoTLightRequest(floorId, "LIGHT_001", "복도1 유도등", 0.3, 0.4);
+        CreateIoTLightRequest request = new CreateIoTLightRequest(floorId, "복도1 유도등", 0.3, 0.4);
         given(floorRepository.findById(floorId)).willReturn(Optional.empty());
 
         // when & then
         assertThatThrownBy(() -> iotLightService.createLight(request))
                 .isInstanceOf(ApiException.class)
                 .hasMessage(FloorErrorCode.FLOOR_NOT_FOUND.getMessage());
-    }
-
-    @Test
-    @DisplayName("이미 등록된 code로 등록하려 하면 예외가 발생한다")
-    void createLight_duplicateCode_throws() {
-        // given
-        CreateIoTLightRequest request = new CreateIoTLightRequest(floorId, "LIGHT_001", "복도1 유도등", 0.3, 0.4);
-        given(floorRepository.findById(floorId)).willReturn(Optional.of(floor));
-        given(iotLightJpaRepository.existsByCode("LIGHT_001")).willReturn(true);
-
-        // when & then
-        assertThatThrownBy(() -> iotLightService.createLight(request))
-                .isInstanceOf(ApiException.class)
-                .hasMessage(IoTLightErrorCode.DUPLICATE_LIGHT_CODE.getMessage());
     }
 
     // === getLights / getLight ===
