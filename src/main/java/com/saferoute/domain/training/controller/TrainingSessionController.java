@@ -2,8 +2,11 @@ package com.saferoute.domain.training.controller;
 
 import com.saferoute.domain.training.dto.CreateSessionRequest;
 import com.saferoute.domain.training.dto.TrainingSessionResponse;
+import com.saferoute.domain.training.entity.TrainingSession;
+import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.training.service.TrainingSessionService;
 import java.util.UUID;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
