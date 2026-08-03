@@ -15,8 +15,6 @@ public interface IoTLightJpaRepository extends JpaRepository<IoTLight, UUID> {
 
     Optional<IoTLight> findByCode(String code);
 
-    boolean existsByCode(String code);
-
     Optional<IoTLight> findByCustomNode_Id(UUID customNodeId);
 
     // 특정 분기점에 설치된 유도등 (경로 재계산 시 방향 지시 대상 조회용)
