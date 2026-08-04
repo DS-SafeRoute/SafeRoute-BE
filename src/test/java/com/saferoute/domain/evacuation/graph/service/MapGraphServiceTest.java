@@ -3,6 +3,7 @@ package com.saferoute.domain.evacuation.graph.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -52,6 +53,7 @@ class MapGraphServiceTest {
     @BeforeEach
     void setUp() {
         floor = mock(Floor.class);
+        lenient().when(floor.getId()).thenReturn(floorId);
     }
 
     private MapNode createNode(String code, NodeType type) {
@@ -172,6 +174,7 @@ class MapGraphServiceTest {
         // given
         MapNode node = createNode("ROOM1", NodeType.ROOM);
         given(mapGraphRepository.findNodeById(node.getId())).willReturn(Optional.of(node));
+        given(floorRepository.findByIdForUpdate(floorId)).willReturn(Optional.of(floor));
 
         // when
         mapGraphService.deleteNode(node.getId());
@@ -199,12 +202,14 @@ class MapGraphServiceTest {
         // given
         MapNode node = createNode("EXIT1", NodeType.EXIT, true);
         given(mapGraphRepository.findNodeById(node.getId())).willReturn(Optional.of(node));
-        given(mapGraphRepository.countExitTargetNodesByFloor(node.getFloor().getId())).willReturn(1L);
+        given(floorRepository.findByIdForUpdate(floorId)).willReturn(Optional.of(floor));
+        given(mapGraphRepository.countExitTargetNodesByFloor(floorId)).willReturn(1L);
 
         // when & then
         assertThatThrownBy(() -> mapGraphService.deleteNode(node.getId()))
                 .isInstanceOf(ApiException.class)
                 .hasMessage(EvacuationErrorCode.EXIT_NODE_DELETE_NOT_ALLOWED.getMessage());
+        verify(mapGraphRepository).countExitTargetNodesByFloor(floorId);
         verify(mapGraphRepository, never()).deleteNode(node);
     }
 
@@ -214,12 +219,14 @@ class MapGraphServiceTest {
         // given
         MapNode node = createNode("EXIT1", NodeType.EXIT, true);
         given(mapGraphRepository.findNodeById(node.getId())).willReturn(Optional.of(node));
-        given(mapGraphRepository.countExitTargetNodesByFloor(node.getFloor().getId())).willReturn(2L);
+        given(floorRepository.findByIdForUpdate(floorId)).willReturn(Optional.of(floor));
+        given(mapGraphRepository.countExitTargetNodesByFloor(floorId)).willReturn(2L);
 
         // when
         mapGraphService.deleteNode(node.getId());
 
         // then
+        verify(mapGraphRepository).countExitTargetNodesByFloor(floorId);
         verify(mapGraphRepository).deleteNode(node);
     }
 

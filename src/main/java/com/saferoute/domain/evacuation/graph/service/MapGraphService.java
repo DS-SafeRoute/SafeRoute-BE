@@ -58,6 +58,9 @@ public class MapGraphService {
     @Transactional
     public void deleteNode(UUID nodeId) {
         MapNode node = findNodeOrThrow(nodeId);
+        // 동일 층에 대한 동시 삭제 요청을 직렬화해 마지막 EXIT 카운트 검증과 삭제 사이의 경쟁을 방지
+        floorRepository.findByIdForUpdate(node.getFloor().getId())
+                .orElseThrow(() -> new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
         validateNotLastExitNode(node);
         mapGraphRepository.deleteNode(node);
     }
