@@ -5,8 +5,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 public record UploadFloorRequest(
     @NotNull Integer floorNum,
-    @NotNull Double realWidth,
-    @NotNull Double realHeight,
+    @Positive @NotNull Double realWidth,
+    @Positive @NotNull Double realHeight,
     @NotNull MultipartFile file
 ) {
 
