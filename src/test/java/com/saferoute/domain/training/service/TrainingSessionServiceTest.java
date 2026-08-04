@@ -9,13 +9,16 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import com.saferoute.domain.training.dto.CreateSessionRequest;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
 import com.saferoute.domain.training.entity.TrainingScenario;
 import com.saferoute.domain.training.repository.TrainingScenarioRepository;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.user.entity.User;
+import com.saferoute.domain.user.entity.UserRole;
 import com.saferoute.domain.user.repository.UserRepository;
+import com.saferoute.global.api.code.ErrorCode;
 import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
@@ -58,6 +61,28 @@ class TrainingSessionServiceTest {
                 TrainingSession.create(status, Instant.now(), mock(User.class), mock(TrainingScenario.class));
         ReflectionTestUtils.setField(session, "id", sessionId);
         return session;
+    }
+
+    // === create ===
+
+    @Test
+    @DisplayName("RUNNING 상태로 세션을 생성할 때 시작 시각이 없으면 예외가 발생한다")
+    void create_runningWithoutStartedAt_throwsException() {
+        UUID adminId = UUID.randomUUID();
+        UUID scenarioId = UUID.randomUUID();
+
+        User manager = mock(User.class);
+        given(manager.getRole()).willReturn(UserRole.MANAGER);
+        given(userRepository.findById(adminId)).willReturn(Optional.of(manager));
+        given(trainingScenarioRepository.findById(scenarioId))
+                .willReturn(Optional.of(mock(TrainingScenario.class)));
+
+        CreateSessionRequest request = new CreateSessionRequest(TrainingStatus.RUNNING, null, adminId);
+
+        assertThatThrownBy(() -> trainingSessionService.create(request, scenarioId))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_INPUT);
     }
 
     // === start ===
