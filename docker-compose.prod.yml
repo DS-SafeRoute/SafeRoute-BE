@@ -18,5 +18,6 @@ services:
 
       AWS_REGION: ${AWS_REGION}
       S3_BUCKET: ${S3_BUCKET}
+      DYNAMODB_TABLE: ${DYNAMODB_TABLE:-saferoute-telemetry}
 
     restart: unless-stopped

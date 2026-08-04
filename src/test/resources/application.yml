@@ -23,6 +23,8 @@ aws:
   s3:
     bucket: test-bucket
     presigned-url-expiration: 10m
+  dynamodb:
+    table-name: test-saferoute-telemetry
   credentials:
     access-key: test
     secret-key: test
