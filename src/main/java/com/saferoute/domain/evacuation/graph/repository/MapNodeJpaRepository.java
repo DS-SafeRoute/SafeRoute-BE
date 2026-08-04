@@ -2,6 +2,7 @@ package com.saferoute.domain.evacuation.graph.repository;
 
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.evacuation.graph.entity.NodeType;
+import com.saferoute.domain.floor.entity.Floor;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -18,4 +19,6 @@ public interface MapNodeJpaRepository extends JpaRepository<MapNode, UUID> {
     boolean existsByFloor_IdAndCode(UUID floorId, String code);
 
     void deleteAllByFloor_Id(UUID floorId);
+
+    void deleteAllByFloor(Floor floor);
 }
