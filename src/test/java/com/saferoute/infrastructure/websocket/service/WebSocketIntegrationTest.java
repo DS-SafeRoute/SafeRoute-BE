@@ -74,6 +74,9 @@ class WebSocketIntegrationTest {
     private TrainingEventPublisher trainingEventPublisher;
 
     @Autowired
+    private com.saferoute.domain.training.service.TrainingSessionService trainingSessionService;
+
+    @Autowired
     private ObjectMapper objectMapper;
 
     private WebSocketStompClient stompClient;
@@ -176,6 +179,97 @@ class WebSocketIntegrationTest {
         assertThat(json.get("sessionId").asText()).isEqualTo(trainingSession.getId().toString());
 
         session.disconnect();
+    }
+
+    @Test
+    @DisplayName("훈련을 시작하면 구독자가 TRAINING_STATUS_UPDATED(RUNNING) 이벤트를 수신한다")
+    void startingTrainingPublishesRunningEvent() throws Exception {
+        TrainingSession scheduledSession = TrainingSession.create(
+                TrainingStatus.SCHEDULED, Instant.now(), managerUser, trainingScenario);
+        trainingSessionRepository.save(scheduledSession);
+
+        try {
+            StompSession session = connect(managerToken);
+            BlockingQueue<String> received = subscribeAndCollect(session, scheduledSession.getId());
+
+            trainingSessionService.start(scheduledSession.getId());
+
+            JsonNode json = objectMapper.readTree(received.poll(5, TimeUnit.SECONDS));
+            assertThat(json.get("eventType").asText()).isEqualTo("TRAINING_STATUS_UPDATED");
+            assertThat(json.get("data").get("status").asText()).isEqualTo("RUNNING");
+
+            session.disconnect();
+        } finally {
+            trainingSessionRepository.delete(scheduledSession);
+        }
+    }
+
+    @Test
+    @DisplayName("훈련을 정상 종료하면 구독자가 TRAINING_STATUS_UPDATED(COMPLETED) 이벤트를 수신한다")
+    void endingTrainingPublishesCompletedEvent() throws Exception {
+        TrainingSession runningSession = TrainingSession.create(
+                TrainingStatus.RUNNING, Instant.now(), managerUser, trainingScenario);
+        trainingSessionRepository.save(runningSession);
+
+        try {
+            StompSession session = connect(managerToken);
+            BlockingQueue<String> received = subscribeAndCollect(session, runningSession.getId());
+
+            trainingSessionService.end(runningSession.getId());
+
+            JsonNode json = objectMapper.readTree(received.poll(5, TimeUnit.SECONDS));
+            assertThat(json.get("data").get("status").asText()).isEqualTo("COMPLETED");
+
+            session.disconnect();
+        } finally {
+            trainingSessionRepository.delete(runningSession);
+        }
+    }
+
+    @Test
+    @DisplayName("훈련을 강제 종료하면 구독자가 TRAINING_STATUS_UPDATED(STOPPED) 이벤트를 수신한다")
+    void forceEndingTrainingPublishesStoppedEvent() throws Exception {
+        TrainingSession runningSession = TrainingSession.create(
+                TrainingStatus.RUNNING, Instant.now(), managerUser, trainingScenario);
+        trainingSessionRepository.save(runningSession);
+
+        try {
+            StompSession session = connect(managerToken);
+            BlockingQueue<String> received = subscribeAndCollect(session, runningSession.getId());
+
+            trainingSessionService.forceEnd(runningSession.getId());
+
+            JsonNode json = objectMapper.readTree(received.poll(5, TimeUnit.SECONDS));
+            assertThat(json.get("data").get("status").asText()).isEqualTo("STOPPED");
+
+            session.disconnect();
+        } finally {
+            trainingSessionRepository.delete(runningSession);
+        }
+    }
+
+    private BlockingQueue<String> subscribeAndCollect(StompSession session, java.util.UUID sessionId)
+            throws InterruptedException {
+        BlockingQueue<String> received = new LinkedBlockingQueue<>();
+
+        session.subscribe(
+                "/topic/training-sessions/" + sessionId,
+                new StompFrameHandler() {
+                    @Override
+                    public Type getPayloadType(StompHeaders headers) {
+                        return byte[].class;
+                    }
+
+                    @Override
+                    public void handleFrame(StompHeaders headers, Object payload) {
+                        received.add(new String((byte[]) payload));
+                    }
+                }
+        );
+
+        // 구독이 브로커에 등록될 시간을 확보한다.
+        Thread.sleep(300);
+        return received;
     }
 
     @Test

@@ -78,6 +78,12 @@ public class TrainingSession {
     return new TrainingSession(status, startedAt, admin, scenario);
   }
 
+  // 관리자가 훈련 시작 버튼을 누른 시각으로 실제 시작 시각을 갱신하며 RUNNING으로 전이한다.
+  public void start(Instant startedAt) {
+    this.status = TrainingStatus.RUNNING;
+    this.startedAt = startedAt;
+  }
+
   // 훈련 정상 종료
   public void complete(Instant endedAt) {
     this.status = TrainingStatus.COMPLETED;
