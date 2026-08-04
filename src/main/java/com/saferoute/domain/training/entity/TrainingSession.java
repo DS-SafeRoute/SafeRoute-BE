@@ -26,6 +26,9 @@ public class TrainingSession {
   @GeneratedValue
   private UUID id;
 
+  @Version
+  private Long version;
+
   //훈련 상태 (RUNNING, STOPPED 등)
   @NotNull
   @Enumerated(EnumType.STRING)

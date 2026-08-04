@@ -12,7 +12,9 @@ import com.saferoute.domain.training.entity.TrainingStatus;
 import com.saferoute.domain.training.repository.TrainingScenarioRepository;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.user.entity.User;
+import com.saferoute.domain.user.entity.UserRole;
 import com.saferoute.domain.user.repository.UserRepository;
+import com.saferoute.global.api.code.ErrorCode;
 import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
@@ -43,6 +45,9 @@ public class TrainingSessionService {
   public TrainingSessionResponse create(CreateSessionRequest request, UUID scenarioId) {
     User user = userRepository.findById(request.getAdminId())
         .orElseThrow(() -> new ApiException(TrainingErrorCode.ADMIN_NOT_FOUND));
+    if (user.getRole() != UserRole.MANAGER) {
+      throw new ApiException(ErrorCode.FORBIDDEN);
+    }
     TrainingScenario scenario = trainingScenarioRepository.findById(scenarioId)
         .orElseThrow(() -> new ApiException(TrainingErrorCode.TRAINING_SCENARIO_NOT_FOUND));
 

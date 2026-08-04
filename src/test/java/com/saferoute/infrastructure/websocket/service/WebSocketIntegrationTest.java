@@ -137,7 +137,7 @@ class WebSocketIntegrationTest {
         stompClient.stop();
 
         // @Transactional을 쓰지 않으므로 테스트가 만든 데이터를 직접 정리한다.
-        trainingSessionRepository.delete(trainingSession);
+        trainingSessionRepository.deleteById(trainingSession.getId());
         trainingScenarioRepository.delete(trainingScenario);
         buildingRepository.delete(building);
         userRepository.delete(managerUser);
@@ -200,7 +200,7 @@ class WebSocketIntegrationTest {
 
             session.disconnect();
         } finally {
-            trainingSessionRepository.delete(scheduledSession);
+            trainingSessionRepository.deleteById(scheduledSession.getId());
         }
     }
 
@@ -222,7 +222,7 @@ class WebSocketIntegrationTest {
 
             session.disconnect();
         } finally {
-            trainingSessionRepository.delete(runningSession);
+            trainingSessionRepository.deleteById(runningSession.getId());
         }
     }
 
@@ -244,7 +244,7 @@ class WebSocketIntegrationTest {
 
             session.disconnect();
         } finally {
-            trainingSessionRepository.delete(runningSession);
+            trainingSessionRepository.deleteById(runningSession.getId());
         }
     }
 

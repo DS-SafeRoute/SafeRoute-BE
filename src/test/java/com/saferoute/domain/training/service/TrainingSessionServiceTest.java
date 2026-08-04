@@ -126,6 +126,18 @@ class TrainingSessionServiceTest {
         verify(trainingEventPublisher, never()).publishTrainingStatusUpdatedAfterCommit(any());
     }
 
+    @Test
+    @DisplayName("존재하지 않는 세션을 정상 종료하려 하면 예외가 발생한다")
+    void end_sessionNotFound_throwsException() {
+        given(trainingSessionRepository.findById(sessionId)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> trainingSessionService.end(sessionId))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND);
+        verify(trainingEventPublisher, never()).publishTrainingStatusUpdatedAfterCommit(any());
+    }
+
     // === forceEnd ===
 
     @Test
@@ -150,6 +162,18 @@ class TrainingSessionServiceTest {
                 .isInstanceOf(ApiException.class)
                 .extracting(exception -> ((ApiException) exception).getErrorCode())
                 .isEqualTo(TrainingErrorCode.INVALID_STATUS_TRANSITION);
+        verify(trainingEventPublisher, never()).publishTrainingStatusUpdatedAfterCommit(any());
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 세션을 강제종료하려 하면 예외가 발생한다")
+    void forceEnd_sessionNotFound_throwsException() {
+        given(trainingSessionRepository.findById(sessionId)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> trainingSessionService.forceEnd(sessionId))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND);
         verify(trainingEventPublisher, never()).publishTrainingStatusUpdatedAfterCommit(any());
     }
 
