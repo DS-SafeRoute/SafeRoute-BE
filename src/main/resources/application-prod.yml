@@ -12,8 +12,8 @@ spring:
       hibernate:
         format_sql: false
 
-cloud:
-  aws:
-    region: ${AWS_REGION:us-east-2}
-    s3:
-      bucket: ${S3_BUCKET}
+aws:
+  region: ${AWS_REGION:us-east-2}
+  s3:
+    bucket: ${S3_BUCKET:project10-87-ohio-s3}
+    presigned-url-expiration: 1m
