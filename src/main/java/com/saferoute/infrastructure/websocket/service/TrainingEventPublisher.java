@@ -35,9 +35,8 @@ public class TrainingEventPublisher {
 
     private final SimpMessagingTemplate messagingTemplate;
 
-    // 현재 이 메서드를 호출하는 지점은 없다.
-    // TrainingSession.complete()/stop()/fail() 을 호출하는 훈련 종료 API가 추가되면
-    // 트랜잭션 커밋 이후 이 메서드(또는 publishTrainingStatusUpdatedAfterCommit)를 호출해 연동한다.
+    // 트랜잭션 커밋 시점과 무관하게 즉시 발행한다.
+    // 커밋 이후에만 발행해야 하는 일반적인 경우에는 publishTrainingStatusUpdatedAfterCommit을 사용한다.
     public void publishTrainingStatusUpdated(TrainingSession session) {
         TrainingEventMessage<TrainingStatusEventData> message = TrainingEventMessage.of(
                 TrainingEventType.TRAINING_STATUS_UPDATED,
