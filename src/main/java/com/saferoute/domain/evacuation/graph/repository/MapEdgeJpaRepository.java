@@ -1,6 +1,7 @@
 package com.saferoute.domain.evacuation.graph.repository;
 
 import com.saferoute.domain.evacuation.graph.entity.MapEdge;
+import com.saferoute.domain.floor.entity.Floor;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -18,4 +19,5 @@ public interface MapEdgeJpaRepository extends JpaRepository<MapEdge, UUID> {
     // 동일 노드 쌍 중복 엣지 방지용 - 통행은 양방향으로 취급하므로 두 방향 다 체크
     boolean existsByFromNode_IdAndToNode_IdOrFromNode_IdAndToNode_Id(
             UUID fromNodeId1, UUID toNodeId1, UUID fromNodeId2, UUID toNodeId2);
+    void deleteAllByFloor(Floor floor);
 }

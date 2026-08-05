@@ -38,6 +38,9 @@ aws:
     bucket: ${S3_BUCKET:project10-87-ohio-s3}
     presigned-url-expiration: 1m
 
+saferoute:
+  ai-service:
+    base-url: ${AI_SERVICE_BASE_URL:http://localhost:8001}
   dynamodb:
     table-name: ${DYNAMODB_TABLE:saferoute-telemetry}
     

@@ -1,11 +1,15 @@
 package com.saferoute.domain.floor.service;
 
+import com.saferoute.domain.analysis.service.FloorAnalysisService;
 import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.building.repository.BuildingRepository;
 import com.saferoute.domain.floor.dto.request.CreateFloorRequest;
+import com.saferoute.domain.floor.dto.request.UploadFloorRequest;
 import com.saferoute.domain.floor.dto.response.FloorResponse;
 import com.saferoute.domain.floor.entity.Floor;
+import com.saferoute.domain.floor.entity.SegmentationStatus;
 import com.saferoute.domain.floor.repository.FloorRepository;
+import com.saferoute.global.api.error.AnalysisErrorCode;
 import java.util.List;
 import java.util.UUID;
 
@@ -24,6 +28,7 @@ public class FloorService {
 
     private final FloorRepository floorRepository;
     private final BuildingRepository buildingRepository;
+    private final FloorAnalysisService floorAnalysisService;
     private final S3Service s3Service;
 
     public List<FloorResponse> getFloors(UUID buildingId) {
@@ -45,18 +50,51 @@ public class FloorService {
 
         validateDuplicateFloorNum(buildingId, request.floorNum());
 
-        S3UploadResponse uploadResult =
-                s3Service.upload(request.file());
-
         Floor floor = Floor.create(
                 building,
-                request.floorNum(),
-                uploadResult.key()
+                request.floorNum()
         );
 
         return FloorResponse.from(floorRepository.save(floor));
     }
 
+    @Transactional
+    public FloorResponse uploadFloor(UUID buildingId,UploadFloorRequest request){
+        Building building = buildingRepository.findById(buildingId)
+            .orElseThrow(() ->
+                new ApiException(BuildingErrorCode.BUILDING_NOT_FOUND)
+            );
+        Floor floor = floorRepository.findByBuilding_IdAndFloorNum(building.getId(), request.floorNum())
+            .orElseThrow(() ->
+                new ApiException(FloorErrorCode.FLOOR_NOT_FOUND)
+            );
+
+        S3UploadResponse uploadResult =
+            s3Service.upload(request.file());
+
+        floor.upload(request.realHeight(), request.realWidth(), uploadResult.key());
+
+        return FloorResponse.from(floor);
+    }
+
+    @Transactional
+    public void requestAnalysis(UUID floorId) {
+        Floor floor = floorRepository.findById(floorId)
+            .orElseThrow(() -> new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
+
+        if (floor.getMapImageKey() == null) {
+            throw new ApiException(FloorErrorCode.FLOOR_NOT_FOUND);
+        }
+        if (floor.getSegmentationStatus() == SegmentationStatus.PROCESSING) {
+            throw new ApiException(AnalysisErrorCode.ANALYSIS_ALREADY_IN_PROGRESS);
+        }
+
+        floor.updateSegmentationStatus(SegmentationStatus.PROCESSING);
+        floorAnalysisService.analyzeFloor(floorId);
+    }
+
+
+    @Transactional(readOnly = true)
     public FloorResponse getFloor(UUID buildingId, UUID floorId) {
         return FloorResponse.from(findFloor(buildingId, floorId));
     }
