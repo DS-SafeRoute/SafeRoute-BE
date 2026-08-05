@@ -9,8 +9,14 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import com.saferoute.domain.device.entity.IoTLight;
+import com.saferoute.domain.device.entity.IoTLightDirection;
+import com.saferoute.domain.evacuation.graph.entity.MapNode;
+import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
+import com.saferoute.infrastructure.websocket.dto.IoTLightEventMessage;
+import com.saferoute.infrastructure.websocket.dto.IoTLightStatusEventData;
 import com.saferoute.infrastructure.websocket.dto.TrainingEventMessage;
 import com.saferoute.infrastructure.websocket.dto.TrainingEventType;
 import com.saferoute.infrastructure.websocket.dto.TrainingStatusEventData;
@@ -117,6 +123,62 @@ class TrainingEventPublisherTest {
                 TransactionSynchronizationManager.clearSynchronization();
             }
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    @DisplayName("올바른 층 topic으로, eventType/floorId/occurredAt/data가 누락되지 않은 유도등 메시지를 발행한다")
+    void publishesIoTLightMessageWithAllRequiredFieldsToCorrectDestination() {
+        IoTLight light = mockLight();
+        UUID floorId = light.getCustomNode().getFloor().getId();
+
+        publisher.publishIoTLightStatusUpdated(light, IoTLightDirection.LEFT);
+
+        ArgumentCaptor<String> destinationCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(messagingTemplate).convertAndSend(destinationCaptor.capture(), payloadCaptor.capture());
+
+        assertThat(destinationCaptor.getValue()).isEqualTo("/topic/floors/" + floorId + "/lights");
+
+        IoTLightEventMessage<IoTLightStatusEventData> message =
+                (IoTLightEventMessage<IoTLightStatusEventData>) payloadCaptor.getValue();
+
+        assertThat(message.eventType()).isEqualTo(TrainingEventType.IOT_LIGHT_STATUS_UPDATED);
+        assertThat(message.floorId()).isEqualTo(floorId);
+        assertThat(message.occurredAt()).isNotNull();
+        assertThat(message.data().lightId()).isEqualTo(light.getId());
+        assertThat(message.data().direction()).isEqualTo(IoTLightDirection.LEFT);
+    }
+
+    @Test
+    @DisplayName("유도등 이벤트도 트랜잭션 커밋 이후에만 발행한다")
+    void publishesIoTLightEventOnlyAfterCommit() {
+        IoTLight light = mockLight();
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            publisher.publishIoTLightStatusUpdatedAfterCommit(light, IoTLightDirection.RIGHT);
+
+            verify(messagingTemplate, never()).convertAndSend(anyString(), any(Object.class));
+
+            for (TransactionSynchronization synchronization :
+                    TransactionSynchronizationManager.getSynchronizations()) {
+                synchronization.afterCommit();
+            }
+
+            verify(messagingTemplate, times(1)).convertAndSend(anyString(), any(Object.class));
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    private IoTLight mockLight() {
+        Floor floor = mock(Floor.class);
+        lenient().when(floor.getId()).thenReturn(UUID.randomUUID());
+        MapNode customNode = MapNode.createCustom(floor, "LIGHT_001", "복도 유도등", 0.3, 0.4);
+        IoTLight light = IoTLight.create("LIGHT_001", "복도 유도등", customNode);
+        org.springframework.test.util.ReflectionTestUtils.setField(light, "id", UUID.randomUUID());
+        return light;
     }
 
     // 테스트별로 publish가 실제로 호출되지 않아 일부 스텁이 쓰이지 않을 수 있으므로 lenient로 등록한다.

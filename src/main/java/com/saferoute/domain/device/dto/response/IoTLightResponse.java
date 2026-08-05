@@ -14,7 +14,8 @@ public record IoTLightResponse(
         UUID leftEdgeId,
         UUID rightEdgeId,
         boolean guidanceConfigured,
-        boolean enabled
+        boolean enabled,
+        String piEndpoint
 ) {
     public static IoTLightResponse from(IoTLight light) {
         return new IoTLightResponse(
@@ -28,7 +29,8 @@ public record IoTLightResponse(
                 light.getLeftEdge() != null ? light.getLeftEdge().getId() : null,
                 light.getRightEdge() != null ? light.getRightEdge().getId() : null,
                 light.isGuidanceConfigured(),
-                light.isEnabled()
+                light.isEnabled(),
+                light.getPiEndpoint()
         );
     }
 }

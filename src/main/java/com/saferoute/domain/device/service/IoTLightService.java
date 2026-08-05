@@ -1,10 +1,15 @@
 package com.saferoute.domain.device.service;
 
+import com.saferoute.domain.device.client.IoTLightPiClient;
+import com.saferoute.domain.device.dto.request.ChangeLightDirectionRequest;
 import com.saferoute.domain.device.dto.request.ConfigureGuidanceRequest;
 import com.saferoute.domain.device.dto.request.CreateIoTLightRequest;
 import com.saferoute.domain.device.dto.request.UpdateIoTLightRequest;
+import com.saferoute.domain.device.dto.request.UpdatePiEndpointRequest;
 import com.saferoute.domain.device.dto.response.IoTLightResponse;
+import com.saferoute.domain.device.dto.response.LightDirectionResponse;
 import com.saferoute.domain.device.entity.IoTLight;
+import com.saferoute.domain.device.entity.IoTLightDirection;
 import com.saferoute.domain.device.repository.IoTLightJpaRepository;
 import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
@@ -15,6 +20,8 @@ import com.saferoute.domain.floor.repository.FloorRepository;
 import com.saferoute.global.api.error.FloorErrorCode;
 import com.saferoute.global.api.error.IoTLightErrorCode;
 import com.saferoute.global.api.exception.ApiException;
+import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +37,9 @@ public class IoTLightService {
     private final MapNodeJpaRepository mapNodeJpaRepository;
     private final MapEdgeJpaRepository mapEdgeJpaRepository;
     private final FloorRepository floorRepository;
+    private final IoTLightPiClient iotLightPiClient;
+    private final IoTLightDirectionStore iotLightDirectionStore;
+    private final TrainingEventPublisher trainingEventPublisher;
 
     @Transactional
     public IoTLightResponse createLight(CreateIoTLightRequest request) {
@@ -103,6 +113,13 @@ public class IoTLightService {
     }
 
     @Transactional
+    public IoTLightResponse updatePiEndpoint(UUID lightId, UpdatePiEndpointRequest request) {
+        IoTLight light = findLightOrThrow(lightId);
+        light.updatePiEndpoint(request.piEndpoint());
+        return IoTLightResponse.from(light);
+    }
+
+    @Transactional
     public IoTLightResponse enableLight(UUID lightId) {
         IoTLight light = findLightOrThrow(lightId);
         light.enable();
@@ -114,6 +131,29 @@ public class IoTLightService {
         IoTLight light = findLightOrThrow(lightId);
         light.disable();
         return IoTLightResponse.from(light);
+    }
+
+    // 검증(enabled/guidance) -> Pi 호출 -> 상태 저장 -> 이벤트 발행 순서로 조립한다.
+    // direction은 훈련별 동적 상태라 DB에 저장하지 않고 IoTLightDirectionStore(서버 메모리)에 저장한다 (IoTLight 참고).
+    public LightDirectionResponse changeDirection(UUID lightId, ChangeLightDirectionRequest request) {
+        IoTLight light = findLightOrThrow(lightId);
+        IoTLightDirection direction = request.direction();
+
+        if (!light.isEnabled()) {
+            throw new ApiException(IoTLightErrorCode.LIGHT_DISABLED);
+        }
+        if (direction != IoTLightDirection.OFF && !light.isGuidanceConfigured()) {
+            throw new ApiException(IoTLightErrorCode.GUIDANCE_NOT_CONFIGURED);
+        }
+        if (light.getPiEndpoint() == null || light.getPiEndpoint().isBlank()) {
+            throw new ApiException(IoTLightErrorCode.DEVICE_UNREACHABLE);
+        }
+
+        iotLightPiClient.sendDirection(light.getPiEndpoint(), light.getCode(), direction);
+        iotLightDirectionStore.update(light.getId(), direction);
+        trainingEventPublisher.publishIoTLightStatusUpdatedAfterCommit(light, direction);
+
+        return new LightDirectionResponse(light.getId(), direction, Instant.now());
     }
 
     private IoTLight findLightOrThrow(UUID lightId) {
