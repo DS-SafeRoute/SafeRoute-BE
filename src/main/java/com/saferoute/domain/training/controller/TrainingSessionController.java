@@ -3,6 +3,8 @@ package com.saferoute.domain.training.controller;
 import com.saferoute.domain.training.dto.CreateSessionRequest;
 import com.saferoute.domain.training.dto.TrainingSessionResponse;
 import com.saferoute.domain.training.service.TrainingSessionService;
+import com.saferoute.global.api.response.ApiResponse;
+import com.saferoute.global.api.response.TrainingSuccessCode;
 import java.util.UUID;
 
 import lombok.RequiredArgsConstructor;
@@ -25,5 +27,26 @@ public class TrainingSessionController {
       @RequestBody CreateSessionRequest request,
       @PathVariable("scenarioId") UUID scenarioId) {
     return ResponseEntity.ok(trainingSessionService.create(request, scenarioId));
+  }
+
+  @PostMapping("/{sessionId}/start")
+  public ResponseEntity<ApiResponse<TrainingSessionResponse>> startTrainingSession(
+      @PathVariable("sessionId") UUID sessionId) {
+    TrainingSessionResponse response = trainingSessionService.start(sessionId);
+    return ResponseEntity.ok(ApiResponse.success(TrainingSuccessCode.TRAINING_STARTED, response));
+  }
+
+  @PostMapping("/{sessionId}/end")
+  public ResponseEntity<ApiResponse<TrainingSessionResponse>> endTrainingSession(
+      @PathVariable("sessionId") UUID sessionId) {
+    TrainingSessionResponse response = trainingSessionService.end(sessionId);
+    return ResponseEntity.ok(ApiResponse.success(TrainingSuccessCode.TRAINING_ENDED, response));
+  }
+
+  @PostMapping("/{sessionId}/force-end")
+  public ResponseEntity<ApiResponse<TrainingSessionResponse>> forceEndTrainingSession(
+      @PathVariable("sessionId") UUID sessionId) {
+    TrainingSessionResponse response = trainingSessionService.forceEnd(sessionId);
+    return ResponseEntity.ok(ApiResponse.success(TrainingSuccessCode.TRAINING_FORCE_ENDED, response));
   }
 }

@@ -26,6 +26,9 @@ public class TrainingSession {
   @GeneratedValue
   private UUID id;
 
+  @Version
+  private Long version;
+
   //훈련 상태 (RUNNING, STOPPED 등)
   @NotNull
   @Enumerated(EnumType.STRING)
@@ -76,6 +79,12 @@ public class TrainingSession {
   // 훈련 세션 생성용 정적 팩토리 메서드
   public static TrainingSession create(TrainingStatus status, Instant startedAt, User admin, TrainingScenario scenario) {
     return new TrainingSession(status, startedAt, admin, scenario);
+  }
+
+  // 관리자가 훈련 시작 버튼을 누른 시각으로 실제 시작 시각을 갱신하며 RUNNING으로 전이한다.
+  public void start(Instant startedAt) {
+    this.status = TrainingStatus.RUNNING;
+    this.startedAt = startedAt;
   }
 
   // 훈련 정상 종료

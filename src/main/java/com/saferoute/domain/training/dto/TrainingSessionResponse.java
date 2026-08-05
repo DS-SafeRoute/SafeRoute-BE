@@ -3,12 +3,14 @@ package com.saferoute.domain.training.dto;
 import com.saferoute.domain.training.entity.TrainingStatus;
 import com.saferoute.domain.training.entity.TrainingSession;
 import java.time.Instant;
+import java.util.UUID;
 import lombok.Builder;
 import lombok.Getter;
 
 @Getter
 @Builder
 public class TrainingSessionResponse {
+  private UUID id;
   private TrainingStatus status;
   private Instant startedAt;
   private String adminName;
@@ -16,6 +18,7 @@ public class TrainingSessionResponse {
 
   public static TrainingSessionResponse from(TrainingSession session) {
     return TrainingSessionResponse.builder()
+        .id(session.getId())
         .status(session.getStatus())
         .startedAt(session.getStartedAt())
         .adminName(session.getAdmin().getUsername())
