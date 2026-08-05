@@ -113,6 +113,21 @@ class EvacuationRouteServiceTest {
     }
 
     @Test
+    @DisplayName("층에 지정된 EXIT 노드가 없으면 예외를 던진다")
+    void findShortestRoute_noExitDesignated_throws() {
+        // given
+        MapNode isolatedRoom = createNode("ISOLATED", NodeType.ROOM, false);
+
+        given(mapGraphRepository.findNodesByFloor(floorId)).willReturn(List.of(isolatedRoom));
+        given(mapGraphRepository.findEdgesByFloor(floorId)).willReturn(List.of());
+
+        // when & then
+        assertThatThrownBy(() -> evacuationRouteService.findShortestRoute(floorId, isolatedRoom.getId()))
+                .isInstanceOf(ApiException.class)
+                .hasMessage(EvacuationErrorCode.EXIT_NODE_NOT_DESIGNATED.getMessage());
+    }
+
+    @Test
     @DisplayName("시작 노드가 해당 층에 없으면 예외를 던진다")
     void findShortestRoute_startNodeNotInFloor_throws() {
         // given

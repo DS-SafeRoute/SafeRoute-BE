@@ -290,6 +290,19 @@ class MapGraphEditControllerTest {
     }
 
     @Test
+    @DisplayName("DELETE /nodes/{nodeId} - 마지막 EXIT 노드를 삭제하려 하면 400을 반환한다")
+    void deleteNode_lastExitNode_returnsBadRequest() throws Exception {
+        // given
+        Mockito.doThrow(new ApiException(EvacuationErrorCode.EXIT_NODE_DELETE_NOT_ALLOWED))
+                .when(mapGraphService).deleteNode(nodeId);
+
+        // when & then
+        mockMvc.perform(delete("/api/v1/nodes/{nodeId}", nodeId))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", containsString("마지막 출구 노드")));
+    }
+
+    @Test
     @DisplayName("POST /edges - 엣지를 생성하면 201을 반환한다")
     void createEdge_success() throws Exception {
         UUID fromNodeId = UUID.randomUUID();

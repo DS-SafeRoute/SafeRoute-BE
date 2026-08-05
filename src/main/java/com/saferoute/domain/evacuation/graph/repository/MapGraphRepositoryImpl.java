@@ -72,6 +72,11 @@ public class MapGraphRepositoryImpl implements MapGraphRepository {
     }
 
     @Override
+    public long countExitTargetNodesByFloor(UUID floorId) {
+        return mapNodeJpaRepository.countByFloor_IdAndIsExitTargetTrue(floorId);
+    }
+
+    @Override
     public Optional<MapEdge> findEdgeById(UUID edgeId) {
         return mapEdgeJpaRepository.findById(edgeId);
     }

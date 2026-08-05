@@ -176,6 +176,21 @@ class EvacuationRouteControllerTest {
     }
 
     @Test
+    @DisplayName("GET /routes - 층에 지정된 EXIT 노드가 없으면 404를 반환한다")
+    void getShortestRoute_noExitDesignated() throws Exception {
+        // given
+        given(evacuationRouteService.findShortestRoute(floorId, room1.getId()))
+                .willThrow(new ApiException(EvacuationErrorCode.EXIT_NODE_NOT_DESIGNATED));
+
+        // when & then
+        mockMvc.perform(get("/api/v1/floors/{floorId}/routes", floorId)
+                        .param("startNodeId", room1.getId().toString()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.message").value("지정된 출구 노드가 없습니다."));
+    }
+
+    @Test
     @DisplayName("GET /routes - startNodeId 파라미터가 없으면 400을 반환한다")
     void getShortestRoute_missingParam() throws Exception {
         mockMvc.perform(

@@ -15,6 +15,9 @@ public interface MapNodeJpaRepository extends JpaRepository<MapNode, UUID> {
     // MapNode.code 순번 생성용 (Service에서 NODE_001 형태로 채번)
     long countByFloor_Id(UUID floorId);
 
+    // 마지막 EXIT 노드 삭제 방지 체크용
+    long countByFloor_IdAndIsExitTargetTrue(UUID floorId);
+
     boolean existsByFloor_IdAndCode(UUID floorId, String code);
 
     void deleteAllByFloor_Id(UUID floorId);

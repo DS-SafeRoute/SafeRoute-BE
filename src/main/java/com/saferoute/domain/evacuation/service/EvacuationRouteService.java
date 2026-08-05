@@ -44,6 +44,11 @@ public class EvacuationRouteService {
             throw new ApiException(EvacuationErrorCode.MAP_NODE_NOT_FOUND);
         }
 
+        // 층에 EXIT 대상 노드가 하나도 없는 경우 - "도달 불가"(EVAC005)와 구분되는 별도 원인이므로 먼저 검증
+        if (nodes.stream().noneMatch(MapNode::isExitTarget)) {
+            throw new ApiException(EvacuationErrorCode.EXIT_NODE_NOT_DESIGNATED);
+        }
+
         Map<UUID, List<MapEdge>> adjacency = buildAdjacencyList(edges);
 
         Map<UUID, Double> distance = new HashMap<>();
