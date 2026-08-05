@@ -5,6 +5,7 @@ import com.saferoute.domain.training.dto.TrainingSessionResponse;
 import com.saferoute.domain.training.service.TrainingSessionService;
 import com.saferoute.global.api.response.ApiResponse;
 import com.saferoute.global.api.response.TrainingSuccessCode;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.UUID;
 
 import lombok.RequiredArgsConstructor;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+@Tag(name = "훈련 세션", description = "훈련 세션 생성/시작/종료 API")
 @RestController
 @RequestMapping("/api/v1/sessions")
 @RequiredArgsConstructor

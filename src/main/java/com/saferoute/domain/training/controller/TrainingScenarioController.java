@@ -4,6 +4,7 @@ import com.saferoute.domain.training.dto.CreateScenarioRequest;
 import com.saferoute.domain.training.dto.ScenarioResponse;
 import com.saferoute.domain.training.dto.UpdateScenarioRequest;
 import com.saferoute.domain.training.service.TrainingScenarioService;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+@Tag(name = "훈련 시나리오", description = "훈련 시나리오 등록/조회/수정/삭제 API")
 @RestController
 @RequestMapping("/api/v1/scenarios")
 @RequiredArgsConstructor

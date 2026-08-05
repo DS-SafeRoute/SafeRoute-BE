@@ -7,6 +7,7 @@ import com.saferoute.domain.user.dto.SignupResponse;
 import com.saferoute.domain.user.service.UserService;
 import com.saferoute.global.api.response.ApiResponse;
 import com.saferoute.global.api.response.UserSuccessCode;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+@Tag(name = "사용자", description = "회원가입/로그인 API")
 @RestController
 @RequestMapping("/api/v1/auth")
 @RequiredArgsConstructor

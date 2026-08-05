@@ -8,6 +8,7 @@ import com.saferoute.domain.evacuation.graph.dto.response.MapNodeResponse;
 import com.saferoute.domain.evacuation.graph.service.MapGraphService;
 import com.saferoute.global.api.response.ApiResponse;
 import com.saferoute.global.api.response.EvacuationSuccessCode;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 // 커스텀 편집 UI(드래그로 노드 추가/이동, 엣지 연결)를 위한 CRUD 엔드포인트
+@Tag(name = "맵 그래프 편집", description = "맵 그래프 노드/엣지 생성/수정/삭제 API")
 @RestController
 @RequestMapping("/api/v1")
 @RequiredArgsConstructor

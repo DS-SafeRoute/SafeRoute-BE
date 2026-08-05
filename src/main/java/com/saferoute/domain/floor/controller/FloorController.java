@@ -6,6 +6,7 @@ import com.saferoute.domain.floor.dto.response.FloorResponse;
 import com.saferoute.domain.floor.service.FloorService;
 import com.saferoute.global.api.response.ApiResponse;
 import com.saferoute.global.api.response.FloorSuccessCode;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
@@ -15,6 +16,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+@Tag(name = "층/도면", description = "건물 내 층 및 도면 등록/조회/삭제 API")
 @RestController
 @RequestMapping("/api/v1/buildings/{buildingId}/floors")
 @RequiredArgsConstructor
