@@ -11,10 +11,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.saferoute.domain.device.dto.request.ChangeLightDirectionRequest;
 import com.saferoute.domain.device.dto.request.ConfigureGuidanceRequest;
 import com.saferoute.domain.device.dto.request.CreateIoTLightRequest;
 import com.saferoute.domain.device.dto.request.UpdateIoTLightRequest;
+import com.saferoute.domain.device.dto.request.UpdatePiEndpointRequest;
 import com.saferoute.domain.device.dto.response.IoTLightResponse;
+import com.saferoute.domain.device.dto.response.LightDirectionResponse;
+import com.saferoute.domain.device.entity.IoTLightDirection;
 import com.saferoute.domain.device.service.IoTLightService;
 import com.saferoute.global.api.error.FloorErrorCode;
 import com.saferoute.global.api.error.IoTLightErrorCode;
@@ -61,7 +65,7 @@ class IoTLightControllerTest {
 
     private IoTLightResponse sampleResponse() {
         return new IoTLightResponse(lightId, "LIGHT_001", "복도1 유도등", floorId, 0.3, 0.4,
-                null, null, null, false, true);
+                null, null, null, false, true, null);
     }
 
     // === createLight ===
@@ -190,5 +194,96 @@ class IoTLightControllerTest {
 
         mockMvc.perform(patch("/api/v1/lights/{lightId}/disable", lightId))
                 .andExpect(status().isOk());
+    }
+
+    // === updatePiEndpoint ===
+
+    @Test
+    @DisplayName("PATCH /lights/{lightId}/pi-endpoint - 라즈베리파이 주소를 설정하면 200을 반환한다")
+    void updatePiEndpoint_success() throws Exception {
+        UpdatePiEndpointRequest request = new UpdatePiEndpointRequest("http://192.168.0.50:5000");
+        given(iotLightService.updatePiEndpoint(eq(lightId), any())).willReturn(sampleResponse());
+
+        mockMvc.perform(patch("/api/v1/lights/{lightId}/pi-endpoint", lightId)
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("PATCH /lights/{lightId}/pi-endpoint - 값이 비어있으면 400을 반환한다")
+    void updatePiEndpoint_blank_returnsBadRequest() throws Exception {
+        String invalidJson = """
+                {"piEndpoint":""}
+                """;
+
+        mockMvc.perform(patch("/api/v1/lights/{lightId}/pi-endpoint", lightId)
+                        .contentType("application/json")
+                        .content(invalidJson))
+                .andExpect(status().isBadRequest());
+    }
+
+    // === changeDirection ===
+
+    @Test
+    @DisplayName("PATCH /lights/{lightId}/direction - 방향 명령을 보내면 200을 반환한다")
+    void changeDirection_success() throws Exception {
+        ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.LEFT);
+        given(iotLightService.changeDirection(eq(lightId), any()))
+                .willReturn(new LightDirectionResponse(lightId, IoTLightDirection.LEFT, java.time.Instant.now()));
+
+        mockMvc.perform(patch("/api/v1/lights/{lightId}/direction", lightId)
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.direction").value("LEFT"));
+    }
+
+    @Test
+    @DisplayName("PATCH /lights/{lightId}/direction - 경로 안내가 없으면 400을 반환한다")
+    void changeDirection_guidanceNotConfigured_returnsBadRequest() throws Exception {
+        ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.LEFT);
+        given(iotLightService.changeDirection(eq(lightId), any()))
+                .willThrow(new ApiException(IoTLightErrorCode.GUIDANCE_NOT_CONFIGURED));
+
+        mockMvc.perform(patch("/api/v1/lights/{lightId}/direction", lightId)
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("PATCH /lights/{lightId}/direction - 비활성화된 유도등이면 400을 반환한다")
+    void changeDirection_lightDisabled_returnsBadRequest() throws Exception {
+        ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.OFF);
+        given(iotLightService.changeDirection(eq(lightId), any()))
+                .willThrow(new ApiException(IoTLightErrorCode.LIGHT_DISABLED));
+
+        mockMvc.perform(patch("/api/v1/lights/{lightId}/direction", lightId)
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("PATCH /lights/{lightId}/direction - Pi와 통신 실패 시 502를 반환한다")
+    void changeDirection_deviceUnreachable_returnsBadGateway() throws Exception {
+        ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.OFF);
+        given(iotLightService.changeDirection(eq(lightId), any()))
+                .willThrow(new ApiException(IoTLightErrorCode.DEVICE_UNREACHABLE));
+
+        mockMvc.perform(patch("/api/v1/lights/{lightId}/direction", lightId)
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadGateway());
+    }
+
+    @Test
+    @DisplayName("PATCH /lights/{lightId}/direction - direction이 없으면 400을 반환한다")
+    void changeDirection_missingDirection_returnsBadRequest() throws Exception {
+        mockMvc.perform(patch("/api/v1/lights/{lightId}/direction", lightId)
+                        .contentType("application/json")
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
     }
 }

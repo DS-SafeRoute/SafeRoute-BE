@@ -15,7 +15,9 @@ public enum IoTLightSuccessCode implements BaseCode {
     IOT_LIGHT_GUIDANCE_CONFIGURED(HttpStatus.OK, "IOTLIGHT_SUCCESS_004", "분기 경로가 설정되었습니다."),
     IOT_LIGHT_UPDATED(HttpStatus.OK, "IOTLIGHT_SUCCESS_005", "유도등 정보가 수정되었습니다."),
     IOT_LIGHT_ENABLED(HttpStatus.OK, "IOTLIGHT_SUCCESS_006", "유도등이 활성화되었습니다."),
-    IOT_LIGHT_DISABLED(HttpStatus.OK, "IOTLIGHT_SUCCESS_007", "유도등이 비활성화되었습니다.");
+    IOT_LIGHT_DISABLED(HttpStatus.OK, "IOTLIGHT_SUCCESS_007", "유도등이 비활성화되었습니다."),
+    IOT_LIGHT_PI_ENDPOINT_UPDATED(HttpStatus.OK, "IOTLIGHT_SUCCESS_008", "라즈베리파이 주소가 설정되었습니다."),
+    IOT_LIGHT_DIRECTION_CHANGED(HttpStatus.OK, "IOTLIGHT_SUCCESS_009", "유도등 방향이 변경되었습니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

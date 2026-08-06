@@ -5,12 +5,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.saferoute.domain.device.client.IoTLightPiClient;
+import com.saferoute.domain.device.dto.request.ChangeLightDirectionRequest;
 import com.saferoute.domain.device.dto.request.ConfigureGuidanceRequest;
 import com.saferoute.domain.device.dto.request.CreateIoTLightRequest;
 import com.saferoute.domain.device.dto.request.UpdateIoTLightRequest;
 import com.saferoute.domain.device.dto.response.IoTLightResponse;
+import com.saferoute.domain.device.dto.response.LightDirectionResponse;
 import com.saferoute.domain.device.entity.IoTLight;
+import com.saferoute.domain.device.entity.IoTLightDirection;
 import com.saferoute.domain.device.repository.IoTLightJpaRepository;
 import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
@@ -22,6 +28,7 @@ import com.saferoute.domain.floor.repository.FloorRepository;
 import com.saferoute.global.api.error.FloorErrorCode;
 import com.saferoute.global.api.error.IoTLightErrorCode;
 import com.saferoute.global.api.exception.ApiException;
+import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -51,6 +58,15 @@ class IoTLightServiceTest {
 
     @Mock
     private FloorRepository floorRepository;
+
+    @Mock
+    private IoTLightPiClient iotLightPiClient;
+
+    @Mock
+    private IoTLightDirectionStore iotLightDirectionStore;
+
+    @Mock
+    private TrainingEventPublisher trainingEventPublisher;
 
     private final UUID floorId = UUID.randomUUID();
     private Floor floor;
@@ -296,5 +312,125 @@ class IoTLightServiceTest {
 
         // then
         assertThat(response.enabled()).isFalse();
+    }
+
+    // === changeDirection ===
+
+    @Test
+    @DisplayName("OFF 방향은 경로 안내 설정 없이도 명령을 보낼 수 있다")
+    void changeDirection_off_success() {
+        // given
+        MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
+        IoTLight light = createLight("LIGHT_001", customNode);
+        light.updatePiEndpoint("http://192.168.0.50:5000");
+        ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.OFF);
+
+        given(iotLightJpaRepository.findById(light.getId())).willReturn(Optional.of(light));
+
+        // when
+        LightDirectionResponse response = iotLightService.changeDirection(light.getId(), request);
+
+        // then
+        assertThat(response.direction()).isEqualTo(IoTLightDirection.OFF);
+        verify(iotLightPiClient).sendDirection("http://192.168.0.50:5000", "LIGHT_001", IoTLightDirection.OFF);
+        verify(iotLightDirectionStore).update(light.getId(), IoTLightDirection.OFF);
+        verify(trainingEventPublisher).publishIoTLightStatusUpdatedAfterCommit(light, IoTLightDirection.OFF);
+    }
+
+    @Test
+    @DisplayName("경로 안내가 설정된 유도등에 LEFT 명령을 보낼 수 있다")
+    void changeDirection_left_withGuidance_success() {
+        // given
+        MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
+        IoTLight light = createLight("LIGHT_001", customNode);
+        light.updatePiEndpoint("http://192.168.0.50:5000");
+        MapNode decisionNode = createNode("HALLWAY1", NodeType.HALLWAY);
+        MapNode leftTarget = createNode("HALLWAY2", NodeType.HALLWAY);
+        MapNode rightTarget = createNode("HALLWAY3", NodeType.HALLWAY);
+        light.configureGuidance(decisionNode, createEdge(decisionNode, leftTarget), createEdge(decisionNode, rightTarget));
+        ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.LEFT);
+
+        given(iotLightJpaRepository.findById(light.getId())).willReturn(Optional.of(light));
+
+        // when
+        LightDirectionResponse response = iotLightService.changeDirection(light.getId(), request);
+
+        // then
+        assertThat(response.direction()).isEqualTo(IoTLightDirection.LEFT);
+        verify(iotLightPiClient).sendDirection("http://192.168.0.50:5000", "LIGHT_001", IoTLightDirection.LEFT);
+    }
+
+    @Test
+    @DisplayName("경로 안내가 설정되지 않은 유도등에 LEFT/RIGHT 명령을 보내면 예외가 발생한다")
+    void changeDirection_left_withoutGuidance_throws() {
+        // given
+        MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
+        IoTLight light = createLight("LIGHT_001", customNode);
+        light.updatePiEndpoint("http://192.168.0.50:5000");
+        ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.LEFT);
+
+        given(iotLightJpaRepository.findById(light.getId())).willReturn(Optional.of(light));
+
+        // when & then
+        assertThatThrownBy(() -> iotLightService.changeDirection(light.getId(), request))
+                .isInstanceOf(ApiException.class)
+                .hasMessage(IoTLightErrorCode.GUIDANCE_NOT_CONFIGURED.getMessage());
+        verifyNoInteractions(iotLightPiClient, iotLightDirectionStore, trainingEventPublisher);
+    }
+
+    @Test
+    @DisplayName("비활성화된 유도등에 명령을 보내면 예외가 발생한다")
+    void changeDirection_disabledLight_throws() {
+        // given
+        MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
+        IoTLight light = createLight("LIGHT_001", customNode);
+        light.updatePiEndpoint("http://192.168.0.50:5000");
+        light.disable();
+        ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.OFF);
+
+        given(iotLightJpaRepository.findById(light.getId())).willReturn(Optional.of(light));
+
+        // when & then
+        assertThatThrownBy(() -> iotLightService.changeDirection(light.getId(), request))
+                .isInstanceOf(ApiException.class)
+                .hasMessage(IoTLightErrorCode.LIGHT_DISABLED.getMessage());
+        verifyNoInteractions(iotLightPiClient, iotLightDirectionStore, trainingEventPublisher);
+    }
+
+    @Test
+    @DisplayName("piEndpoint가 설정되지 않은 유도등에 명령을 보내면 예외가 발생한다")
+    void changeDirection_piEndpointNotSet_throws() {
+        // given
+        MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
+        IoTLight light = createLight("LIGHT_001", customNode);
+        ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.OFF);
+
+        given(iotLightJpaRepository.findById(light.getId())).willReturn(Optional.of(light));
+
+        // when & then
+        assertThatThrownBy(() -> iotLightService.changeDirection(light.getId(), request))
+                .isInstanceOf(ApiException.class)
+                .hasMessage(IoTLightErrorCode.DEVICE_UNREACHABLE.getMessage());
+        verifyNoInteractions(iotLightPiClient, iotLightDirectionStore, trainingEventPublisher);
+    }
+
+    @Test
+    @DisplayName("Pi 통신이 실패하면 예외가 전파되고 상태 저장/이벤트 발행은 일어나지 않는다")
+    void changeDirection_piUnreachable_throws() {
+        // given
+        MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
+        IoTLight light = createLight("LIGHT_001", customNode);
+        light.updatePiEndpoint("http://192.168.0.50:5000");
+        ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.OFF);
+
+        given(iotLightJpaRepository.findById(light.getId())).willReturn(Optional.of(light));
+        org.mockito.BDDMockito.willThrow(new ApiException(IoTLightErrorCode.DEVICE_UNREACHABLE))
+                .given(iotLightPiClient).sendDirection(any(), any(), any());
+
+        // when & then
+        assertThatThrownBy(() -> iotLightService.changeDirection(light.getId(), request))
+                .isInstanceOf(ApiException.class)
+                .hasMessage(IoTLightErrorCode.DEVICE_UNREACHABLE.getMessage());
+        verifyNoInteractions(iotLightDirectionStore, trainingEventPublisher);
     }
 }

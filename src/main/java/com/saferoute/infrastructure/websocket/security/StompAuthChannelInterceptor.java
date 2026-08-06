@@ -1,5 +1,6 @@
 package com.saferoute.infrastructure.websocket.security;
 
+import com.saferoute.domain.floor.repository.FloorRepository;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.global.security.CustomUserDetailsService;
 import com.saferoute.global.security.JwtTokenProvider;
@@ -41,10 +42,13 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
     private static final String USER_ERROR_DESTINATION = "/user/queue/errors";
     private static final Pattern SESSION_TOPIC_PATTERN =
             Pattern.compile("^/topic/training-sessions/([0-9a-fA-F-]{36})$");
+    private static final Pattern FLOOR_LIGHTS_TOPIC_PATTERN =
+            Pattern.compile("^/topic/floors/([0-9a-fA-F-]{36})/lights$");
 
     private final JwtTokenProvider jwtTokenProvider;
     private final CustomUserDetailsService userDetailsService;
     private final TrainingSessionRepository trainingSessionRepository;
+    private final FloorRepository floorRepository;
 
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
@@ -127,22 +131,45 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
             return;
         }
 
-        Matcher matcher = SESSION_TOPIC_PATTERN.matcher(destination);
+        Matcher sessionMatcher = SESSION_TOPIC_PATTERN.matcher(destination);
 
-        if (!matcher.matches()) {
-            log.warn("WebSocket SUBSCRIBE 거부: 지원하지 않는 destination입니다.");
-            throw new IllegalArgumentException("지원하지 않는 구독 경로입니다.");
+        if (sessionMatcher.matches()) {
+            authorizeTrainingSessionTopic(sessionMatcher);
+            return;
         }
 
-        // 세션 존재 여부만 검증한다.
-        // 관리자별로 "본인이 담당하는 세션만 구독 가능"하도록 제한하려면 User-TrainingSession
-        // 소유 관계가 필요한데, 현재 도메인 모델에는 그런 관계가 없어(모든 MANAGER가 모든
-        // TrainingSession에 접근 가능한 구조) 역할 기반 제한 이상은 적용하지 않았다.
+        Matcher floorLightsMatcher = FLOOR_LIGHTS_TOPIC_PATTERN.matcher(destination);
+
+        if (floorLightsMatcher.matches()) {
+            authorizeFloorLightsTopic(floorLightsMatcher);
+            return;
+        }
+
+        log.warn("WebSocket SUBSCRIBE 거부: 지원하지 않는 destination입니다.");
+        throw new IllegalArgumentException("지원하지 않는 구독 경로입니다.");
+    }
+
+    // 세션 존재 여부만 검증한다.
+    // 관리자별로 "본인이 담당하는 세션만 구독 가능"하도록 제한하려면 User-TrainingSession
+    // 소유 관계가 필요한데, 현재 도메인 모델에는 그런 관계가 없어(모든 MANAGER가 모든
+    // TrainingSession에 접근 가능한 구조) 역할 기반 제한 이상은 적용하지 않았다.
+    private void authorizeTrainingSessionTopic(Matcher matcher) {
         UUID sessionId = UUID.fromString(matcher.group(1));
 
         if (!trainingSessionRepository.existsById(sessionId)) {
             log.warn("WebSocket SUBSCRIBE 거부: 존재하지 않는 훈련 세션입니다.");
             throw new IllegalArgumentException("존재하지 않는 훈련 세션입니다.");
+        }
+    }
+
+    // 층 존재 여부만 검증한다. 세션 토픽과 동일하게 "본인이 담당하는 층만 구독 가능" 같은
+    // 소유 관계 기반 제한은 현재 도메인 모델에 없어 적용하지 않았다.
+    private void authorizeFloorLightsTopic(Matcher matcher) {
+        UUID floorId = UUID.fromString(matcher.group(1));
+
+        if (!floorRepository.existsById(floorId)) {
+            log.warn("WebSocket SUBSCRIBE 거부: 존재하지 않는 층입니다.");
+            throw new IllegalArgumentException("존재하지 않는 층입니다.");
         }
     }
 

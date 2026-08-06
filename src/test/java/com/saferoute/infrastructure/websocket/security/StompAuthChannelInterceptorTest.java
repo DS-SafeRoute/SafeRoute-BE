@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 
+import com.saferoute.domain.floor.repository.FloorRepository;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.global.security.CustomUserDetailsService;
 import com.saferoute.global.security.JwtTokenProvider;
@@ -42,6 +43,9 @@ class StompAuthChannelInterceptorTest {
     private TrainingSessionRepository trainingSessionRepository;
 
     @Mock
+    private FloorRepository floorRepository;
+
+    @Mock
     private MessageChannel channel;
 
     private StompAuthChannelInterceptor interceptor;
@@ -55,7 +59,8 @@ class StompAuthChannelInterceptorTest {
         interceptor = new StompAuthChannelInterceptor(
                 jwtTokenProvider,
                 userDetailsService,
-                trainingSessionRepository
+                trainingSessionRepository,
+                floorRepository
         );
     }
 
@@ -200,6 +205,34 @@ class StompAuthChannelInterceptorTest {
 
         StompHeaderAccessor accessor =
                 subscribeAccessor("/topic/training-sessions/" + sessionId, managerAuthentication());
+        Message<?> message = build(accessor);
+
+        assertThatThrownBy(() -> interceptor.preSend(message, channel))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("인증된 MANAGER는 존재하는 층의 유도등 topic을 구독할 수 있다")
+    void subscribeSucceedsForAuthenticatedManagerWithExistingFloor() {
+        UUID floorId = UUID.randomUUID();
+        given(floorRepository.existsById(floorId)).willReturn(true);
+
+        StompHeaderAccessor accessor =
+                subscribeAccessor("/topic/floors/" + floorId + "/lights", managerAuthentication());
+        Message<?> message = build(accessor);
+
+        org.assertj.core.api.Assertions.assertThatCode(() -> interceptor.preSend(message, channel))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 층의 유도등 topic 구독은 거부한다")
+    void subscribeRejectsUnknownFloor() {
+        UUID floorId = UUID.randomUUID();
+        given(floorRepository.existsById(floorId)).willReturn(false);
+
+        StompHeaderAccessor accessor =
+                subscribeAccessor("/topic/floors/" + floorId + "/lights", managerAuthentication());
         Message<?> message = build(accessor);
 
         assertThatThrownBy(() -> interceptor.preSend(message, channel))

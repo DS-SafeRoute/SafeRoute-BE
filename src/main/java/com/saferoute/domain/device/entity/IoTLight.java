@@ -67,6 +67,11 @@ public class IoTLight {
     @Column(name = "enabled", nullable = false)
     private boolean enabled;
 
+    // 이 유도등의 명령을 실제로 전달받는 라즈베리파이 주소 (예: http://192.168.0.50:5000)
+    // 등록 시점에는 비어있을 수 있음 - 하드웨어 배치 후 별도로 설정
+    @Column(name = "pi_endpoint", length = 255)
+    private String piEndpoint;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -132,6 +137,14 @@ public class IoTLight {
 
     public void enable() {
         this.enabled = true;
+    }
+
+    // 하드웨어 배치/교체 시 관리자가 라즈베리파이 주소를 지정한다.
+    public void updatePiEndpoint(String piEndpoint) {
+        if (piEndpoint == null || piEndpoint.isBlank()) {
+            throw new IllegalArgumentException("piEndpoint는 비어있을 수 없습니다.");
+        }
+        this.piEndpoint = piEndpoint;
     }
 
     private static void validateCustomNode(MapNode customNode) {

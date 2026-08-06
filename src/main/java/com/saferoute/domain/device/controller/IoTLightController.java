@@ -1,9 +1,12 @@
 package com.saferoute.domain.device.controller;
 
+import com.saferoute.domain.device.dto.request.ChangeLightDirectionRequest;
 import com.saferoute.domain.device.dto.request.ConfigureGuidanceRequest;
 import com.saferoute.domain.device.dto.request.CreateIoTLightRequest;
 import com.saferoute.domain.device.dto.request.UpdateIoTLightRequest;
+import com.saferoute.domain.device.dto.request.UpdatePiEndpointRequest;
 import com.saferoute.domain.device.dto.response.IoTLightResponse;
+import com.saferoute.domain.device.dto.response.LightDirectionResponse;
 import com.saferoute.domain.device.service.IoTLightService;
 import com.saferoute.global.api.response.ApiResponse;
 import com.saferoute.global.api.response.IoTLightSuccessCode;
@@ -67,6 +70,24 @@ public class IoTLightController {
     ) {
         IoTLightResponse response = iotLightService.updateLight(lightId, request);
         return ResponseEntity.ok(ApiResponse.success(IoTLightSuccessCode.IOT_LIGHT_UPDATED, response));
+    }
+
+    @PatchMapping("/{lightId}/direction")
+    public ResponseEntity<ApiResponse<LightDirectionResponse>> changeDirection(
+            @PathVariable UUID lightId,
+            @Valid @RequestBody ChangeLightDirectionRequest request
+    ) {
+        LightDirectionResponse response = iotLightService.changeDirection(lightId, request);
+        return ResponseEntity.ok(ApiResponse.success(IoTLightSuccessCode.IOT_LIGHT_DIRECTION_CHANGED, response));
+    }
+
+    @PatchMapping("/{lightId}/pi-endpoint")
+    public ResponseEntity<ApiResponse<IoTLightResponse>> updatePiEndpoint(
+            @PathVariable UUID lightId,
+            @Valid @RequestBody UpdatePiEndpointRequest request
+    ) {
+        IoTLightResponse response = iotLightService.updatePiEndpoint(lightId, request);
+        return ResponseEntity.ok(ApiResponse.success(IoTLightSuccessCode.IOT_LIGHT_PI_ENDPOINT_UPDATED, response));
     }
 
     @PatchMapping("/{lightId}/enable")

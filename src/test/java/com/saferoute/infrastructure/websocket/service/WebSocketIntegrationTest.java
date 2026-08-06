@@ -8,6 +8,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.building.entity.BuildingType;
 import com.saferoute.domain.building.repository.BuildingRepository;
+import com.saferoute.domain.device.entity.IoTLight;
+import com.saferoute.domain.device.entity.IoTLightDirection;
+import com.saferoute.domain.device.repository.IoTLightJpaRepository;
+import com.saferoute.domain.evacuation.graph.entity.MapNode;
+import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
+import com.saferoute.domain.floor.entity.Floor;
+import com.saferoute.domain.floor.repository.FloorRepository;
 import com.saferoute.domain.training.entity.FireSpreadSpeed;
 import com.saferoute.domain.training.entity.TrainingScenario;
 import com.saferoute.domain.training.entity.TrainingSession;
@@ -72,6 +79,15 @@ class WebSocketIntegrationTest {
 
     @Autowired
     private TrainingEventPublisher trainingEventPublisher;
+
+    @Autowired
+    private FloorRepository floorRepository;
+
+    @Autowired
+    private MapNodeJpaRepository mapNodeJpaRepository;
+
+    @Autowired
+    private IoTLightJpaRepository iotLightJpaRepository;
 
     @Autowired
     private com.saferoute.domain.training.service.TrainingSessionService trainingSessionService;
@@ -245,6 +261,55 @@ class WebSocketIntegrationTest {
             session.disconnect();
         } finally {
             trainingSessionRepository.deleteById(runningSession.getId());
+        }
+    }
+
+    @Test
+    @DisplayName("MANAGER 토큰으로 층 유도등 topic을 구독하면 발행된 유도등 상태 이벤트를 수신한다")
+    void managerCanSubscribeFloorLightsTopicAndReceiveEvent() throws Exception {
+        Floor floor = Floor.create(building, 3);
+        floorRepository.save(floor);
+        MapNode customNode = mapNodeJpaRepository.save(MapNode.createCustom(floor, "LIGHT_TEST_001", "복도 유도등", 0.3, 0.4));
+        IoTLight light = iotLightJpaRepository.save(IoTLight.create("LIGHT_TEST_001", "복도 유도등", customNode));
+
+        try {
+            StompSession session = connect(managerToken);
+
+            BlockingQueue<String> received = new LinkedBlockingQueue<>();
+            session.subscribe(
+                    "/topic/floors/" + floor.getId() + "/lights",
+                    new StompFrameHandler() {
+                        @Override
+                        public Type getPayloadType(StompHeaders headers) {
+                            return byte[].class;
+                        }
+
+                        @Override
+                        public void handleFrame(StompHeaders headers, Object payload) {
+                            received.add(new String((byte[]) payload));
+                        }
+                    }
+            );
+
+            // 구독이 브로커에 등록될 시간을 확보한다.
+            Thread.sleep(300);
+
+            trainingEventPublisher.publishIoTLightStatusUpdated(light, IoTLightDirection.LEFT);
+
+            String payload = received.poll(5, TimeUnit.SECONDS);
+            assertThat(payload).isNotNull();
+
+            JsonNode json = objectMapper.readTree(payload);
+            assertThat(json.get("eventType").asText()).isEqualTo("IOT_LIGHT_STATUS_UPDATED");
+            assertThat(json.get("floorId").asText()).isEqualTo(floor.getId().toString());
+            assertThat(json.get("data").get("lightId").asText()).isEqualTo(light.getId().toString());
+            assertThat(json.get("data").get("direction").asText()).isEqualTo("LEFT");
+
+            session.disconnect();
+        } finally {
+            iotLightJpaRepository.delete(light);
+            mapNodeJpaRepository.delete(customNode);
+            floorRepository.delete(floor);
         }
     }
 

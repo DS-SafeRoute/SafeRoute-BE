@@ -16,6 +16,14 @@ jwt:
   issuer: saferoute
   access-token-expiration: 1h
 
+# AiAnalysisClient 는 컨텍스트 로딩 시점에 값이 필요하므로 더미값을 넣는다.
+# src/test/resources/application.yml이 클래스패스에서 src/main/resources/application.yml과
+# 파일명이 같아 완전히 가려버리므로(merge 안 됨), 메인 쪽 기본값(${AI_SERVICE_BASE_URL:...})도
+# 적용되지 않는다 - 실제 AI 서비스 호출은 테스트에서 하지 않으므로 형식만 맞는 더미값이면 된다.
+saferoute:
+  ai-service:
+    base-url: http://localhost:8001
+
 # S3Config 는 컨텍스트 로딩 시점에 값이 필요하므로 더미값을 넣는다.
 # 실제 S3 호출은 테스트에서 하지 않으므로 아무 값이나 형식만 맞으면 된다.
 aws:
