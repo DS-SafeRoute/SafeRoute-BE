@@ -3,6 +3,7 @@ package com.saferoute.domain.evacuation.controller;
 import com.saferoute.domain.evacuation.graph.dto.response.FloorGraphResponse;
 import com.saferoute.domain.evacuation.graph.service.MapGraphService;
 import com.saferoute.global.api.response.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+@Tag(name = "맵 그래프", description = "층별 맵 그래프(노드/엣지) 조회 API")
 @RestController
 @RequestMapping("/api/v1/floors/{floorId}")
 @RequiredArgsConstructor

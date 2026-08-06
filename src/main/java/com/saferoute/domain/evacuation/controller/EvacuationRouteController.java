@@ -4,6 +4,7 @@ import com.saferoute.domain.evacuation.service.EvacuationRoute;
 import com.saferoute.domain.evacuation.service.EvacuationRouteService;
 import com.saferoute.domain.evacuation.dto.response.EvacuationRouteResponse;
 import com.saferoute.global.api.response.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 // /graph(노드/엣지 편집용) 엔드포인트와 역할 분리를 위해 별도 컨트롤러로 구성 - MapGraphController 참고
+@Tag(name = "대피 경로", description = "최단 대피 경로 조회 API")
 @RestController
 @RequestMapping("/api/v1/floors/{floorId}")
 @RequiredArgsConstructor

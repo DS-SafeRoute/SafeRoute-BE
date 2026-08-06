@@ -10,6 +10,7 @@ import com.saferoute.domain.device.dto.response.LightDirectionResponse;
 import com.saferoute.domain.device.service.IoTLightService;
 import com.saferoute.global.api.response.ApiResponse;
 import com.saferoute.global.api.response.IoTLightSuccessCode;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+@Tag(name = "IoT 유도등", description = "IoT 유도등 등록/조회/방향 제어 API")
 @RestController
 @RequestMapping("/api/v1/lights")
 @RequiredArgsConstructor

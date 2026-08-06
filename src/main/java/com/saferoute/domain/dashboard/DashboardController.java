@@ -5,6 +5,7 @@ import com.saferoute.domain.report.dto.RecentTrainingReportResponse;
 import com.saferoute.domain.training.dto.TrainingStatusResponse;
 import com.saferoute.domain.report.service.TrainingReportService;
 import com.saferoute.domain.training.service.TrainingSessionService;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+@Tag(name = "대시보드", description = "훈련 현황 및 통계 대시보드 API")
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/dashboard")

@@ -6,6 +6,7 @@ import com.saferoute.domain.building.dto.request.UpdateBuildingRequest;
 import com.saferoute.domain.building.service.BuildingService;
 import com.saferoute.global.api.response.ApiResponse;
 import com.saferoute.global.api.response.BuildingSuccessCode;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
 import java.util.List;
@@ -16,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+@Tag(name = "건물", description = "건물 등록/조회/수정/삭제 API")
 @RestController
 @RequestMapping("/api/v1/buildings")
 @RequiredArgsConstructor
