@@ -6,10 +6,13 @@ public enum TrainingEventType {
     // 현재는 위 도메인 메서드를 호출하는 시작/종료 API가 없어 실제로 발행되지는 않는다.
     TRAINING_STATUS_UPDATED,
 
-    // 아래 2개는 계약(메시지 규격) 정의만 되어 있는 상태다.
-    // 대응하는 도메인 로직(혼잡도 계산, 경로 재계산)이 아직 없어
-    // 전용 데이터 DTO와 TrainingEventPublisher 발행 메서드는 이번 작업에서 추가하지 않았다.
+    // CongestionEventService.reportCongestion() 호출 시 발행된다. (이슈 #48)
     CONGESTION_UPDATED,
+
+    // RouteRecalculationService.trigger()가 재탐색 결과를 PENDING으로 저장했을 때 발행된다. (이슈 #48)
+    ROUTE_RECALCULATION_REQUESTED,
+
+    // RouteRecalculationService.approve()가 재탐색 결과를 승인했을 때 발행된다. (이슈 #49에서 구현 예정)
     EVACUATION_ROUTE_UPDATED,
 
     // IoTLightService.changeDirection() 호출 시 TrainingEventPublisher.publishIoTLightStatusUpdated()가 발행한다.

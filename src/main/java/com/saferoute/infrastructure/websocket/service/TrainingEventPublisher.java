@@ -2,9 +2,13 @@ package com.saferoute.infrastructure.websocket.service;
 
 import com.saferoute.domain.device.entity.IoTLight;
 import com.saferoute.domain.device.entity.IoTLightDirection;
+import com.saferoute.domain.evacuation.recalculation.entity.RouteRecalculation;
+import com.saferoute.domain.telemetry.dynamo.entity.CongestionSummaryItem;
 import com.saferoute.domain.training.entity.TrainingSession;
+import com.saferoute.infrastructure.websocket.dto.CongestionEventData;
 import com.saferoute.infrastructure.websocket.dto.IoTLightEventMessage;
 import com.saferoute.infrastructure.websocket.dto.IoTLightStatusEventData;
+import com.saferoute.infrastructure.websocket.dto.RouteRecalculationEventData;
 import com.saferoute.infrastructure.websocket.dto.TrainingEventMessage;
 import com.saferoute.infrastructure.websocket.dto.TrainingEventType;
 import com.saferoute.infrastructure.websocket.dto.TrainingStatusEventData;
@@ -21,9 +25,6 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 // SimpMessagingTemplate을 다른 서비스에 직접 주입하지 않고 항상 이 클래스를 거친다.
 // 훈련 세션 이벤트는 /topic/training-sessions/{sessionId}, 유도등 이벤트는 층 도면 화면이
 // 층 전체를 한 번에 보여주는 구조라 /topic/floors/{floorId}/lights로 발행한다.
-//
-// 혼잡도 / 경로 재계산 이벤트 발행 메서드는 아직 없다.
-// 대응하는 도메인 로직이 만들어지면 이 클래스에 전용 메서드를 추가한다.
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -124,6 +125,71 @@ public class TrainingEventPublisher {
                                     light.getId(),
                                     exception
                             );
+                        }
+                    }
+                }
+        );
+    }
+
+    // 혼잡 이벤트 수신 시 즉시 발행한다 (DynamoDB 저장은 DB 트랜잭션과 무관하므로 AfterCommit 버전을 두지 않는다).
+    public void publishCongestionUpdated(UUID sessionId, UUID edgeId, CongestionSummaryItem item) {
+        TrainingEventMessage<CongestionEventData> message = TrainingEventMessage.of(
+                TrainingEventType.CONGESTION_UPDATED,
+                sessionId,
+                CongestionEventData.from(edgeId, item)
+        );
+
+        messagingTemplate.convertAndSend(SESSION_TOPIC_PREFIX + sessionId, message);
+
+        log.debug(
+                "혼잡도 이벤트 발행: sessionId={}, edgeId={}, level={}",
+                sessionId,
+                edgeId,
+                item.getCongestionLevel()
+        );
+    }
+
+    // DB 트랜잭션이 실제로 커밋된 이후에만 발행한다 (publishTrainingStatusUpdatedAfterCommit 참고).
+    public void publishRouteRecalculationRequestedAfterCommit(RouteRecalculation recalculation) {
+        publishAfterCommit(
+                () -> publishRouteRecalculationRequested(recalculation),
+                "커밋 후 재탐색 요청 이벤트 발행 실패: recalculationId=" + recalculation.getId()
+        );
+    }
+
+    public void publishRouteRecalculationRequested(RouteRecalculation recalculation) {
+        UUID sessionId = recalculation.getTrainingSession().getId();
+        TrainingEventMessage<RouteRecalculationEventData> message = TrainingEventMessage.of(
+                TrainingEventType.ROUTE_RECALCULATION_REQUESTED,
+                sessionId,
+                RouteRecalculationEventData.from(recalculation)
+        );
+
+        messagingTemplate.convertAndSend(SESSION_TOPIC_PREFIX + sessionId, message);
+
+        log.debug(
+                "재탐색 요청 이벤트 발행: sessionId={}, recalculationId={}",
+                sessionId,
+                recalculation.getId()
+        );
+    }
+
+    // approve() 승인 시 발행하는 EVACUATION_ROUTE_UPDATED는 승인/거절 API(이슈 #49)에서 추가한다.
+
+    private void publishAfterCommit(Runnable publish, String failureLogMessage) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            publish.run();
+            return;
+        }
+
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        try {
+                            publish.run();
+                        } catch (RuntimeException exception) {
+                            log.error(failureLogMessage, exception);
                         }
                     }
                 }
