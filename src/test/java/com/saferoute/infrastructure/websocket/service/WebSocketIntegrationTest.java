@@ -43,6 +43,7 @@ import org.springframework.messaging.simp.stomp.StompFrameHandler;
 import org.springframework.messaging.simp.stomp.StompHeaders;
 import org.springframework.messaging.simp.stomp.StompSession;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.socket.WebSocketHttpHeaders;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.messaging.WebSocketStompClient;
 
@@ -351,20 +352,45 @@ class WebSocketIntegrationTest {
                 .isInstanceOfAny(ExecutionException.class, TimeoutException.class);
     }
 
+    @Test
+    @DisplayName("허용된 Origin에서는 WebSocket 연결에 성공한다")
+    void allowedOriginCanConnect() throws Exception {
+        StompSession session = connectRaw(managerToken, "http://localhost:3000");
+
+        assertThat(session.isConnected()).isTrue();
+        session.disconnect();
+    }
+
+    @Test
+    @DisplayName("허용되지 않은 Origin에서는 WebSocket handshake가 거부된다")
+    void disallowedOriginCannotConnect() {
+        assertThatThrownBy(() -> connectRaw(managerToken, "https://evil.example"))
+                .isInstanceOfAny(ExecutionException.class, TimeoutException.class);
+    }
+
     private StompSession connect(String token) throws Exception {
         return connectRaw(token);
     }
 
     private StompSession connectRaw(String token) throws Exception {
+        return connectRaw(token, null);
+    }
+
+    private StompSession connectRaw(String token, String origin) throws Exception {
         StompHeaders connectHeaders = new StompHeaders();
         if (token != null) {
             connectHeaders.add("Authorization", "Bearer " + token);
         }
 
+        WebSocketHttpHeaders handshakeHeaders = new WebSocketHttpHeaders();
+        if (origin != null) {
+            handshakeHeaders.setOrigin(origin);
+        }
+
         return stompClient
                 .connectAsync(
                         "ws://localhost:" + port + "/ws",
-                        (org.springframework.web.socket.WebSocketHttpHeaders) null,
+                        handshakeHeaders,
                         connectHeaders,
                         new org.springframework.messaging.simp.stomp.StompSessionHandlerAdapter() {
                         }
