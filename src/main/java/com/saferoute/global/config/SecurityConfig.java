@@ -4,11 +4,8 @@ import com.saferoute.global.security.CustomUserDetailsService;
 import com.saferoute.global.security.JwtAccessDeniedHandler;
 import com.saferoute.global.security.JwtAuthenticationEntryPoint;
 import com.saferoute.global.security.JwtAuthenticationFilter;
-import com.saferoute.global.security.JwtProperties;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -29,17 +26,11 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 @Configuration
 @EnableWebSecurity
 @RequiredArgsConstructor
-@EnableConfigurationProperties(JwtProperties.class)
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
     private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
-
-    // 프론트 origin이 확정되면 application-{profile}.yml / 배포 환경변수로 채운다.
-    // 콤마로 여러 origin 지정 가능.
-    @Value("${app.cors.allowed-origins:http://localhost:3000,http://localhost:5173}")
-    private List<String> allowedOrigins;
 
     @Bean
     public SecurityFilterChain securityFilterChain(
@@ -70,6 +61,10 @@ public class SecurityConfig {
                 )
 
                 .authorizeHttpRequests(auth -> auth
+                        // 브라우저 preflight만 공개한다.
+                        // 실제 API 요청의 권한 규칙은 아래에서 유지한다.
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
                         .requestMatchers(
                                 "/api/v1/auth/signup",
                                 "/api/v1/auth/login",
@@ -78,10 +73,10 @@ public class SecurityConfig {
                                 "/ws/**"
                         ).permitAll()
 
-                        // /actuator/** 를 명시적으로 분리한다.
+                        // /actuator/**를 명시적으로 분리한다.
                         // health만 공개하고, 그 외(env, beans, metrics 등)는 인증 필요.
-                        // 실제로 어떤 actuator 엔드포인트가 웹에 노출되는지는
-                        // application.yml의 management.endpoints.web.exposure.include로 별도 통제한다.
+                        // 실제로 어떤 actuator endpoint가 웹에 노출되는지는
+                        // application.yml의 management 설정으로 별도 통제한다.
                         .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers("/actuator/**").authenticated()
 
@@ -108,15 +103,42 @@ public class SecurityConfig {
     }
 
     @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
+    public CorsConfigurationSource corsConfigurationSource(
+            CorsProperties corsProperties
+    ) {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(allowedOrigins);
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+
+        configuration.setAllowedOrigins(
+                corsProperties.allowedOrigins()
+        );
+
+        configuration.setAllowedMethods(
+                List.of(
+                        "GET",
+                        "POST",
+                        "PUT",
+                        "PATCH",
+                        "DELETE",
+                        "OPTIONS"
+                )
+        );
+
+        configuration.setAllowedHeaders(
+                List.of(
+                        "Authorization",
+                        "Content-Type"
+                )
+        );
+
+        // WebSocket handshake에서 쿠키 기반 인증 정보를 전달하므로 유지한다.
+        // allowedOrigins는 "*"가 아닌 명시적인 Origin 목록이어야 한다.
         configuration.setAllowCredentials(true);
 
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        UrlBasedCorsConfigurationSource source =
+                new UrlBasedCorsConfigurationSource();
+
         source.registerCorsConfiguration("/**", configuration);
+
         return source;
     }
 
@@ -129,6 +151,7 @@ public class SecurityConfig {
                 new DaoAuthenticationProvider(userDetailsService);
 
         provider.setPasswordEncoder(passwordEncoder);
+
         return provider;
     }
 
