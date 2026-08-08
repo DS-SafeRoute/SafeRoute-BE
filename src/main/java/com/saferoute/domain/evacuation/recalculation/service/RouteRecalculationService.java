@@ -20,6 +20,7 @@ import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -63,9 +64,16 @@ public class RouteRecalculationService {
 
         List<UUID> newPathNodeIds = route.path().stream().map(node -> node.getId()).toList();
 
-        RouteRecalculation recalculation = routeRecalculationRepository.save(
-                RouteRecalculation.createPending(session, triggerEdge, level, newPathNodeIds, route.totalWeight())
-        );
+        RouteRecalculation recalculation;
+        try {
+            recalculation = routeRecalculationRepository.save(
+                    RouteRecalculation.createPending(session, triggerEdge, level, newPathNodeIds, route.totalWeight())
+            );
+        } catch (DataIntegrityViolationException exception) {
+            // 동시에 들어온 중복 혼잡 이벤트가 exists() 체크를 함께 통과한 경우, DB 유니크 제약으로 걸러진 것이므로 조용히 무시한다.
+            log.debug("동시 요청으로 인한 중복 재탐색 저장을 무시함: sessionId={}, edgeId={}", session.getId(), triggerEdge.getId());
+            return;
+        }
 
         trainingEventRepository.save(TrainingEventItem.create(
                 session.getId().toString(),

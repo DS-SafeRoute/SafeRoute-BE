@@ -17,6 +17,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OrderColumn;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -30,7 +31,10 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 // 혼잡 감지로 트리거된 우회 경로 재탐색 결과. 관리자가 승인해야 실제 대피 경로에 반영된다.
 @Entity
 @Getter
-@Table(name = "route_recalculations")
+@Table(name = "route_recalculations", uniqueConstraints = @UniqueConstraint(
+        name = "uk_route_recalculation_session_edge_status",
+        columnNames = {"training_session_id", "trigger_edge_id", "status"}
+))
 @EntityListeners(AuditingEntityListener.class)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class RouteRecalculation {

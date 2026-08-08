@@ -87,7 +87,7 @@ class CongestionEventServiceTest {
     @DisplayName("대상 건물에 RUNNING 세션이 없으면 저장/발행/트리거 없이 조용히 종료한다")
     void reportCongestion_noOpWhenNoRunningSession() {
         given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
-        given(trainingSessionRepository.findFirstByStatusAndScenario_Building_Id(TrainingStatus.RUNNING, buildingId))
+        given(trainingSessionRepository.findFirstByStatusAndScenario_Building_IdOrderByStartedAtAsc(TrainingStatus.RUNNING, buildingId))
                 .willReturn(Optional.empty());
 
         congestionEventService.reportCongestion(request(CongestionLevel.HIGH));
@@ -104,7 +104,7 @@ class CongestionEventServiceTest {
         given(session.getId()).willReturn(UUID.randomUUID());
 
         given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
-        given(trainingSessionRepository.findFirstByStatusAndScenario_Building_Id(TrainingStatus.RUNNING, buildingId))
+        given(trainingSessionRepository.findFirstByStatusAndScenario_Building_IdOrderByStartedAtAsc(TrainingStatus.RUNNING, buildingId))
                 .willReturn(Optional.of(session));
 
         congestionEventService.reportCongestion(request(CongestionLevel.MEDIUM));
@@ -121,7 +121,7 @@ class CongestionEventServiceTest {
         given(session.getId()).willReturn(UUID.randomUUID());
 
         given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
-        given(trainingSessionRepository.findFirstByStatusAndScenario_Building_Id(TrainingStatus.RUNNING, buildingId))
+        given(trainingSessionRepository.findFirstByStatusAndScenario_Building_IdOrderByStartedAtAsc(TrainingStatus.RUNNING, buildingId))
                 .willReturn(Optional.of(session));
 
         congestionEventService.reportCongestion(request(CongestionLevel.CRITICAL));

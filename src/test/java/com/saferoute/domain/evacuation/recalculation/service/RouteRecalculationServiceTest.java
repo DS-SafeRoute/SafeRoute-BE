@@ -25,11 +25,13 @@ import com.saferoute.global.api.error.EvacuationErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -125,6 +127,10 @@ class RouteRecalculationServiceTest {
         routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.HIGH);
 
         // then
+        ArgumentCaptor<Set<UUID>> excludedEdgesCaptor = ArgumentCaptor.forClass(Set.class);
+        verify(evacuationRouteService).findShortestRoute(any(), any(), excludedEdgesCaptor.capture());
+        assertThat(excludedEdgesCaptor.getValue()).containsExactly(triggerEdge.getId());
+
         verify(routeRecalculationRepository, times(1)).save(any());
         verify(trainingEventRepository, times(1)).save(any());
         verify(trainingEventPublisher, times(1)).publishRouteRecalculationRequestedAfterCommit(saved);

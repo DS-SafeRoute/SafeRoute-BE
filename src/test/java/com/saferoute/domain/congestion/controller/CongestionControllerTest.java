@@ -72,6 +72,54 @@ class CongestionControllerTest {
     }
 
     @Test
+    @DisplayName("avgHeadcount가 음수면 400을 반환한다")
+    void reportCongestion_returnsBadRequestWhenAvgHeadcountNegative() throws Exception {
+        ReportCongestionRequest invalid = new ReportCongestionRequest(
+                UUID.randomUUID(), "CCTV_001", -1, 8, CongestionLevel.HIGH, 1000L, 2000L, null);
+
+        mockMvc.perform(post("/api/v1/congestion-events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalid)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("peakHeadcount가 음수면 400을 반환한다")
+    void reportCongestion_returnsBadRequestWhenPeakHeadcountNegative() throws Exception {
+        ReportCongestionRequest invalid = new ReportCongestionRequest(
+                UUID.randomUUID(), "CCTV_001", 5, -1, CongestionLevel.HIGH, 1000L, 2000L, null);
+
+        mockMvc.perform(post("/api/v1/congestion-events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalid)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("avgHeadcount가 peakHeadcount보다 크면 400을 반환한다")
+    void reportCongestion_returnsBadRequestWhenAvgExceedsPeak() throws Exception {
+        ReportCongestionRequest invalid = new ReportCongestionRequest(
+                UUID.randomUUID(), "CCTV_001", 9, 8, CongestionLevel.HIGH, 1000L, 2000L, null);
+
+        mockMvc.perform(post("/api/v1/congestion-events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalid)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("windowStart가 windowEnd보다 이후이면 400을 반환한다")
+    void reportCongestion_returnsBadRequestWhenWindowStartAfterWindowEnd() throws Exception {
+        ReportCongestionRequest invalid = new ReportCongestionRequest(
+                UUID.randomUUID(), "CCTV_001", 5, 8, CongestionLevel.HIGH, 2000L, 1000L, null);
+
+        mockMvc.perform(post("/api/v1/congestion-events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalid)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     @DisplayName("서비스가 MAP_EDGE_NOT_FOUND를 던지면 404를 반환한다")
     void reportCongestion_returnsNotFoundWhenEdgeMissing() throws Exception {
         willThrow(new ApiException(EvacuationErrorCode.MAP_EDGE_NOT_FOUND))

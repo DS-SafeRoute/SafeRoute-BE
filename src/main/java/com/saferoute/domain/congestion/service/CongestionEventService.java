@@ -39,7 +39,7 @@ public class CongestionEventService {
 
         var buildingId = edge.getFloor().getBuilding().getId();
         TrainingSession session = trainingSessionRepository
-                .findFirstByStatusAndScenario_Building_Id(TrainingStatus.RUNNING, buildingId)
+                .findFirstByStatusAndScenario_Building_IdOrderByStartedAtAsc(TrainingStatus.RUNNING, buildingId)
                 .orElse(null);
         if (session == null) {
             log.debug("훈련 중이 아닌 건물의 혼잡 이벤트라 무시함: buildingId={}, edgeId={}", buildingId, edge.getId());
