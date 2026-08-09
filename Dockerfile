@@ -19,7 +19,7 @@ FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 
 # plain jar를 껐으므로 build/libs 에는 실행 가능한 jar 하나만 존재
-COPY --from=build /app/build/libs/app.jar /app/app.jar
+COPY --from=build /app/build/libs/*-SNAPSHOT.jar app.jar
 
 RUN apk add --no-cache tzdata
 ENV TZ=UTC
@@ -27,4 +27,4 @@ ENV TZ=UTC
 EXPOSE 8080
 
 # 컨테이너에 할당된 메모리에 맞춰 힙 자동 조정
-ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+ENTRYPOINT ["java", "-jar", "app.jar"]
