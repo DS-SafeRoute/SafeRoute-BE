@@ -38,7 +38,6 @@ jobs:
       - name: Checkout BE repository
         uses: actions/checkout@v6
         with:
-          path: SafeRoute-BE
           persist-credentials: false
 
       - name: Checkout AI floor_analysis
@@ -66,8 +65,39 @@ jobs:
             exit 1
           }
 
+      - name: Prepare BE deployment directory
+        run: |
+          set -euo pipefail
+
+          # /opt/saferoute/.env는 보존하고, BE 운영 소스만 새 체크아웃으로 교체한다.
+          sudo install -d -m 0755 -o "$USER" -g "$USER" /opt/saferoute
+          sudo rm -rf /opt/saferoute/SafeRoute-BE
+          sudo cp -a "$GITHUB_WORKSPACE/SafeRoute-BE" /opt/saferoute/SafeRoute-BE
+          sudo rm -rf \
+            /opt/saferoute/SafeRoute-BE/.git \
+            /opt/saferoute/SafeRoute-BE/.gradle \
+            /opt/saferoute/SafeRoute-BE/build
+          sudo chown -R "$USER":"$USER" /opt/saferoute/SafeRoute-BE
+
+          test -f /opt/saferoute/SafeRoute-BE/docker-compose.prod.yml
+          sudo chown "$USER":"$USER" /opt/saferoute/.env
+          chmod 600 /opt/saferoute/.env
+
+      - name: Prepare AI deployment directory
+        if: ${{ inputs.deploy_target == 'ai-only' || inputs.deploy_target == 'all' }}
+        run: |
+          set -euo pipefail
+
+          # Compose의 ../SafeRoute-AI/floor_analysis 상대 경로를 그대로 유지한다.
+          sudo rm -rf /opt/saferoute/SafeRoute-AI
+          sudo cp -a "$GITHUB_WORKSPACE/SafeRoute-AI" /opt/saferoute/SafeRoute-AI
+          sudo rm -rf /opt/saferoute/SafeRoute-AI/.git
+          sudo chown -R "$USER":"$USER" /opt/saferoute/SafeRoute-AI
+
+          test -d /opt/saferoute/SafeRoute-AI/floor_analysis
+
       - name: Validate production Compose
-        working-directory: SafeRoute-BE
+        working-directory: /opt/saferoute/SafeRoute-BE
         run: |
           set -euo pipefail
 
@@ -78,7 +108,7 @@ jobs:
 
       - name: Deploy BE
         if: ${{ inputs.deploy_target == 'be-only' || inputs.deploy_target == 'all' }}
-        working-directory: SafeRoute-BE
+        working-directory: /opt/saferoute/SafeRoute-BE
         run: |
           set -Eeuo pipefail
 
@@ -169,7 +199,7 @@ jobs:
 
       - name: Deploy AI
         if: ${{ inputs.deploy_target == 'ai-only' || inputs.deploy_target == 'all' }}
-        working-directory: SafeRoute-BE
+        working-directory: /opt/saferoute/SafeRoute-BE
         run: |
           set -Eeuo pipefail
 
@@ -285,7 +315,7 @@ jobs:
 
       - name: Show deployment status
         if: always()
-        working-directory: SafeRoute-BE
+        working-directory: /opt/saferoute/SafeRoute-BE
         run: |
           docker compose \
             --env-file /opt/saferoute/.env \
