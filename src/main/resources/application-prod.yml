@@ -7,13 +7,14 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update   # EC2 실배포 시점엔 validate로 바꾸기
+      # 기존 DB 호환을 위해 우선 update를 사용한다.
+      # 추후 Flyway 등의 마이그레이션을 도입하면 validate로 변경한다.
+      ddl-auto: ${JPA_DDL_AUTO:update}
     properties:
       hibernate:
         format_sql: false
 
-aws:
-  region: ${AWS_REGION:us-east-2}
-  s3:
-    bucket: ${S3_BUCKET:project10-87-ohio-s3}
-    presigned-url-expiration: 1m
+saferoute:
+  ai-service:
+    # AI가 아직 배포되지 않았어도 BE 자체는 먼저 실행할 수 있다.
+    base-url: ${AI_SERVICE_BASE_URL:http://ai:8000}

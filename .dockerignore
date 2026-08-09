@@ -17,7 +17,6 @@ build/
 *.key
 *.p12
 *.jks
-src/main/resources/application-local.*
 src/main/resources/application-secret.*
 
 # 기타
