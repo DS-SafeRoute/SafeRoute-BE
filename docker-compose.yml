@@ -1,47 +1,92 @@
+name: saferoute-local
+
 services:
   postgres:
     image: postgres:18-alpine
-    container_name: saferoute-postgres
+
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${LOCAL_DB_USERNAME}
-      POSTGRES_PASSWORD: ${LOCAL_DB_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-saferoute}
+      POSTGRES_USER: ${LOCAL_DB_USERNAME:-saferoute}
+      POSTGRES_PASSWORD: ${LOCAL_DB_PASSWORD:-saferoute-local-only}
+
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5433:5432"
+
     volumes:
       - saferoute-pgdata:/var/lib/postgresql
+
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "pg_isready -U ${LOCAL_DB_USERNAME} -d ${POSTGRES_DB}"
+          "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"
         ]
       interval: 5s
       timeout: 5s
       retries: 10
 
+  ai:
+    build:
+      context: ${FLOOR_ANALYSIS_CONTEXT:-../SafeRoute-AI/floor_analysis}
+      dockerfile: Dockerfile
+
+    environment:
+      SAFEROUTE_MODEL_PATH: /app/unet_finetuned.pth
+      SAFEROUTE_S3_BUCKET: ${S3_BUCKET}
+      AWS_REGION: ${AWS_REGION:-us-east-2}
+      AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-2}
+      ENABLE_LOCAL_TEST: ${ENABLE_LOCAL_TEST:-false}
+
+    ports:
+      # Windows localhost:8001 → AI 컨테이너 8000
+      - "127.0.0.1:8001:8000"
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: saferoute-be
+
     depends_on:
       postgres:
         condition: service_healthy
-    ports:
-      - "8080:8080"
+      ai:
+        condition: service_healthy
+
     environment:
       SPRING_PROFILES_ACTIVE: local
+
+      LOCAL_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-saferoute}
+      LOCAL_DB_USERNAME: ${LOCAL_DB_USERNAME:-saferoute}
+      LOCAL_DB_PASSWORD: ${LOCAL_DB_PASSWORD:-saferoute-local-only}
 
       JWT_SECRET: ${JWT_SECRET}
       JWT_ACCESS_TOKEN_EXPIRATION: ${JWT_ACCESS_TOKEN_EXPIRATION:-1h}
 
-      LOCAL_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
-      LOCAL_DB_USERNAME: ${LOCAL_DB_USERNAME}
-      LOCAL_DB_PASSWORD: ${LOCAL_DB_PASSWORD}
-
-      AWS_REGION: ${AWS_REGION}
+      AWS_REGION: ${AWS_REGION:-us-east-2}
       S3_BUCKET: ${S3_BUCKET}
+      DYNAMODB_TABLE: ${DYNAMODB_TABLE:-saferoute-telemetry}
+
+      # 컨테이너 간 통신이므로 서비스 이름과 내부 포트를 사용한다.
+      AI_SERVICE_BASE_URL: http://ai:8000
+
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
+
+    ports:
+      - "127.0.0.1:8080:8080"
+
     restart: unless-stopped
 
 volumes:
