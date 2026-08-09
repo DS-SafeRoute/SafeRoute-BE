@@ -246,7 +246,7 @@ jobs:
                 curl --fail --silent --show-error \
                   --connect-timeout 3 --max-time 10 \
                   http://127.0.0.1:8080/actuator/health 2>&1
-              )"; then
+              )" && grep -Eq '"status"[[:space:]]*:[[:space:]]*"UP"' <<<"$response"; then
                 printf '%s\n' "$response"
                 return 0
               fi
