@@ -1,8 +1,8 @@
 package com.saferoute.infrastructure.websocket.config;
 
+import com.saferoute.global.config.CorsProperties;
 import com.saferoute.infrastructure.websocket.security.StompAuthChannelInterceptor;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
@@ -19,10 +19,7 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final StompAuthChannelInterceptor stompAuthChannelInterceptor;
-
-    // 관리자 대시보드 Origin만 허용
-    @Value("${websocket.allowed-origin-patterns:*}")
-    private String[] allowedOriginPatterns;
+    private final CorsProperties corsProperties;
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
@@ -30,11 +27,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         // 핸드셰이크 자체는 인증 없이 열어두고(SecurityConfig에서 permitAll), 인증은
         // StompAuthChannelInterceptor에서 CONNECT 프레임 단계에 수행한다.
         //
-        // 쿠키/세션 기반 인증을 쓰지 않으므로 allowCredentials(true)는 사용하지 않는다.
-        // (allowedOriginPatterns("*")와 allowCredentials(true)를 함께 쓰지 않기 위함)
+        // REST API와 동일한 프론트엔드 Origin만 WebSocket handshake에 허용한다.
+        // 정확한 Origin 목록을 사용하며 wildcard 패턴은 허용하지 않는다.
         // 프론트가 SockJS fallback을 요구하면 이후 .withSockJS()를 추가한다.
         registry.addEndpoint("/ws")
-                .setAllowedOriginPatterns(allowedOriginPatterns);
+                .setAllowedOrigins(corsProperties.allowedOrigins().toArray(String[]::new));
     }
 
     @Override

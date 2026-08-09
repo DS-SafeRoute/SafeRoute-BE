@@ -28,11 +28,14 @@ saferoute:
 # 실제 S3 호출은 테스트에서 하지 않으므로 아무 값이나 형식만 맞으면 된다.
 aws:
   region: ap-northeast-2
+
   s3:
     bucket: test-bucket
     presigned-url-expiration: 10m
+
   dynamodb:
     table-name: test-saferoute-telemetry
+
   credentials:
     access-key: test
     secret-key: test
@@ -40,3 +43,7 @@ aws:
 springdoc:
   api-docs:
     path: /v3/api-docs
+
+app:
+  cors:
+    allowed-origins: http://localhost:3000
