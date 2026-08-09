@@ -174,7 +174,30 @@ public class TrainingEventPublisher {
         );
     }
 
-    // approve() 승인 시 발행하는 EVACUATION_ROUTE_UPDATED는 승인/거절 API(이슈 #49)에서 추가한다.
+    // DB 트랜잭션이 실제로 커밋된 이후에만 발행한다 (publishTrainingStatusUpdatedAfterCommit 참고).
+    public void publishEvacuationRouteUpdatedAfterCommit(RouteRecalculation recalculation) {
+        publishAfterCommit(
+                () -> publishEvacuationRouteUpdated(recalculation),
+                "커밋 후 대피 경로 갱신 이벤트 발행 실패: recalculationId=" + recalculation.getId()
+        );
+    }
+
+    public void publishEvacuationRouteUpdated(RouteRecalculation recalculation) {
+        UUID sessionId = recalculation.getTrainingSession().getId();
+        TrainingEventMessage<RouteRecalculationEventData> message = TrainingEventMessage.of(
+                TrainingEventType.EVACUATION_ROUTE_UPDATED,
+                sessionId,
+                RouteRecalculationEventData.from(recalculation)
+        );
+
+        messagingTemplate.convertAndSend(SESSION_TOPIC_PREFIX + sessionId, message);
+
+        log.debug(
+                "대피 경로 갱신 이벤트 발행: sessionId={}, recalculationId={}",
+                sessionId,
+                recalculation.getId()
+        );
+    }
 
     private void publishAfterCommit(Runnable publish, String failureLogMessage) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {

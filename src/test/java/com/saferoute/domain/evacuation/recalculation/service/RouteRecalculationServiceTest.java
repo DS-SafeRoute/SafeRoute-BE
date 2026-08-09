@@ -1,6 +1,7 @@
 package com.saferoute.domain.evacuation.recalculation.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.BDDMockito.given;
@@ -13,6 +14,7 @@ import com.saferoute.domain.congestion.entity.CongestionLevel;
 import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.evacuation.graph.entity.NodeType;
+import com.saferoute.domain.evacuation.recalculation.dto.response.RouteRecalculationResponse;
 import com.saferoute.domain.evacuation.recalculation.entity.RecalculationStatus;
 import com.saferoute.domain.evacuation.recalculation.entity.RouteRecalculation;
 import com.saferoute.domain.evacuation.recalculation.repository.RouteRecalculationRepository;
@@ -25,6 +27,7 @@ import com.saferoute.global.api.error.EvacuationErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -61,7 +64,7 @@ class RouteRecalculationServiceTest {
     @BeforeEach
     void setUp() {
         session = mock(TrainingSession.class);
-        given(session.getId()).willReturn(UUID.randomUUID());
+        org.mockito.Mockito.lenient().when(session.getId()).thenReturn(UUID.randomUUID());
 
         Floor floor = mock(Floor.class);
         org.mockito.Mockito.lenient().when(floor.getId()).thenReturn(UUID.randomUUID());
@@ -134,5 +137,77 @@ class RouteRecalculationServiceTest {
         verify(routeRecalculationRepository, times(1)).save(any());
         verify(trainingEventRepository, times(1)).save(any());
         verify(trainingEventPublisher, times(1)).publishRouteRecalculationRequestedAfterCommit(saved);
+    }
+
+    private RouteRecalculation pendingRecalculation() {
+        RouteRecalculation recalculation = RouteRecalculation.createPending(
+                session, triggerEdge, CongestionLevel.HIGH, List.of(UUID.randomUUID()), 12.5);
+        ReflectionTestUtils.setField(recalculation, "id", UUID.randomUUID());
+        return recalculation;
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 재탐색 ID로 승인하면 ROUTE_RECALCULATION_NOT_FOUND를 던진다")
+    void approve_whenNotFound_throws() {
+        UUID recalculationId = UUID.randomUUID();
+        given(routeRecalculationRepository.findById(recalculationId)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> routeRecalculationService.approve(recalculationId))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", EvacuationErrorCode.ROUTE_RECALCULATION_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("PENDING이 아니면 승인 시 INVALID_RECALCULATION_STATUS_TRANSITION을 던진다")
+    void approve_whenNotPending_throws() {
+        RouteRecalculation recalculation = pendingRecalculation();
+        recalculation.approve(java.time.Instant.now());
+        given(routeRecalculationRepository.findById(recalculation.getId())).willReturn(Optional.of(recalculation));
+
+        assertThatThrownBy(() -> routeRecalculationService.approve(recalculation.getId()))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", EvacuationErrorCode.INVALID_RECALCULATION_STATUS_TRANSITION);
+
+        verify(trainingEventPublisher, never()).publishEvacuationRouteUpdatedAfterCommit(any());
+    }
+
+    @Test
+    @DisplayName("PENDING이면 승인 시 상태를 APPROVED로 바꾸고 WS 이벤트를 발행한다")
+    void approve_whenPending_succeedsAndPublishes() {
+        RouteRecalculation recalculation = pendingRecalculation();
+        given(routeRecalculationRepository.findById(recalculation.getId())).willReturn(Optional.of(recalculation));
+
+        RouteRecalculationResponse response = routeRecalculationService.approve(recalculation.getId());
+
+        assertThat(response.status()).isEqualTo(RecalculationStatus.APPROVED);
+        assertThat(recalculation.getStatus()).isEqualTo(RecalculationStatus.APPROVED);
+        assertThat(recalculation.getResolvedAt()).isNotNull();
+        verify(trainingEventPublisher, times(1)).publishEvacuationRouteUpdatedAfterCommit(recalculation);
+    }
+
+    @Test
+    @DisplayName("PENDING이 아니면 거절 시 INVALID_RECALCULATION_STATUS_TRANSITION을 던진다")
+    void reject_whenNotPending_throws() {
+        RouteRecalculation recalculation = pendingRecalculation();
+        recalculation.reject(java.time.Instant.now());
+        given(routeRecalculationRepository.findById(recalculation.getId())).willReturn(Optional.of(recalculation));
+
+        assertThatThrownBy(() -> routeRecalculationService.reject(recalculation.getId()))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", EvacuationErrorCode.INVALID_RECALCULATION_STATUS_TRANSITION);
+    }
+
+    @Test
+    @DisplayName("PENDING이면 거절 시 상태를 REJECTED로 바꾸고 WS 이벤트는 발행하지 않는다")
+    void reject_whenPending_succeedsWithoutPublishing() {
+        RouteRecalculation recalculation = pendingRecalculation();
+        given(routeRecalculationRepository.findById(recalculation.getId())).willReturn(Optional.of(recalculation));
+
+        RouteRecalculationResponse response = routeRecalculationService.reject(recalculation.getId());
+
+        assertThat(response.status()).isEqualTo(RecalculationStatus.REJECTED);
+        assertThat(recalculation.getStatus()).isEqualTo(RecalculationStatus.REJECTED);
+        verify(trainingEventPublisher, never()).publishEvacuationRouteUpdatedAfterCommit(any());
+        verify(trainingEventPublisher, never()).publishRouteRecalculationRequested(any());
     }
 }
