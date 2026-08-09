@@ -1,23 +1,85 @@
+name: saferoute
+
 services:
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: saferoute-be
+    depends_on:
+      ai:
+        condition: service_healthy
     ports:
       - "8080:8080"
     environment:
       SPRING_PROFILES_ACTIVE: prod
 
-      JWT_SECRET: ${JWT_SECRET}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_ACCESS_TOKEN_EXPIRATION: ${JWT_ACCESS_TOKEN_EXPIRATION:-1h}
 
-      DB_URL: ${DB_URL}
-      DB_USERNAME: ${DB_USERNAME}
-      DB_PASSWORD: ${DB_PASSWORD}
+      DB_URL: ${DB_URL:?DB_URL is required}
+      DB_USERNAME: ${DB_USERNAME:?DB_USERNAME is required}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      JPA_DDL_AUTO: ${JPA_DDL_AUTO:-update}
 
-      AWS_REGION: ${AWS_REGION}
-      S3_BUCKET: ${S3_BUCKET}
+      AWS_REGION: ${AWS_REGION:-us-east-2}
+      AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-2}
+      S3_BUCKET: ${S3_BUCKET:?S3_BUCKET is required}
       DYNAMODB_TABLE: ${DYNAMODB_TABLE:-saferoute-telemetry}
 
+      AI_SERVICE_BASE_URL: http://ai:8000
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?CORS_ALLOWED_ORIGINS is required}
+
+    networks:
+      - saferoute-network
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://127.0.0.1:8080/actuator/health | grep -q '\"status\":\"UP\"'"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
     restart: unless-stopped
+
+  ai:
+    build:
+      context: ${FLOOR_ANALYSIS_CONTEXT:-../SafeRoute-AI/floor_analysis}
+      dockerfile: Dockerfile
+
+    environment:
+      SAFEROUTE_MODEL_PATH: /app/unet_finetuned.pth
+      SAFEROUTE_S3_BUCKET: ${S3_BUCKET:?S3_BUCKET is required}
+
+      AWS_REGION: ${AWS_REGION:-us-east-2}
+      AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-2}
+
+      ENABLE_LOCAL_TEST: "false"
+
+    expose:
+      - "8000"
+
+    networks:
+      - saferoute-network
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+
+    restart: unless-stopped
+
+networks:
+  saferoute-network:
+    driver: bridge

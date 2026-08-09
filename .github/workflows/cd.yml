@@ -1,0 +1,293 @@
+name: CD
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: EC2 배포
+        required: true
+        default: be-only
+        type: choice
+        options:
+          - be-only
+          - ai-only
+          - all
+
+permissions:
+  contents: read
+
+concurrency:
+  group: saferoute-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.deploy_target }}
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+
+    timeout-minutes: 60
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout BE repository
+        uses: actions/checkout@v6
+        with:
+          path: SafeRoute-BE
+          persist-credentials: false
+
+      - name: Checkout AI floor_analysis
+        if: ${{ inputs.deploy_target == 'ai-only' || inputs.deploy_target == 'all' }}
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ vars.AI_REPOSITORY }}
+          token: ${{ secrets.AI_REPO_TOKEN }}
+          path: SafeRoute-AI
+          persist-credentials: false
+          sparse-checkout: |
+            floor_analysis
+          sparse-checkout-cone-mode: true
+          lfs: true
+
+      - name: Validate runner environment
+        run: |
+          set -euo pipefail
+
+          docker --version
+          docker compose version
+
+          test -f /opt/saferoute/.env || {
+            echo "::error::/opt/saferoute/.env 파일이 없습니다."
+            exit 1
+          }
+
+      - name: Validate production Compose
+        working-directory: SafeRoute-BE
+        run: |
+          set -euo pipefail
+
+          docker compose \
+            --env-file /opt/saferoute/.env \
+            -f docker-compose.prod.yml \
+            config --quiet
+
+      - name: Deploy BE
+        if: ${{ inputs.deploy_target == 'be-only' || inputs.deploy_target == 'all' }}
+        working-directory: SafeRoute-BE
+        run: |
+          set -Eeuo pipefail
+
+          compose() {
+            docker compose \
+              --env-file /opt/saferoute/.env \
+              -f docker-compose.prod.yml \
+              "$@"
+          }
+
+          previous_image=""
+          rollback_tag=""
+          deployment_started="false"
+          current_container="$(compose ps -q app)"
+
+          # 현재 BE가 정상일 때만 롤백 이미지로 보관한다.
+          if [ -n "$current_container" ] && \
+             curl --fail --silent --max-time 10 \
+               http://127.0.0.1:8080/actuator/health >/dev/null; then
+            previous_image="$(docker inspect --format '{{.Image}}' "$current_container")"
+            rollback_tag="saferoute-rollback-app:${GITHUB_RUN_ID}"
+            docker image tag "$previous_image" "$rollback_tag"
+          fi
+
+          rollback() {
+            exit_code=$?
+            trap - ERR
+
+            if [ "$deployment_started" = "true" ] && [ -n "$rollback_tag" ]; then
+              echo "::warning::BE 헬스 검사 실패. 이전 정상 이미지로 복구합니다."
+              rollback_file="$(mktemp)"
+              printf 'services:\n  app:\n    image: %s\n' "$rollback_tag" > "$rollback_file"
+
+              docker compose \
+                --env-file /opt/saferoute/.env \
+                -f docker-compose.prod.yml \
+                -f "$rollback_file" \
+                up -d --no-deps --no-build --force-recreate app
+
+              rm -f "$rollback_file"
+
+              curl \
+                --fail \
+                --silent \
+                --show-error \
+                --retry 24 \
+                --retry-delay 5 \
+                --retry-connrefused \
+                --max-time 10 \
+                http://127.0.0.1:8080/actuator/health
+
+              docker image rm "$rollback_tag" >/dev/null 2>&1 || true
+              echo "::error::BE 배포에 실패하여 이전 정상 버전으로 롤백했습니다."
+            elif [ "$deployment_started" = "true" ]; then
+              echo "::error::BE 배포에 실패했지만 복구할 이전 정상 이미지가 없습니다."
+            fi
+
+            exit "$exit_code"
+          }
+
+          trap rollback ERR
+
+          # 배포 전에 BE 빌드와 테스트를 먼저 통과시킨다.
+          chmod +x gradlew
+          ./gradlew clean build --no-daemon
+
+          # EC2에서 새 Docker 이미지를 직접 빌드한다.
+          compose build app
+
+          deployment_started="true"
+          compose up -d --no-deps --no-build app
+          compose ps app
+
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --retry 24 \
+            --retry-delay 5 \
+            --retry-connrefused \
+            --max-time 10 \
+            http://127.0.0.1:8080/actuator/health
+
+          trap - ERR
+          if [ -n "$rollback_tag" ]; then
+            docker image rm "$rollback_tag" >/dev/null 2>&1 || true
+          fi
+
+      - name: Deploy AI
+        if: ${{ inputs.deploy_target == 'ai-only' || inputs.deploy_target == 'all' }}
+        working-directory: SafeRoute-BE
+        run: |
+          set -Eeuo pipefail
+
+          compose() {
+            docker compose \
+              --env-file /opt/saferoute/.env \
+              -f docker-compose.prod.yml \
+              "$@"
+          }
+
+          previous_image=""
+          rollback_tag=""
+          deployment_started="false"
+          current_container="$(compose ps -q ai)"
+
+          # 현재 AI가 정상일 때만 롤백 이미지로 보관한다.
+          if [ -n "$current_container" ]; then
+            current_status="$(
+              docker inspect \
+                --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' \
+                "$current_container"
+            )"
+
+            if [ "$current_status" = "healthy" ]; then
+              previous_image="$(docker inspect --format '{{.Image}}' "$current_container")"
+              rollback_tag="saferoute-rollback-ai:${GITHUB_RUN_ID}"
+              docker image tag "$previous_image" "$rollback_tag"
+            fi
+          fi
+
+          wait_for_ai() {
+            container_id="$(compose ps -q ai)"
+
+            test -n "$container_id" || {
+              echo "::error::AI 컨테이너를 찾을 수 없습니다."
+              return 1
+            }
+
+            status="starting"
+
+            for attempt in $(seq 1 60); do
+              status="$(
+                docker inspect \
+                  --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' \
+                  "$container_id"
+              )"
+
+              echo "AI health status: $status ($attempt/60)"
+
+              if [ "$status" = "healthy" ]; then
+                return 0
+              fi
+
+              if [ "$status" = "unhealthy" ] || [ "$status" = "exited" ]; then
+                compose logs --tail=200 ai
+                return 1
+              fi
+
+              sleep 5
+            done
+
+            echo "::error::AI 서비스가 제한 시간 내 healthy 상태가 되지 않았습니다."
+            compose logs --tail=200 ai
+            return 1
+          }
+
+          rollback() {
+            exit_code=$?
+            trap - ERR
+
+            if [ "$deployment_started" = "true" ] && [ -n "$rollback_tag" ]; then
+              echo "::warning::AI 헬스 검사 실패. 이전 정상 이미지로 복구합니다."
+              rollback_file="$(mktemp)"
+              printf 'services:\n  ai:\n    image: %s\n' "$rollback_tag" > "$rollback_file"
+
+              docker compose \
+                --env-file /opt/saferoute/.env \
+                -f docker-compose.prod.yml \
+                -f "$rollback_file" \
+                up -d --no-deps --no-build --force-recreate ai
+
+              rm -f "$rollback_file"
+              wait_for_ai
+
+              docker image rm "$rollback_tag" >/dev/null 2>&1 || true
+              echo "::error::AI 배포에 실패하여 이전 정상 버전으로 롤백했습니다."
+            elif [ "$deployment_started" = "true" ]; then
+              echo "::error::AI 배포에 실패했지만 복구할 이전 정상 이미지가 없습니다."
+            fi
+
+            exit "$exit_code"
+          }
+
+          trap rollback ERR
+
+          # EC2에서 새 AI 이미지를 직접 빌드하고 배포 전에 테스트한다.
+          compose build ai
+          compose run --rm --no-deps ai python test_pipeline.py
+
+          deployment_started="true"
+          compose up -d --no-deps --no-build ai
+          compose ps ai
+          wait_for_ai
+
+          compose exec -T ai \
+            python -c \
+            "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=10).read().decode())"
+
+          trap - ERR
+          if [ -n "$rollback_tag" ]; then
+            docker image rm "$rollback_tag" >/dev/null 2>&1 || true
+          fi
+
+      - name: Show deployment status
+        if: always()
+        working-directory: SafeRoute-BE
+        run: |
+          docker compose \
+            --env-file /opt/saferoute/.env \
+            -f docker-compose.prod.yml \
+            ps || true
