@@ -11,3 +11,9 @@ spring:
     properties:
       hibernate:
         format_sql: true
+
+saferoute:
+  ai-service:
+    # IDE에서 BE를 직접 실행할 때 AI는 Windows localhost:8001을 사용한다.
+    # Docker Compose에서는 AI_SERVICE_BASE_URL=http://ai:8000으로 덮어쓴다.
+    base-url: ${AI_SERVICE_BASE_URL:http://localhost:8001}
