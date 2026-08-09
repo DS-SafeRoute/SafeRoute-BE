@@ -39,6 +39,8 @@ jobs:
       STAGING_ROOT: /opt/saferoute/.staging/${{ github.run_id }}-${{ github.run_attempt }}
       BACKUP_ROOT: /opt/saferoute/.previous/${{ github.run_id }}-${{ github.run_attempt }}
       ENV_FILE: /opt/saferoute/.env
+      # 실행 위치가 달라도 같은 Compose 프로젝트/컨테이너를 사용한다.
+      COMPOSE_PROJECT_NAME: saferoute
 
     steps:
       - name: Checkout BE repository
@@ -80,6 +82,16 @@ jobs:
       - name: Stage deployment sources
         run: |
           set -euo pipefail
+
+          # rm -rf 대상이 반드시 이번 실행 전용 하위 경로인지 먼저 검증한다.
+          case "$STAGING_ROOT" in
+            "$DEPLOY_ROOT/.staging/"*) ;;
+            *) echo "::error::안전하지 않은 STAGING_ROOT: $STAGING_ROOT"; exit 1 ;;
+          esac
+          case "$BACKUP_ROOT" in
+            "$DEPLOY_ROOT/.previous/"*) ;;
+            *) echo "::error::안전하지 않은 BACKUP_ROOT: $BACKUP_ROOT"; exit 1 ;;
+          esac
 
           # 실행별 새 경로만 정리한다. 현재 운영 디렉터리는 건드리지 않는다.
           sudo rm -rf -- "$STAGING_ROOT" "$BACKUP_ROOT"
@@ -190,9 +202,14 @@ jobs:
 
           restore_source() {
             if [ "$source_promoted" = "true" ]; then
-              sudo rm -rf -- "$live_dir"
               if [ -d "$backup_dir" ]; then
+                # 복구할 백업이 확인된 경우에만 현재 운영 소스를 제거한다.
+                sudo rm -rf -- "$live_dir"
                 sudo mv "$backup_dir" "$live_dir"
+              else
+                # 첫 배포에는 백업이 없다. 이때 새 소스를 삭제하면 실행 중인
+                # 컨테이너만 남고 Compose 파일이 사라지므로 그대로 보존한다.
+                echo "::warning::이전 BE 소스가 없어 새 운영 소스를 보존합니다: $live_dir"
               fi
             fi
           }
@@ -237,16 +254,18 @@ jobs:
           sudo mv "$staged_dir" "$live_dir"
           sudo chown -R "$USER":"$USER" "$live_dir"
           source_promoted="true"
+          test -f "$live_dir/docker-compose.prod.yml"
+          test -f "$live_dir/gradlew"
 
           deployment_started="true"
           compose up -d --no-deps --no-build app
           curl --fail --silent --show-error \
             --retry 24 --retry-delay 5 --retry-connrefused --max-time 10 \
             http://127.0.0.1:8080/actuator/health
+          test -f "$live_dir/docker-compose.prod.yml"
 
-          # health check 성공 후에만 이전 운영 소스와 롤백 태그를 삭제한다.
+          # 이전 운영 소스는 장애 시 수동 복구를 위해 .previous에 보존한다.
           trap - ERR
-          sudo rm -rf -- "$backup_dir"
           [ -z "$rollback_tag" ] || \
             docker image rm "$rollback_tag" >/dev/null 2>&1 || true
 
@@ -320,16 +339,20 @@ jobs:
 
           restore_source() {
             if [ "$source_promoted" = "true" ]; then
-              sudo rm -rf -- "$live_dir"
               if [ -d "$backup_dir" ]; then
+                sudo rm -rf -- "$live_dir"
                 sudo mv "$backup_dir" "$live_dir"
+              else
+                echo "::warning::이전 AI 소스가 없어 새 운영 소스를 보존합니다: $live_dir"
               fi
             fi
 
             if [ "$be_source_promoted" = "true" ]; then
-              sudo rm -rf -- "$live_be_dir"
               if [ -d "$backup_be_dir" ]; then
+                sudo rm -rf -- "$live_be_dir"
                 sudo mv "$backup_be_dir" "$live_be_dir"
+              else
+                echo "::warning::이전 BE 소스가 없어 새 운영 소스를 보존합니다: $live_be_dir"
               fi
             fi
           }
@@ -371,6 +394,7 @@ jobs:
             sudo mv "$staged_be_dir" "$live_be_dir"
             sudo chown -R "$USER":"$USER" "$live_be_dir"
             be_source_promoted="true"
+            test -f "$live_be_dir/docker-compose.prod.yml"
           fi
 
           if [ -e "$live_dir" ]; then
@@ -379,35 +403,60 @@ jobs:
           sudo mv "$staged_dir" "$live_dir"
           sudo chown -R "$USER":"$USER" "$live_dir"
           source_promoted="true"
+          test -d "$live_dir/floor_analysis"
 
           deployment_started="true"
           compose up -d --no-deps --no-build ai
           wait_for_ai
           compose exec -T ai python -c \
             "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=10).read().decode())"
+          test -f "$live_be_dir/docker-compose.prod.yml"
 
           trap - ERR
-          sudo rm -rf -- "$backup_dir"
-          if [ "$be_source_promoted" = "true" ]; then
-            sudo rm -rf -- "$backup_be_dir"
-          fi
           [ -z "$rollback_tag" ] || \
             docker image rm "$rollback_tag" >/dev/null 2>&1 || true
 
       - name: Show deployment status
         if: always()
         run: |
-          set +e
-          if [ -f "$DEPLOY_ROOT/SafeRoute-BE/docker-compose.prod.yml" ]; then
-            docker compose \
-              --env-file "$ENV_FILE" \
-              -f "$DEPLOY_ROOT/SafeRoute-BE/docker-compose.prod.yml" \
-              --project-directory "$DEPLOY_ROOT/SafeRoute-BE" \
-              ps
-          fi
+          set -euo pipefail
+
+          live_be_dir="$DEPLOY_ROOT/SafeRoute-BE"
+          test -f "$live_be_dir/docker-compose.prod.yml" || {
+            echo "::error::배포 후 Compose 파일이 사라졌습니다: $live_be_dir/docker-compose.prod.yml"
+            exit 1
+          }
+          docker compose \
+            --env-file "$ENV_FILE" \
+            -f "$live_be_dir/docker-compose.prod.yml" \
+            --project-directory "$live_be_dir" \
+            ps
 
       - name: Clean this run staging directory
         if: always()
         run: |
+          set -euo pipefail
+
+          case "$STAGING_ROOT" in
+            "$DEPLOY_ROOT/.staging/"*) ;;
+            *) echo "::error::안전하지 않은 STAGING_ROOT: $STAGING_ROOT"; exit 1 ;;
+          esac
           # 실행별 staging만 제거한다. 실패 시 남겨둔 backup은 수동 복구용으로 보존한다.
           sudo rm -rf -- "$STAGING_ROOT"
+
+      - name: Prune old source backups
+        if: success()
+        run: |
+          set -euo pipefail
+
+          # 최근 5개의 실행별 백업은 남기고 그보다 오래된 것만 삭제한다.
+          mapfile -t old_backups < <(
+            find "$DEPLOY_ROOT/.previous" -mindepth 1 -maxdepth 1 -type d \
+              -printf '%T@ %p\n' | sort -nr | tail -n +6 | cut -d' ' -f2-
+          )
+          for old_backup in "${old_backups[@]}"; do
+            case "$old_backup" in
+              "$DEPLOY_ROOT/.previous/"*) sudo rm -rf -- "$old_backup" ;;
+              *) echo "::error::안전하지 않은 backup 경로: $old_backup"; exit 1 ;;
+            esac
+          done
