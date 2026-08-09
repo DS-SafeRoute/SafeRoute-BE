@@ -2,6 +2,7 @@ package com.saferoute.domain.evacuation.recalculation.service;
 
 import com.saferoute.domain.congestion.entity.CongestionLevel;
 import com.saferoute.domain.evacuation.graph.entity.MapEdge;
+import com.saferoute.domain.evacuation.recalculation.dto.response.RouteRecalculationResponse;
 import com.saferoute.domain.evacuation.recalculation.entity.RecalculationStatus;
 import com.saferoute.domain.evacuation.recalculation.entity.RouteRecalculation;
 import com.saferoute.domain.evacuation.recalculation.repository.RouteRecalculationRepository;
@@ -90,5 +91,39 @@ public class RouteRecalculationService {
         ));
 
         trainingEventPublisher.publishRouteRecalculationRequestedAfterCommit(recalculation);
+    }
+
+    @Transactional
+    public RouteRecalculationResponse approve(UUID recalculationId) {
+        RouteRecalculation recalculation = findOrThrow(recalculationId);
+        validatePending(recalculation);
+
+        recalculation.approve(Instant.now());
+        trainingEventPublisher.publishEvacuationRouteUpdatedAfterCommit(recalculation);
+
+        return RouteRecalculationResponse.from(recalculation);
+    }
+
+    @Transactional
+    public RouteRecalculationResponse reject(UUID recalculationId) {
+        RouteRecalculation recalculation = findOrThrow(recalculationId);
+        validatePending(recalculation);
+
+        recalculation.reject(Instant.now());
+
+        return RouteRecalculationResponse.from(recalculation);
+    }
+
+    private RouteRecalculation findOrThrow(UUID recalculationId) {
+        return routeRecalculationRepository.findById(recalculationId)
+                .orElseThrow(() -> new ApiException(EvacuationErrorCode.ROUTE_RECALCULATION_NOT_FOUND));
+    }
+
+    // 상태 전이 검증은 엔티티가 아니라 여기서 한다
+    // (TrainingSessionService.start()/end()/forceEnd(), IoTLightService와 동일한 컨벤션).
+    private void validatePending(RouteRecalculation recalculation) {
+        if (recalculation.getStatus() != RecalculationStatus.PENDING) {
+            throw new ApiException(EvacuationErrorCode.INVALID_RECALCULATION_STATUS_TRANSITION);
+        }
     }
 }
