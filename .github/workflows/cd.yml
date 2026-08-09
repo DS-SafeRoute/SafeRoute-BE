@@ -167,8 +167,223 @@ jobs:
             -f docker-compose.prod.yml \
             run --rm --no-deps ai python test_pipeline.py
 
+      - name: Deploy AI and BE
+        if: ${{ inputs.deploy_target == 'all' }}
+        run: |
+          set -Eeuo pipefail
+
+          live_be_dir="$DEPLOY_ROOT/SafeRoute-BE"
+          staged_be_dir="$STAGING_ROOT/SafeRoute-BE"
+          backup_be_dir="$BACKUP_ROOT/SafeRoute-BE"
+          live_ai_dir="$DEPLOY_ROOT/SafeRoute-AI"
+          staged_ai_dir="$STAGING_ROOT/SafeRoute-AI"
+          backup_ai_dir="$BACKUP_ROOT/SafeRoute-AI"
+
+          previous_app_image=""
+          previous_ai_image=""
+          app_rollback_tag=""
+          ai_rollback_tag=""
+          be_source_promoted="false"
+          ai_source_promoted="false"
+          deployment_started="false"
+
+          compose() {
+            docker compose \
+              --env-file "$ENV_FILE" \
+              -f "$live_be_dir/docker-compose.prod.yml" \
+              --project-directory "$live_be_dir" \
+              "$@"
+          }
+
+          wait_for_ai() {
+            container_id="$(compose ps -q ai)"
+            test -n "$container_id" || {
+              echo "::error::AI 컨테이너를 찾을 수 없습니다."
+              return 1
+            }
+
+            for attempt in $(seq 1 60); do
+              status="$(
+                docker inspect \
+                  --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' \
+                  "$container_id"
+              )"
+              echo "AI health status: $status ($attempt/60)"
+
+              [ "$status" = "healthy" ] && return 0
+              if [ "$status" = "unhealthy" ] || [ "$status" = "exited" ]; then
+                echo "::error::AI 컨테이너 상태: $status"
+                return 1
+              fi
+              sleep 5
+            done
+
+            echo "::error::AI 서비스가 제한 시간 내 healthy 상태가 되지 않았습니다."
+            return 1
+          }
+
+          # 롤백은 배포 전 정상 상태였던 두 이미지를 한 쌍으로만 수행한다.
+          # 한쪽만 복구하면 app -> ai의 service_healthy 계약을 다시 깨뜨릴 수 있다.
+          if [ -f "$live_be_dir/docker-compose.prod.yml" ]; then
+            current_ai_container="$(compose ps -q ai)"
+            if [ -n "$current_ai_container" ]; then
+              current_ai_status="$(
+                docker inspect \
+                  --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' \
+                  "$current_ai_container"
+              )"
+              if [ "$current_ai_status" = "healthy" ]; then
+                previous_ai_image="$(docker inspect --format '{{.Image}}' "$current_ai_container")"
+              fi
+            fi
+
+            current_app_container="$(compose ps -q app)"
+            if [ -n "$current_app_container" ] && \
+               curl --fail --silent --max-time 10 \
+                 http://127.0.0.1:8080/actuator/health >/dev/null; then
+              previous_app_image="$(docker inspect --format '{{.Image}}' "$current_app_container")"
+            fi
+
+            if [ -n "$previous_ai_image" ] && [ -n "$previous_app_image" ]; then
+              ai_rollback_tag="saferoute-rollback-ai:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+              app_rollback_tag="saferoute-rollback-app:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+              docker image tag "$previous_ai_image" "$ai_rollback_tag"
+              docker image tag "$previous_app_image" "$app_rollback_tag"
+            fi
+          fi
+
+          restore_sources() {
+            if [ "$be_source_promoted" = "true" ]; then
+              if [ -d "$backup_be_dir" ]; then
+                sudo rm -rf -- "$live_be_dir"
+                sudo mv "$backup_be_dir" "$live_be_dir"
+              else
+                echo "::warning::이전 BE 소스가 없어 새 운영 소스를 보존합니다: $live_be_dir"
+              fi
+            fi
+
+            if [ "$ai_source_promoted" = "true" ]; then
+              if [ -d "$backup_ai_dir" ]; then
+                sudo rm -rf -- "$live_ai_dir"
+                sudo mv "$backup_ai_dir" "$live_ai_dir"
+              else
+                echo "::warning::이전 AI 소스가 없어 새 운영 소스를 보존합니다: $live_ai_dir"
+              fi
+            fi
+          }
+
+          rollback() {
+            exit_code=$?
+            trap - ERR
+            set +e
+
+            restore_sources
+
+            if [ "$deployment_started" = "true" ]; then
+              if [ -n "$ai_rollback_tag" ] && [ -n "$app_rollback_tag" ] && \
+                 [ -f "$live_be_dir/docker-compose.prod.yml" ]; then
+                echo "::warning::all 배포 실패. AI와 app의 이전 소스 및 정상 이미지로 함께 복구합니다."
+                rollback_file="$(mktemp)"
+                printf 'services:\n  ai:\n    image: %s\n  app:\n    image: %s\n' \
+                  "$ai_rollback_tag" "$app_rollback_tag" > "$rollback_file"
+
+                docker compose \
+                  --env-file "$ENV_FILE" \
+                  -f "$live_be_dir/docker-compose.prod.yml" \
+                  -f "$rollback_file" \
+                  --project-directory "$live_be_dir" \
+                  up -d --no-deps --no-build --force-recreate ai
+                ai_restore_status=$?
+
+                if [ "$ai_restore_status" -eq 0 ]; then
+                  wait_for_ai
+                  ai_restore_status=$?
+                fi
+
+                if [ "$ai_restore_status" -eq 0 ]; then
+                  docker compose \
+                    --env-file "$ENV_FILE" \
+                    -f "$live_be_dir/docker-compose.prod.yml" \
+                    -f "$rollback_file" \
+                    --project-directory "$live_be_dir" \
+                    up -d --no-deps --no-build --force-recreate app
+                  app_restore_status=$?
+                else
+                  app_restore_status=1
+                fi
+
+                if [ "$app_restore_status" -eq 0 ]; then
+                  curl --fail --silent --show-error \
+                    --retry 24 --retry-delay 5 --retry-connrefused --max-time 10 \
+                    http://127.0.0.1:8080/actuator/health
+                  app_restore_status=$?
+                fi
+
+                rm -f "$rollback_file"
+                if [ "$ai_restore_status" -ne 0 ] || [ "$app_restore_status" -ne 0 ]; then
+                  echo "::error::AI/app 자동 롤백이 완료되지 않았습니다."
+                fi
+              else
+                echo "::error::all 배포에 실패했고 복구 가능한 AI/app 정상 이미지 쌍이 없습니다."
+                if [ -f "$live_be_dir/docker-compose.prod.yml" ]; then
+                  compose rm -sf app ai || true
+                fi
+              fi
+            fi
+
+            [ -z "$ai_rollback_tag" ] || \
+              docker image rm "$ai_rollback_tag" >/dev/null 2>&1 || true
+            [ -z "$app_rollback_tag" ] || \
+              docker image rm "$app_rollback_tag" >/dev/null 2>&1 || true
+            exit "$exit_code"
+          }
+          trap rollback ERR
+
+          # 두 후보 소스를 같은 실패 처리 범위 안에서 운영 경로로 승격한다.
+          if [ -e "$live_be_dir" ]; then
+            sudo mv "$live_be_dir" "$backup_be_dir"
+          fi
+          sudo mv "$staged_be_dir" "$live_be_dir"
+          sudo chown -R "$USER":"$USER" "$live_be_dir"
+          be_source_promoted="true"
+
+          if [ -e "$live_ai_dir" ]; then
+            sudo mv "$live_ai_dir" "$backup_ai_dir"
+          fi
+          sudo mv "$staged_ai_dir" "$live_ai_dir"
+          sudo chown -R "$USER":"$USER" "$live_ai_dir"
+          ai_source_promoted="true"
+
+          test -f "$live_be_dir/docker-compose.prod.yml"
+          test -f "$live_be_dir/gradlew"
+          test -d "$live_ai_dir/floor_analysis"
+
+          deployment_started="true"
+
+          # app보다 AI 후보를 먼저 시작하고 Compose health 및 HTTP health를 확인한다.
+          compose up -d --no-deps --no-build ai
+          wait_for_ai
+          compose exec -T ai python -c \
+            "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=10).read().decode())"
+
+          # AI가 healthy가 된 뒤 app을 시작한다. --no-deps를 사용하지 않아
+          # docker-compose.prod.yml의 service_healthy 의존성 계약도 유지한다.
+          compose up -d --no-build app
+          curl --fail --silent --show-error \
+            --retry 24 --retry-delay 5 --retry-connrefused --max-time 10 \
+            http://127.0.0.1:8080/actuator/health
+
+          test -f "$live_be_dir/docker-compose.prod.yml"
+          test -d "$live_ai_dir/floor_analysis"
+
+          trap - ERR
+          [ -z "$ai_rollback_tag" ] || \
+            docker image rm "$ai_rollback_tag" >/dev/null 2>&1 || true
+          [ -z "$app_rollback_tag" ] || \
+            docker image rm "$app_rollback_tag" >/dev/null 2>&1 || true
+
       - name: Deploy BE
-        if: ${{ inputs.deploy_target == 'be-only' || inputs.deploy_target == 'all' }}
+        if: ${{ inputs.deploy_target == 'be-only' }}
         run: |
           set -Eeuo pipefail
 
@@ -270,7 +485,7 @@ jobs:
             docker image rm "$rollback_tag" >/dev/null 2>&1 || true
 
       - name: Deploy AI
-        if: ${{ inputs.deploy_target == 'ai-only' || inputs.deploy_target == 'all' }}
+        if: ${{ inputs.deploy_target == 'ai-only' }}
         run: |
           set -Eeuo pipefail
 
