@@ -13,6 +13,7 @@ on:
           - ai-only
           - all
 
+# 체크아웃 외에는 GitHub API 쓰기 권한이 필요하지 않다.
 permissions:
   contents: read
 
@@ -27,12 +28,17 @@ jobs:
       - self-hosted
       - linux
       - x64
-
     timeout-minutes: 60
 
     defaults:
       run:
         shell: bash
+
+    env:
+      DEPLOY_ROOT: /opt/saferoute
+      STAGING_ROOT: /opt/saferoute/.staging/${{ github.run_id }}-${{ github.run_attempt }}
+      BACKUP_ROOT: /opt/saferoute/.previous/${{ github.run_id }}-${{ github.run_attempt }}
+      ENV_FILE: /opt/saferoute/.env
 
     steps:
       - name: Checkout BE repository
@@ -60,185 +66,224 @@ jobs:
           docker --version
           docker compose version
 
-          test -f /opt/saferoute/.env || {
-            echo "::error::/opt/saferoute/.env 파일이 없습니다."
+          test -s "$ENV_FILE" || {
+            echo "::error::$ENV_FILE 파일이 없거나 비어 있습니다."
             exit 1
           }
 
-      - name: Prepare BE deployment directory
+          sudo install -d -m 0755 -o "$USER" -g "$USER" \
+            "$DEPLOY_ROOT" \
+            "$DEPLOY_ROOT/.staging" \
+            "$DEPLOY_ROOT/.previous"
+          sudo chown "$USER":"$USER" "$ENV_FILE"
+          chmod 600 "$ENV_FILE"
+
+      - name: Stage deployment sources
         run: |
           set -euo pipefail
 
-          # /opt/saferoute/.env는 보존하고, BE 운영 소스만 새 체크아웃으로 교체한다.
-          sudo install -d -m 0755 -o "$USER" -g "$USER" /opt/saferoute
-          sudo rm -rf /opt/saferoute/SafeRoute-BE
-          sudo cp -a "$GITHUB_WORKSPACE/SafeRoute-BE" /opt/saferoute/SafeRoute-BE
-          sudo rm -rf \
-            /opt/saferoute/SafeRoute-BE/.git \
-            /opt/saferoute/SafeRoute-BE/.gradle \
-            /opt/saferoute/SafeRoute-BE/build
-          sudo chown -R "$USER":"$USER" /opt/saferoute/SafeRoute-BE
+          # 실행별 새 경로만 정리한다. 현재 운영 디렉터리는 건드리지 않는다.
+          sudo rm -rf -- "$STAGING_ROOT" "$BACKUP_ROOT"
+          sudo install -d -m 0755 -o "$USER" -g "$USER" \
+            "$STAGING_ROOT/SafeRoute-BE" \
+            "$BACKUP_ROOT"
 
-          test -f /opt/saferoute/SafeRoute-BE/docker-compose.prod.yml
-          sudo chown "$USER":"$USER" /opt/saferoute/.env
-          chmod 600 /opt/saferoute/.env
+          # BE는 GITHUB_WORKSPACE 루트에 체크아웃된다.
+          sudo cp -a "$GITHUB_WORKSPACE/." "$STAGING_ROOT/SafeRoute-BE/"
+          sudo rm -rf -- \
+            "$STAGING_ROOT/SafeRoute-BE/.git" \
+            "$STAGING_ROOT/SafeRoute-BE/.gradle" \
+            "$STAGING_ROOT/SafeRoute-BE/build" \
+            "$STAGING_ROOT/SafeRoute-BE/SafeRoute-AI"
 
-      - name: Prepare AI deployment directory
+          if [[ "${{ inputs.deploy_target }}" == "ai-only" || \
+                "${{ inputs.deploy_target }}" == "all" ]]; then
+            test -d "$GITHUB_WORKSPACE/SafeRoute-AI/floor_analysis"
+            sudo cp -a "$GITHUB_WORKSPACE/SafeRoute-AI" \
+              "$STAGING_ROOT/SafeRoute-AI"
+            sudo rm -rf -- "$STAGING_ROOT/SafeRoute-AI/.git"
+          elif [ -d "$DEPLOY_ROOT/SafeRoute-AI" ]; then
+            # be-only 검증 시 Compose의 ../SafeRoute-AI 상대 경로를 유지한다.
+            sudo cp -a "$DEPLOY_ROOT/SafeRoute-AI" \
+              "$STAGING_ROOT/SafeRoute-AI"
+          fi
+
+          sudo chown -R "$USER":"$USER" "$STAGING_ROOT" "$BACKUP_ROOT"
+
+          test -f "$STAGING_ROOT/SafeRoute-BE/docker-compose.prod.yml"
+          test -f "$STAGING_ROOT/SafeRoute-BE/gradlew"
+
+          if [[ "${{ inputs.deploy_target }}" == "ai-only" || \
+                "${{ inputs.deploy_target }}" == "all" ]]; then
+            test -d "$STAGING_ROOT/SafeRoute-AI/floor_analysis"
+          fi
+
+      - name: Validate production Compose
+        run: |
+          set -euo pipefail
+
+          cd "$STAGING_ROOT/SafeRoute-BE"
+          docker compose \
+            --env-file "$ENV_FILE" \
+            -f docker-compose.prod.yml \
+            config --quiet
+
+      - name: Build and test BE candidate
+        if: ${{ inputs.deploy_target == 'be-only' || inputs.deploy_target == 'all' }}
+        run: |
+          set -euo pipefail
+
+          cd "$STAGING_ROOT/SafeRoute-BE"
+          chmod +x gradlew
+          ./gradlew clean build --no-daemon
+          docker compose \
+            --env-file "$ENV_FILE" \
+            -f docker-compose.prod.yml \
+            build app
+
+      - name: Build and test AI candidate
         if: ${{ inputs.deploy_target == 'ai-only' || inputs.deploy_target == 'all' }}
         run: |
           set -euo pipefail
 
-          # Compose의 ../SafeRoute-AI/floor_analysis 상대 경로를 그대로 유지한다.
-          sudo rm -rf /opt/saferoute/SafeRoute-AI
-          sudo cp -a "$GITHUB_WORKSPACE/SafeRoute-AI" /opt/saferoute/SafeRoute-AI
-          sudo rm -rf /opt/saferoute/SafeRoute-AI/.git
-          sudo chown -R "$USER":"$USER" /opt/saferoute/SafeRoute-AI
-
-          test -d /opt/saferoute/SafeRoute-AI/floor_analysis
-
-      - name: Validate production Compose
-        working-directory: /opt/saferoute/SafeRoute-BE
-        run: |
-          set -euo pipefail
-
+          cd "$STAGING_ROOT/SafeRoute-BE"
           docker compose \
-            --env-file /opt/saferoute/.env \
+            --env-file "$ENV_FILE" \
             -f docker-compose.prod.yml \
-            config --quiet
+            build ai
+          docker compose \
+            --env-file "$ENV_FILE" \
+            -f docker-compose.prod.yml \
+            run --rm --no-deps ai python test_pipeline.py
 
       - name: Deploy BE
         if: ${{ inputs.deploy_target == 'be-only' || inputs.deploy_target == 'all' }}
-        working-directory: /opt/saferoute/SafeRoute-BE
         run: |
           set -Eeuo pipefail
 
+          live_dir="$DEPLOY_ROOT/SafeRoute-BE"
+          staged_dir="$STAGING_ROOT/SafeRoute-BE"
+          backup_dir="$BACKUP_ROOT/SafeRoute-BE"
+          previous_image=""
+          rollback_tag=""
+          source_promoted="false"
+          deployment_started="false"
+
           compose() {
             docker compose \
-              --env-file /opt/saferoute/.env \
-              -f docker-compose.prod.yml \
+              --env-file "$ENV_FILE" \
+              -f "$live_dir/docker-compose.prod.yml" \
+              --project-directory "$live_dir" \
               "$@"
           }
 
-          previous_image=""
-          rollback_tag=""
-          deployment_started="false"
-          current_container="$(compose ps -q app)"
-
-          # 현재 BE가 정상일 때만 롤백 이미지로 보관한다.
+          current_container=""
+          if [ -f "$live_dir/docker-compose.prod.yml" ]; then
+            current_container="$(compose ps -q app)"
+          fi
           if [ -n "$current_container" ] && \
              curl --fail --silent --max-time 10 \
                http://127.0.0.1:8080/actuator/health >/dev/null; then
             previous_image="$(docker inspect --format '{{.Image}}' "$current_container")"
-            rollback_tag="saferoute-rollback-app:${GITHUB_RUN_ID}"
+            rollback_tag="saferoute-rollback-app:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
             docker image tag "$previous_image" "$rollback_tag"
           fi
+
+          restore_source() {
+            if [ "$source_promoted" = "true" ]; then
+              sudo rm -rf -- "$live_dir"
+              if [ -d "$backup_dir" ]; then
+                sudo mv "$backup_dir" "$live_dir"
+              fi
+            fi
+          }
 
           rollback() {
             exit_code=$?
             trap - ERR
 
-            if [ "$deployment_started" = "true" ] && [ -n "$rollback_tag" ]; then
-              echo "::warning::BE 헬스 검사 실패. 이전 정상 이미지로 복구합니다."
+            restore_source
+
+            if [ "$deployment_started" = "true" ] && [ -n "$rollback_tag" ] && \
+               [ -f "$live_dir/docker-compose.prod.yml" ]; then
+              echo "::warning::BE 배포 실패. 이전 소스와 정상 이미지로 복구합니다."
               rollback_file="$(mktemp)"
               printf 'services:\n  app:\n    image: %s\n' "$rollback_tag" > "$rollback_file"
 
               docker compose \
-                --env-file /opt/saferoute/.env \
-                -f docker-compose.prod.yml \
+                --env-file "$ENV_FILE" \
+                -f "$live_dir/docker-compose.prod.yml" \
                 -f "$rollback_file" \
+                --project-directory "$live_dir" \
                 up -d --no-deps --no-build --force-recreate app
-
               rm -f "$rollback_file"
 
-              curl \
-                --fail \
-                --silent \
-                --show-error \
-                --retry 24 \
-                --retry-delay 5 \
-                --retry-connrefused \
-                --max-time 10 \
+              curl --fail --silent --show-error \
+                --retry 24 --retry-delay 5 --retry-connrefused --max-time 10 \
                 http://127.0.0.1:8080/actuator/health
-
-              docker image rm "$rollback_tag" >/dev/null 2>&1 || true
-              echo "::error::BE 배포에 실패하여 이전 정상 버전으로 롤백했습니다."
             elif [ "$deployment_started" = "true" ]; then
-              echo "::error::BE 배포에 실패했지만 복구할 이전 정상 이미지가 없습니다."
+              echo "::error::BE 배포에 실패했고 복구 가능한 이전 정상 이미지가 없습니다."
             fi
 
+            [ -z "$rollback_tag" ] || \
+              docker image rm "$rollback_tag" >/dev/null 2>&1 || true
             exit "$exit_code"
           }
-
           trap rollback ERR
 
-          # 배포 전에 BE 빌드와 테스트를 먼저 통과시킨다.
-          chmod +x gradlew
-          ./gradlew clean build --no-daemon
-
-          # EC2에서 새 Docker 이미지를 직접 빌드한다.
-          compose build app
+          # 후보 검증 완료 후에만 운영 경로를 교체하며, 이전 소스는 backup에 보존한다.
+          if [ -e "$live_dir" ]; then
+            sudo mv "$live_dir" "$backup_dir"
+          fi
+          sudo mv "$staged_dir" "$live_dir"
+          sudo chown -R "$USER":"$USER" "$live_dir"
+          source_promoted="true"
 
           deployment_started="true"
           compose up -d --no-deps --no-build app
-          compose ps app
-
-          curl \
-            --fail \
-            --silent \
-            --show-error \
-            --retry 24 \
-            --retry-delay 5 \
-            --retry-connrefused \
-            --max-time 10 \
+          curl --fail --silent --show-error \
+            --retry 24 --retry-delay 5 --retry-connrefused --max-time 10 \
             http://127.0.0.1:8080/actuator/health
 
+          # health check 성공 후에만 이전 운영 소스와 롤백 태그를 삭제한다.
           trap - ERR
-          if [ -n "$rollback_tag" ]; then
+          sudo rm -rf -- "$backup_dir"
+          [ -z "$rollback_tag" ] || \
             docker image rm "$rollback_tag" >/dev/null 2>&1 || true
-          fi
 
       - name: Deploy AI
         if: ${{ inputs.deploy_target == 'ai-only' || inputs.deploy_target == 'all' }}
-        working-directory: /opt/saferoute/SafeRoute-BE
         run: |
           set -Eeuo pipefail
 
+          live_be_dir="$DEPLOY_ROOT/SafeRoute-BE"
+          staged_be_dir="$STAGING_ROOT/SafeRoute-BE"
+          backup_be_dir="$BACKUP_ROOT/SafeRoute-BE"
+          live_dir="$DEPLOY_ROOT/SafeRoute-AI"
+          staged_dir="$STAGING_ROOT/SafeRoute-AI"
+          backup_dir="$BACKUP_ROOT/SafeRoute-AI"
+          previous_image=""
+          rollback_tag=""
+          be_source_promoted="false"
+          source_promoted="false"
+          deployment_started="false"
+
+          test -f "$live_be_dir/docker-compose.prod.yml"
+
           compose() {
             docker compose \
-              --env-file /opt/saferoute/.env \
-              -f docker-compose.prod.yml \
+              --env-file "$ENV_FILE" \
+              -f "$live_be_dir/docker-compose.prod.yml" \
+              --project-directory "$live_be_dir" \
               "$@"
           }
 
-          previous_image=""
-          rollback_tag=""
-          deployment_started="false"
-          current_container="$(compose ps -q ai)"
-
-          # 현재 AI가 정상일 때만 롤백 이미지로 보관한다.
-          if [ -n "$current_container" ]; then
-            current_status="$(
-              docker inspect \
-                --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' \
-                "$current_container"
-            )"
-
-            if [ "$current_status" = "healthy" ]; then
-              previous_image="$(docker inspect --format '{{.Image}}' "$current_container")"
-              rollback_tag="saferoute-rollback-ai:${GITHUB_RUN_ID}"
-              docker image tag "$previous_image" "$rollback_tag"
-            fi
-          fi
-
           wait_for_ai() {
             container_id="$(compose ps -q ai)"
-
             test -n "$container_id" || {
               echo "::error::AI 컨테이너를 찾을 수 없습니다."
               return 1
             }
-
-            status="starting"
 
             for attempt in $(seq 1 60); do
               status="$(
@@ -246,78 +291,124 @@ jobs:
                   --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' \
                   "$container_id"
               )"
-
               echo "AI health status: $status ($attempt/60)"
 
-              if [ "$status" = "healthy" ]; then
-                return 0
-              fi
-
+              [ "$status" = "healthy" ] && return 0
               if [ "$status" = "unhealthy" ] || [ "$status" = "exited" ]; then
-                compose logs --tail=200 ai
+                echo "::error::AI 컨테이너 상태: $status"
                 return 1
               fi
-
               sleep 5
             done
 
             echo "::error::AI 서비스가 제한 시간 내 healthy 상태가 되지 않았습니다."
-            compose logs --tail=200 ai
             return 1
+          }
+
+          current_container="$(compose ps -q ai)"
+          if [ -n "$current_container" ]; then
+            current_status="$(
+              docker inspect \
+                --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' \
+                "$current_container"
+            )"
+            if [ "$current_status" = "healthy" ]; then
+              previous_image="$(docker inspect --format '{{.Image}}' "$current_container")"
+              rollback_tag="saferoute-rollback-ai:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+              docker image tag "$previous_image" "$rollback_tag"
+            fi
+          fi
+
+          restore_source() {
+            if [ "$source_promoted" = "true" ]; then
+              sudo rm -rf -- "$live_dir"
+              if [ -d "$backup_dir" ]; then
+                sudo mv "$backup_dir" "$live_dir"
+              fi
+            fi
+
+            if [ "$be_source_promoted" = "true" ]; then
+              sudo rm -rf -- "$live_be_dir"
+              if [ -d "$backup_be_dir" ]; then
+                sudo mv "$backup_be_dir" "$live_be_dir"
+              fi
+            fi
           }
 
           rollback() {
             exit_code=$?
             trap - ERR
 
+            restore_source
+
             if [ "$deployment_started" = "true" ] && [ -n "$rollback_tag" ]; then
-              echo "::warning::AI 헬스 검사 실패. 이전 정상 이미지로 복구합니다."
+              echo "::warning::AI 배포 실패. 이전 소스와 정상 이미지로 복구합니다."
               rollback_file="$(mktemp)"
               printf 'services:\n  ai:\n    image: %s\n' "$rollback_tag" > "$rollback_file"
-
               docker compose \
-                --env-file /opt/saferoute/.env \
-                -f docker-compose.prod.yml \
+                --env-file "$ENV_FILE" \
+                -f "$live_be_dir/docker-compose.prod.yml" \
                 -f "$rollback_file" \
+                --project-directory "$live_be_dir" \
                 up -d --no-deps --no-build --force-recreate ai
-
               rm -f "$rollback_file"
               wait_for_ai
-
-              docker image rm "$rollback_tag" >/dev/null 2>&1 || true
-              echo "::error::AI 배포에 실패하여 이전 정상 버전으로 롤백했습니다."
             elif [ "$deployment_started" = "true" ]; then
-              echo "::error::AI 배포에 실패했지만 복구할 이전 정상 이미지가 없습니다."
+              echo "::error::AI 배포에 실패했고 복구 가능한 이전 정상 이미지가 없습니다."
             fi
 
+            [ -z "$rollback_tag" ] || \
+              docker image rm "$rollback_tag" >/dev/null 2>&1 || true
             exit "$exit_code"
           }
-
           trap rollback ERR
 
-          # EC2에서 새 AI 이미지를 직접 빌드하고 배포 전에 테스트한다.
-          compose build ai
-          compose run --rm --no-deps ai python test_pipeline.py
+          # ai-only도 이번 체크아웃의 Compose로 빌드했으므로 BE 소스를 함께 승격한다.
+          # BE 컨테이너는 재시작하지 않으며, AI health check 전까지 이전 BE 소스를 보존한다.
+          if [[ "${{ inputs.deploy_target }}" == "ai-only" ]]; then
+            if [ -e "$live_be_dir" ]; then
+              sudo mv "$live_be_dir" "$backup_be_dir"
+            fi
+            sudo mv "$staged_be_dir" "$live_be_dir"
+            sudo chown -R "$USER":"$USER" "$live_be_dir"
+            be_source_promoted="true"
+          fi
+
+          if [ -e "$live_dir" ]; then
+            sudo mv "$live_dir" "$backup_dir"
+          fi
+          sudo mv "$staged_dir" "$live_dir"
+          sudo chown -R "$USER":"$USER" "$live_dir"
+          source_promoted="true"
 
           deployment_started="true"
           compose up -d --no-deps --no-build ai
-          compose ps ai
           wait_for_ai
-
-          compose exec -T ai \
-            python -c \
+          compose exec -T ai python -c \
             "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=10).read().decode())"
 
           trap - ERR
-          if [ -n "$rollback_tag" ]; then
-            docker image rm "$rollback_tag" >/dev/null 2>&1 || true
+          sudo rm -rf -- "$backup_dir"
+          if [ "$be_source_promoted" = "true" ]; then
+            sudo rm -rf -- "$backup_be_dir"
           fi
+          [ -z "$rollback_tag" ] || \
+            docker image rm "$rollback_tag" >/dev/null 2>&1 || true
 
       - name: Show deployment status
         if: always()
-        working-directory: /opt/saferoute/SafeRoute-BE
         run: |
-          docker compose \
-            --env-file /opt/saferoute/.env \
-            -f docker-compose.prod.yml \
-            ps || true
+          set +e
+          if [ -f "$DEPLOY_ROOT/SafeRoute-BE/docker-compose.prod.yml" ]; then
+            docker compose \
+              --env-file "$ENV_FILE" \
+              -f "$DEPLOY_ROOT/SafeRoute-BE/docker-compose.prod.yml" \
+              --project-directory "$DEPLOY_ROOT/SafeRoute-BE" \
+              ps
+          fi
+
+      - name: Clean this run staging directory
+        if: always()
+        run: |
+          # 실행별 staging만 제거한다. 실패 시 남겨둔 backup은 수동 복구용으로 보존한다.
+          sudo rm -rf -- "$STAGING_ROOT"
