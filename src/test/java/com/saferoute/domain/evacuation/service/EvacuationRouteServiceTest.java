@@ -94,6 +94,30 @@ class EvacuationRouteServiceTest {
     }
 
     @Test
+    @DisplayName("제외된 엣지를 우회해서 다른 EXIT으로 경로를 계산한다")
+    void findShortestRoute_withExcludedEdges_detours() {
+        // given
+        MapEdge e1 = createEdge(room1, door1, 2);
+        MapEdge e2 = createEdge(door1, hallway1, 5);
+        MapEdge e3 = createEdge(hallway1, stair1, 10); // 우회로 (먼 EXIT)
+        MapEdge e4 = createEdge(hallway1, hallway2, 3);
+        MapEdge e5 = createEdge(hallway2, stair2, 2); // 원래 최단 경로에 쓰이는 엣지 - 이번엔 제외
+
+        given(mapGraphRepository.findNodesByFloor(floorId))
+                .willReturn(List.of(room1, door1, hallway1, hallway2, stair1, stair2));
+        given(mapGraphRepository.findEdgesByFloor(floorId))
+                .willReturn(List.of(e1, e2, e3, e4, e5));
+
+        // when
+        EvacuationRoute route = evacuationRouteService.findShortestRoute(
+                floorId, room1.getId(), java.util.Set.of(e5.getId()));
+
+        // then
+        assertThat(route.totalWeight()).isEqualTo(2 + 5 + 10);
+        assertThat(route.path()).containsExactly(room1, door1, hallway1, stair1);
+    }
+
+    @Test
     @DisplayName("도달 가능한 EXIT이 없으면 예외를 던진다")
     void findShortestRoute_noReachableExit_throws() {
         // given

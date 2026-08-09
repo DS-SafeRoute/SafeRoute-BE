@@ -33,8 +33,16 @@ public class EvacuationRouteService {
 
     // 시작 노드에서 가장 가까운 EXIT 대상 노드까지 최단 경로 계산 (mock data 기준, congestion/danger는 0 고정)
     public EvacuationRoute findShortestRoute(UUID floorId, UUID startNodeId) {
+        return findShortestRoute(floorId, startNodeId, Set.of());
+    }
+
+    // 혼잡 재탐색용 - 지정된 엣지를 그래프에서 제외하고 우회 경로를 계산한다.
+    // congestion/danger 가중치 자체(현재 0 고정)와는 별개로, "엣지 제외" 방식의 임시 조치다.
+    public EvacuationRoute findShortestRoute(UUID floorId, UUID startNodeId, Set<UUID> excludedEdgeIds) {
         List<MapNode> nodes = mapGraphRepository.findNodesByFloor(floorId);
-        List<MapEdge> edges = mapGraphRepository.findEdgesByFloor(floorId);
+        List<MapEdge> edges = mapGraphRepository.findEdgesByFloor(floorId).stream()
+                .filter(edge -> !excludedEdgeIds.contains(edge.getId()))
+                .toList();
 
         Map<UUID, MapNode> nodeById = new HashMap<>();
         for (MapNode node : nodes) {
