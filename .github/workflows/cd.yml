@@ -222,6 +222,44 @@ jobs:
             return 1
           }
 
+          wait_for_app() {
+            local container_id status response
+            container_id="$(compose ps -q app)"
+            test -n "$container_id" || {
+              echo "::error::app 컨테이너를 찾을 수 없습니다."
+              return 1
+            }
+
+            for attempt in $(seq 1 60); do
+              status="$(docker inspect --format '{{.State.Status}}' "$container_id")"
+              echo "app status: $status ($attempt/60)"
+
+              if [ "$status" = "exited" ] || [ "$status" = "dead" ]; then
+                echo "::error::app 컨테이너 상태: $status"
+                docker logs --tail 200 "$container_id" || true
+                return 1
+              fi
+
+              # Spring Boot가 포트를 연 직후 연결을 재설정할 수도 있다.
+              # curl 실패는 준비 중인 상태로 취급하고 다음 시도까지 기다린다.
+              if response="$(
+                curl --fail --silent --show-error \
+                  --connect-timeout 3 --max-time 10 \
+                  http://127.0.0.1:8080/actuator/health 2>&1
+              )" && grep -Eq '"status"[[:space:]]*:[[:space:]]*"UP"' <<<"$response"; then
+                printf '%s\n' "$response"
+                return 0
+              fi
+
+              echo "app health pending: $response"
+              sleep 5
+            done
+
+            echo "::error::app 서비스가 제한 시간 내 정상화되지 않았습니다."
+            docker logs --tail 200 "$container_id" || true
+            return 1
+          }
+
           # 롤백은 배포 전 정상 상태였던 두 이미지를 한 쌍으로만 수행한다.
           # 한쪽만 복구하면 app -> ai의 service_healthy 계약을 다시 깨뜨릴 수 있다.
           if [ -f "$live_be_dir/docker-compose.prod.yml" ]; then
@@ -313,9 +351,7 @@ jobs:
                 fi
 
                 if [ "$app_restore_status" -eq 0 ]; then
-                  curl --fail --silent --show-error \
-                    --retry 24 --retry-delay 5 --retry-connrefused --max-time 10 \
-                    http://127.0.0.1:8080/actuator/health
+                  wait_for_app
                   app_restore_status=$?
                 fi
 
@@ -369,9 +405,7 @@ jobs:
           # AI가 healthy가 된 뒤 app을 시작한다. --no-deps를 사용하지 않아
           # docker-compose.prod.yml의 service_healthy 의존성 계약도 유지한다.
           compose up -d --no-build app
-          curl --fail --silent --show-error \
-            --retry 24 --retry-delay 5 --retry-connrefused --max-time 10 \
-            http://127.0.0.1:8080/actuator/health
+          wait_for_app
 
           test -f "$live_be_dir/docker-compose.prod.yml"
           test -d "$live_ai_dir/floor_analysis"
@@ -401,6 +435,42 @@ jobs:
               -f "$live_dir/docker-compose.prod.yml" \
               --project-directory "$live_dir" \
               "$@"
+          }
+
+          wait_for_app() {
+            local container_id status response
+            container_id="$(compose ps -q app)"
+            test -n "$container_id" || {
+              echo "::error::app 컨테이너를 찾을 수 없습니다."
+              return 1
+            }
+
+            for attempt in $(seq 1 60); do
+              status="$(docker inspect --format '{{.State.Status}}' "$container_id")"
+              echo "app status: $status ($attempt/60)"
+
+              if [ "$status" = "exited" ] || [ "$status" = "dead" ]; then
+                echo "::error::app 컨테이너 상태: $status"
+                docker logs --tail 200 "$container_id" || true
+                return 1
+              fi
+
+              if response="$(
+                curl --fail --silent --show-error \
+                  --connect-timeout 3 --max-time 10 \
+                  http://127.0.0.1:8080/actuator/health 2>&1
+              )"; then
+                printf '%s\n' "$response"
+                return 0
+              fi
+
+              echo "app health pending: $response"
+              sleep 5
+            done
+
+            echo "::error::app 서비스가 제한 시간 내 정상화되지 않았습니다."
+            docker logs --tail 200 "$container_id" || true
+            return 1
           }
 
           current_container=""
@@ -449,9 +519,7 @@ jobs:
                 up -d --no-deps --no-build --force-recreate app
               rm -f "$rollback_file"
 
-              curl --fail --silent --show-error \
-                --retry 24 --retry-delay 5 --retry-connrefused --max-time 10 \
-                http://127.0.0.1:8080/actuator/health
+              wait_for_app
             elif [ "$deployment_started" = "true" ]; then
               echo "::error::BE 배포에 실패했고 복구 가능한 이전 정상 이미지가 없습니다."
             fi
@@ -474,9 +542,7 @@ jobs:
 
           deployment_started="true"
           compose up -d --no-deps --no-build app
-          curl --fail --silent --show-error \
-            --retry 24 --retry-delay 5 --retry-connrefused --max-time 10 \
-            http://127.0.0.1:8080/actuator/health
+          wait_for_app
           test -f "$live_dir/docker-compose.prod.yml"
 
           # 이전 운영 소스는 장애 시 수동 복구를 위해 .previous에 보존한다.
