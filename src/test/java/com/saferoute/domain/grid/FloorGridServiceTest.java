@@ -118,4 +118,22 @@ class FloorGridServiceTest {
                         new CreateOrUpdateFloorGridRequest(1.0))
         ).isInstanceOf(ApiException.class);
     }
+
+    @Test
+    void createGrid_throwsWhenCellSizeTooSmall() {
+        assertThatThrownBy(() ->
+                floorGridService.createOrRegenerateGrid(floor.getId(),
+                        new CreateOrUpdateFloorGridRequest(0.0001))
+        ).isInstanceOf(ApiException.class);
+    }
+
+    @Test
+    void createGrid_persistsGridConfigToDatabase() {
+        floorGridService.createOrRegenerateGrid(floor.getId(), new CreateOrUpdateFloorGridRequest(1.0));
+
+        Floor reloaded = floorRepository.findById(floor.getId()).orElseThrow();
+        assertThat(reloaded.getGridCellSizeMeter()).isEqualTo(1.0);
+        assertThat(reloaded.getGridRows()).isEqualTo(30);
+        assertThat(reloaded.getGridColumns()).isEqualTo(40);
+    }
 }

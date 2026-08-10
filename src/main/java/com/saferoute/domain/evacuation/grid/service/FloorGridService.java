@@ -32,7 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class FloorGridService {
 
-    private static final long MAX_GRID_CELL_COUNT = 1_000_000L;
+    private static final long MAX_GRID_CELL_COUNT = 1_000_000L; // 테스트 후 값 수정
 
     private final FloorRepository floorRepository;
     private final FloorGridCellRepository floorGridCellRepository;
