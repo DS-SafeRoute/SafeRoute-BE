@@ -114,4 +114,10 @@ public class Floor {
     this.planWidthPx = planWidthPx;
     this.planHeightPx = planHeightPx;
   }
+
+  public void applyGridCellConfig(double cellSizeMeter, int gridRows, int gridColumns) {
+    this.gridCellSizeMeter = cellSizeMeter;
+    this.gridRows = gridRows;
+    this.gridColumns = gridColumns;
+  }
 }

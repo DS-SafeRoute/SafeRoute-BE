@@ -27,4 +27,8 @@ public interface FloorGridCellRepository extends JpaRepository<FloorGridCell, UU
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update FloorGridCell c set c.isFired = false where c.floor.id = :floorId and c.isFired = true")
     int resetFiredByFloorId(@Param("floorId") UUID floorId);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from FloorGridCell c where c.floor.id = :floorId")
+    int deleteAllByFloorId(@Param("floorId") UUID floorId);
 }
