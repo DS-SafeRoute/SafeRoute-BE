@@ -1,11 +1,15 @@
 package com.saferoute.domain.evacuation.graph.repository;
 
+import com.saferoute.domain.evacuation.graph.entity.CustomDeviceType;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.evacuation.graph.entity.NodeType;
 import com.saferoute.domain.floor.entity.Floor;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface MapNodeJpaRepository extends JpaRepository<MapNode, UUID> {
 
@@ -24,4 +28,9 @@ public interface MapNodeJpaRepository extends JpaRepository<MapNode, UUID> {
     void deleteAllByFloor_Id(UUID floorId);
 
     void deleteAllByFloor(Floor floor);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from MapNode n where n.floor.id = :floorId and n.customDeviceType = :type")
+    int deleteAllByFloorIdAndCustomDeviceType(@Param("floorId") UUID floorId, @Param("type") CustomDeviceType type);
+
 }

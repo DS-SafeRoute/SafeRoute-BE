@@ -35,6 +35,10 @@ public class MapNode {
     @Column(name = "code", nullable = false, length = 50)
     private String code;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "custom_device_type", length = 20)
+    private CustomDeviceType customDeviceType; // type == CUSTOM일 때만 값 존재
+
     @NotNull
     @Enumerated(EnumType.STRING)
     @Column(name = "type", nullable = false, length = 20)
@@ -92,6 +96,14 @@ public class MapNode {
     // 기기 위치 노드는 경로 목적지가 될 수 없으므로 isExitTarget은 항상 false다.
     public static MapNode createCustom(Floor floor, String code, String name, double x, double y) {
         return new MapNode(floor, code, NodeType.CUSTOM, name, x, y, false);
+    }
+
+    // CCTV/유도등 구분이 필요한 새 호출부용 오버로드
+    public static MapNode createCustom(Floor floor, String code, String name, double x, double y,
+                                       CustomDeviceType customDeviceType) {
+        MapNode node = new MapNode(floor, code, NodeType.CUSTOM, name, x, y, false);
+        node.customDeviceType = customDeviceType;
+        return node;
     }
 
     // 도면에서 노드를 이동시킬 때 (기기 위치 변경 포함)
