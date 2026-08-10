@@ -75,8 +75,9 @@ public class FloorGridService {
 
         // Floor에 최종 그리드 설정 반영
         floor.applyGridCellConfig(request.cellSizeMeter(), rows, columns);
+        Floor savedFloor = floorRepository.save(floor);
 
-        return FloorGridResponse.of(floor);
+        return FloorGridResponse.of(savedFloor);
     }
 
     private void validateFloorReady(Floor floor) {
