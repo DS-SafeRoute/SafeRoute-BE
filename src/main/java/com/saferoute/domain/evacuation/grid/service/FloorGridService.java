@@ -32,6 +32,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class FloorGridService {
 
+    private static final long MAX_GRID_CELL_COUNT = 1_000_000L;
+
     private final FloorRepository floorRepository;
     private final FloorGridCellRepository floorGridCellRepository;
     private final UserZoneRepository userZoneRepository;
@@ -47,6 +49,10 @@ public class FloorGridService {
                 .orElseThrow(() -> new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
 
         validateFloorReady(floor);
+
+        long columnsLong = (long) Math.ceil(floor.getRealWidth() / request.cellSizeMeter());
+        long rowsLong = (long) Math.ceil(floor.getRealHeight() / request.cellSizeMeter());
+        validateGridSize(rowsLong, columnsLong);
 
         int columns = (int) Math.ceil(floor.getRealWidth() / request.cellSizeMeter());
         int rows = (int) Math.ceil(floor.getRealHeight() / request.cellSizeMeter());
@@ -86,9 +92,13 @@ public class FloorGridService {
         }
     }
 
-    private void validateGridSize(int rows, int columns) {
+    private void validateGridSize(long rows, long columns) {
         if (rows <= 0 || columns <= 0) {
             throw new ApiException(GridErrorCode.INVALID_CELL_SIZE);
+        }
+        long totalCells = rows * columns;
+        if (totalCells > MAX_GRID_CELL_COUNT) {
+            throw new ApiException(GridErrorCode.TOO_MANY_GRID_CELLS);
         }
     }
 
