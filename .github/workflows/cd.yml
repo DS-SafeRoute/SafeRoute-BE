@@ -79,6 +79,20 @@ jobs:
           sudo chown "$USER":"$USER" "$ENV_FILE"
           chmod 600 "$ENV_FILE"
 
+          # 빌드 도중 디스크가 가득 차 운영 배포까지 영향을 주지 않도록
+          # staging을 만들기 전에 최소 1GB의 여유 공간을 확인한다.
+          available_kb="$(df -Pk "$DEPLOY_ROOT" | awk 'NR == 2 { print $4 }')"
+          minimum_kb=$((1 * 1024 * 1024))
+          test -n "$available_kb" || {
+            echo "::error::$DEPLOY_ROOT의 여유 공간을 확인할 수 없습니다."
+            exit 1
+          }
+          if [ "$available_kb" -lt "$minimum_kb" ]; then
+            echo "::error::배포에 필요한 여유 공간이 부족합니다. 최소 1GB가 필요합니다."
+            df -h "$DEPLOY_ROOT"
+            exit 1
+          fi
+
       - name: Stage deployment sources
         run: |
           set -euo pipefail
@@ -113,10 +127,6 @@ jobs:
             sudo cp -a "$GITHUB_WORKSPACE/SafeRoute-AI" \
               "$STAGING_ROOT/SafeRoute-AI"
             sudo rm -rf -- "$STAGING_ROOT/SafeRoute-AI/.git"
-          elif [ -d "$DEPLOY_ROOT/SafeRoute-AI" ]; then
-            # be-only 검증 시 Compose의 ../SafeRoute-AI 상대 경로를 유지한다.
-            sudo cp -a "$DEPLOY_ROOT/SafeRoute-AI" \
-              "$STAGING_ROOT/SafeRoute-AI"
           fi
 
           sudo chown -R "$USER":"$USER" "$STAGING_ROOT" "$BACKUP_ROOT"
@@ -730,10 +740,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          # 최근 5개의 실행별 백업은 남기고 그보다 오래된 것만 삭제한다.
+          # 디스크가 작은 운영 서버이므로 최근 2개의 실행별 백업만 남긴다.
           mapfile -t old_backups < <(
             find "$DEPLOY_ROOT/.previous" -mindepth 1 -maxdepth 1 -type d \
-              -printf '%T@ %p\n' | sort -nr | tail -n +6 | cut -d' ' -f2-
+              -printf '%T@ %p\n' | sort -nr | tail -n +3 | cut -d' ' -f2-
           )
           for old_backup in "${old_backups[@]}"; do
             case "$old_backup" in
@@ -741,3 +751,12 @@ jobs:
               *) echo "::error::안전하지 않은 backup 경로: $old_backup"; exit 1 ;;
             esac
           done
+
+      - name: Prune unused Docker data
+        if: success()
+        run: |
+          set -euo pipefail
+
+          # 실행 중인 컨테이너, 사용 중인 이미지와 볼륨은 삭제하지 않는다.
+          docker image prune -f
+          docker builder prune -f --filter 'until=168h'
