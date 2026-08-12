@@ -14,7 +14,8 @@ public enum CctvErrorCode implements BaseErrorCode {
     DUPLICATE_GRID_CELL(HttpStatus.BAD_REQUEST, "CCTV003", "중복된 GridCell이 포함되어 있습니다."),
     GRID_CELL_FLOOR_MISMATCH(HttpStatus.BAD_REQUEST, "CCTV004", "CCTV와 GridCell은 같은 층에 있어야 합니다."),
     NON_WALKABLE_GRID_CELL(HttpStatus.BAD_REQUEST, "CCTV005", "보행 가능하지 않은 GridCell은 감시 영역으로 설정할 수 없습니다."),
-    GRID_NOT_CONFIGURED(HttpStatus.BAD_REQUEST, "CCTV006", "해당 층의 GridCell 크기가 설정되지 않았습니다.");
+    GRID_NOT_CONFIGURED(HttpStatus.BAD_REQUEST, "CCTV006", "해당 층의 GridCell 크기가 설정되지 않았습니다."),
+    CCTV_CODE_GENERATION_FAILED(HttpStatus.SERVICE_UNAVAILABLE, "CCTV007", "CCTV 식별 코드 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.");
 
     private final HttpStatus httpStatus;
     private final String code;

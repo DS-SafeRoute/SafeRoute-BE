@@ -12,6 +12,16 @@ public interface CctvGridCellRepository extends JpaRepository<CctvGridCell, UUID
 
     List<CctvGridCell> findAllByCctv_IdOrderByGridCell_RowIndexAscGridCell_ColumnIndexAsc(UUID cctvId);
 
+    @Query("""
+            select mapping
+            from CctvGridCell mapping
+            join fetch mapping.cctv cctv
+            join fetch mapping.gridCell cell
+            where cctv.id in :cctvIds
+            order by cctv.id, cell.rowIndex, cell.columnIndex
+            """)
+    List<CctvGridCell> findAllByCctvIdsWithGridCell(@Param("cctvIds") List<UUID> cctvIds);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("delete from CctvGridCell mapping where mapping.cctv.id = :cctvId")
     int deleteAllByCctvId(@Param("cctvId") UUID cctvId);

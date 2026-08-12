@@ -7,21 +7,19 @@ import com.saferoute.domain.device.entity.Cctv;
 import com.saferoute.domain.device.entity.CctvGridCell;
 import com.saferoute.domain.device.repository.CctvGridCellRepository;
 import com.saferoute.domain.device.repository.CctvJpaRepository;
-import com.saferoute.domain.evacuation.graph.entity.CustomDeviceType;
-import com.saferoute.domain.evacuation.graph.entity.MapNode;
-import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
 import com.saferoute.domain.evacuation.grid.entity.FloorGridCell;
 import com.saferoute.domain.evacuation.grid.repository.FloorGridCellRepository;
 import com.saferoute.domain.floor.entity.Floor;
-import com.saferoute.domain.floor.repository.FloorRepository;
 import com.saferoute.global.api.error.CctvErrorCode;
-import com.saferoute.global.api.error.FloorErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,45 +29,47 @@ import org.springframework.transaction.annotation.Transactional;
 public class CctvService {
 
     private static final String CCTV_CODE_PREFIX = "CCTV_";
+    private static final int CODE_GENERATION_MAX_ATTEMPTS = 3;
 
     private final CctvJpaRepository cctvJpaRepository;
     private final CctvGridCellRepository cctvGridCellRepository;
     private final FloorGridCellRepository floorGridCellRepository;
-    private final MapNodeJpaRepository mapNodeJpaRepository;
-    private final FloorRepository floorRepository;
+    private final CctvRegistrationService cctvRegistrationService;
 
-    @Transactional
     public CctvResponse createCctv(CreateCctvRequest request) {
-        Floor floor = floorRepository.findById(request.floorId())
-                .orElseThrow(() -> new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
-        validateGridConfigured(floor);
-
-        List<FloorGridCell> gridCells = findAndValidateGridCells(
-                floor.getId(), request.gridCellIds());
-        String code = generateCctvCode();
-
-        MapNode customNode = mapNodeJpaRepository.save(
-                MapNode.createCustom(
-                        floor,
-                        code,
-                        request.name(),
-                        request.x(),
-                        request.y(),
-                        CustomDeviceType.CCTV
-                )
-        );
-        Cctv cctv = cctvJpaRepository.save(Cctv.create(code, request.name(), customNode));
-        saveMappings(cctv, gridCells);
-
-        return CctvResponse.of(cctv, gridCells);
+        DataIntegrityViolationException lastConflict = null;
+        for (int attempt = 0; attempt < CODE_GENERATION_MAX_ATTEMPTS; attempt++) {
+            try {
+                return cctvRegistrationService.register(request, generateCctvCode());
+            } catch (DataIntegrityViolationException exception) {
+                lastConflict = exception;
+            }
+        }
+        throw new ApiException(CctvErrorCode.CCTV_CODE_GENERATION_FAILED, lastConflict);
     }
 
     public List<CctvResponse> getCctvs(UUID floorId) {
         List<Cctv> cctvs = floorId == null
-                ? cctvJpaRepository.findAll()
+                ? cctvJpaRepository.findAllWithLocation()
                 : cctvJpaRepository.findAllByCustomNode_Floor_Id(floorId);
+        if (cctvs.isEmpty()) {
+            return List.of();
+        }
 
-        return cctvs.stream().map(this::toResponse).toList();
+        Map<UUID, List<FloorGridCell>> gridCellsByCctvId = cctvGridCellRepository
+                .findAllByCctvIdsWithGridCell(cctvs.stream().map(Cctv::getId).toList())
+                .stream()
+                .collect(Collectors.groupingBy(
+                        mapping -> mapping.getCctv().getId(),
+                        Collectors.mapping(CctvGridCell::getGridCell, Collectors.toList())
+                ));
+
+        return cctvs.stream()
+                .map(cctv -> CctvResponse.of(
+                        cctv,
+                        gridCellsByCctvId.getOrDefault(cctv.getId(), List.of())
+                ))
+                .toList();
     }
 
     public CctvResponse getCctv(UUID cctvId) {
@@ -160,16 +160,12 @@ public class CctvService {
     }
 
     private Cctv findCctvOrThrow(UUID cctvId) {
-        return cctvJpaRepository.findById(cctvId)
+        return cctvJpaRepository.findByIdWithLocation(cctvId)
                 .orElseThrow(() -> new ApiException(CctvErrorCode.CCTV_NOT_FOUND));
     }
 
     private String generateCctvCode() {
-        String code;
-        do {
-            code = CCTV_CODE_PREFIX
-                    + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
-        } while (cctvJpaRepository.existsByCode(code));
-        return code;
+        return CCTV_CODE_PREFIX
+                + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
     }
 }
