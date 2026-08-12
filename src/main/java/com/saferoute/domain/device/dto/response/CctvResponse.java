@@ -21,7 +21,8 @@ public record CctvResponse(
 ) {
     public static CctvResponse of(Cctv cctv, List<FloorGridCell> gridCells) {
         Double cellSizeMeter = cctv.getCustomNode().getFloor().getGridCellSizeMeter();
-        Double monitoredAreaM2 = cellSizeMeter == null
+        boolean validCellSizeMeter = cellSizeMeter != null && cellSizeMeter > 0;
+        Double monitoredAreaM2 = !validCellSizeMeter
                 ? null
                 : gridCells.size() * cellSizeMeter * cellSizeMeter;
         return new CctvResponse(
