@@ -4,6 +4,8 @@ import com.saferoute.domain.evacuation.grid.entity.FloorGridCell;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -13,7 +15,7 @@ public interface FloorGridCellRepository extends JpaRepository<FloorGridCell, UU
 
     List<FloorGridCell> findAllByFloor_Id(UUID floorId);
 
-    List<FloorGridCell> findAllByFloor_IdOrderByRowIndexAscColumnIndexAsc(UUID floorId);
+    Page<FloorGridCell> findAllByFloor_Id(UUID floorId, Pageable pageable);
 
     // 화재 확산 시 rowIndex/columnIndex 로 인접 셀 탐색
     Optional<FloorGridCell> findByFloor_IdAndRowIndexAndColumnIndex(UUID floorId, int rowIndex, int columnIndex);

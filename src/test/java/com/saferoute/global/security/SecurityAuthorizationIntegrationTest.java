@@ -78,6 +78,31 @@ class SecurityAuthorizationIntegrationTest {
     }
 
     @Test
+    @DisplayName("일반 사용자는 관리자용 GridCell 원본 목록을 조회할 수 없다")
+    void normalUserCannotReadFloorGridCells() throws Exception {
+        String token = signupAndLogin(UserRole.NORMAL);
+
+        mockMvc.perform(
+                        get("/api/v1/floors/{floorId}/grid/cells", UUID.randomUUID())
+                                .header("Authorization", "Bearer " + token)
+                )
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMMON403"));
+    }
+
+    @Test
+    @DisplayName("관리자는 GridCell 원본 목록 조회 엔드포인트에 접근할 수 있다")
+    void managerCanReadFloorGridCells() throws Exception {
+        String token = signupAndLogin(UserRole.MANAGER);
+
+        mockMvc.perform(
+                        get("/api/v1/floors/{floorId}/grid/cells", UUID.randomUUID())
+                                .header("Authorization", "Bearer " + token)
+                )
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     @DisplayName("관리자는 건물을 등록할 수 있다")
     void managerCanWrite() throws Exception {
         String token =
