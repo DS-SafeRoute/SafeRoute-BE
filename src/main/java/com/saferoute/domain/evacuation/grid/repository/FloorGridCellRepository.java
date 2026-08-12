@@ -13,6 +13,8 @@ public interface FloorGridCellRepository extends JpaRepository<FloorGridCell, UU
 
     List<FloorGridCell> findAllByFloor_Id(UUID floorId);
 
+    List<FloorGridCell> findAllByFloor_IdOrderByRowIndexAscColumnIndexAsc(UUID floorId);
+
     // 화재 확산 시 rowIndex/columnIndex 로 인접 셀 탐색
     Optional<FloorGridCell> findByFloor_IdAndRowIndexAndColumnIndex(UUID floorId, int rowIndex, int columnIndex);
 

@@ -2,6 +2,7 @@ package com.saferoute.domain.evacuation.grid.service;
 
 import com.saferoute.domain.evacuation.grid.dto.request.CreateOrUpdateFloorGridRequest;
 import com.saferoute.domain.evacuation.grid.dto.response.FloorGridResponse;
+import com.saferoute.domain.evacuation.grid.dto.response.FloorGridCellResponse;
 import com.saferoute.domain.evacuation.grid.entity.FloorGridCell;
 import com.saferoute.domain.evacuation.grid.entity.MapEdgeGridCell;
 import com.saferoute.domain.evacuation.grid.entity.NodeGridCell;
@@ -41,6 +42,16 @@ public class FloorGridService {
     private final MapEdgeGridCellRepository mapEdgeGridCellRepository;
     private final MapNodeJpaRepository mapNodeRepository;
     private final MapEdgeJpaRepository mapEdgeRepository;
+
+    public List<FloorGridCellResponse> getGridCells(UUID floorId) {
+        if (!floorRepository.existsById(floorId)) {
+            throw new ApiException(FloorErrorCode.FLOOR_NOT_FOUND);
+        }
+        return floorGridCellRepository.findAllByFloor_IdOrderByRowIndexAscColumnIndexAsc(floorId)
+                .stream()
+                .map(FloorGridCellResponse::from)
+                .toList();
+    }
 
     // 그리드 생성/재생성 - 최초 생성이든 N번째 수정이든 동일 로직
     @Transactional
