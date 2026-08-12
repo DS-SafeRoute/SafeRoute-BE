@@ -15,7 +15,8 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
-// 혼잡도 반영 경로: CCTV code -> customNode -> NodeGridCell -> FloorGridCell -> MapEdgeGridCell -> MapEdge
+// 설치 위치는 customNode가 관리하고, 실제 감시 영역은 CctvGridCell 매핑이 관리한다.
+// 혼잡도 반영 경로: CCTV code -> CctvGridCell -> FloorGridCell -> MapEdgeGridCell -> MapEdge
 @Entity
 @Getter
 @Table(name = "cctvs")
