@@ -80,6 +80,12 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers("/actuator/**").authenticated()
 
+                        // 도면 GridCell 원본 데이터는 CCTV 감시 영역을 설정하는 관리자 기능에서만 사용한다.
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/floors/*/grid/cells"
+                        ).hasRole("MANAGER")
+
                         .requestMatchers(
                                 HttpMethod.GET,
                                 "/api/**"

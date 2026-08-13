@@ -136,4 +136,22 @@ class FloorGridServiceTest {
         assertThat(reloaded.getGridRows()).isEqualTo(30);
         assertThat(reloaded.getGridColumns()).isEqualTo(40);
     }
+
+    @Test
+    void getGridCells_returnsRequestedPageOnly() {
+        floorGridService.createOrRegenerateGrid(
+                floor.getId(), new CreateOrUpdateFloorGridRequest(1.0));
+
+        var firstPage = floorGridService.getGridCells(floor.getId(), 0, 100);
+
+        assertThat(firstPage.content()).hasSize(100);
+        assertThat(firstPage.totalElements()).isEqualTo(1200);
+        assertThat(firstPage.totalPages()).isEqualTo(12);
+        assertThat(firstPage.first()).isTrue();
+        assertThat(firstPage.last()).isFalse();
+        assertThat(firstPage.content().get(0).rowIndex()).isZero();
+        assertThat(firstPage.content().get(0).columnIndex()).isZero();
+        assertThat(firstPage.content().get(99).rowIndex()).isEqualTo(2);
+        assertThat(firstPage.content().get(99).columnIndex()).isEqualTo(19);
+    }
 }

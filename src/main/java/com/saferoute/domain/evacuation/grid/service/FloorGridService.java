@@ -2,6 +2,8 @@ package com.saferoute.domain.evacuation.grid.service;
 
 import com.saferoute.domain.evacuation.grid.dto.request.CreateOrUpdateFloorGridRequest;
 import com.saferoute.domain.evacuation.grid.dto.response.FloorGridResponse;
+import com.saferoute.domain.evacuation.grid.dto.response.FloorGridCellResponse;
+import com.saferoute.domain.evacuation.grid.dto.response.FloorGridCellPageResponse;
 import com.saferoute.domain.evacuation.grid.entity.FloorGridCell;
 import com.saferoute.domain.evacuation.grid.entity.MapEdgeGridCell;
 import com.saferoute.domain.evacuation.grid.entity.NodeGridCell;
@@ -24,6 +26,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,6 +45,21 @@ public class FloorGridService {
     private final MapEdgeGridCellRepository mapEdgeGridCellRepository;
     private final MapNodeJpaRepository mapNodeRepository;
     private final MapEdgeJpaRepository mapEdgeRepository;
+
+    public FloorGridCellPageResponse getGridCells(UUID floorId, int page, int size) {
+        if (!floorRepository.existsById(floorId)) {
+            throw new ApiException(FloorErrorCode.FLOOR_NOT_FOUND);
+        }
+        PageRequest pageable = PageRequest.of(
+                page,
+                size,
+                Sort.by("rowIndex").ascending().and(Sort.by("columnIndex").ascending())
+        );
+        return FloorGridCellPageResponse.from(
+                floorGridCellRepository.findAllByFloor_Id(floorId, pageable)
+                        .map(FloorGridCellResponse::from)
+        );
+    }
 
     // 그리드 생성/재생성 - 최초 생성이든 N번째 수정이든 동일 로직
     @Transactional
