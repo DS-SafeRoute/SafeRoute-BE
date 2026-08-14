@@ -1,6 +1,7 @@
 package com.saferoute.domain.floor.controller;
 
 import com.saferoute.domain.floor.dto.request.CreateFloorRequest;
+import com.saferoute.domain.floor.dto.request.UpdateFloorRequest;
 import com.saferoute.domain.floor.dto.request.UploadFloorRequest;
 import com.saferoute.domain.floor.dto.response.FloorResponse;
 import com.saferoute.domain.floor.service.FloorService;
@@ -61,6 +62,17 @@ public class FloorController {
             @PathVariable UUID floorId
     ) {
         return ResponseEntity.ok(ApiResponse.success(FloorSuccessCode.FLOOR_DETAIL_FOUND, floorService.getFloor(buildingId, floorId)));
+    }
+
+    // 층 정보 수정
+    @PatchMapping("/{floorId}")
+    public ResponseEntity<ApiResponse<FloorResponse>> updateFloor(
+            @PathVariable UUID buildingId,
+            @PathVariable UUID floorId,
+            @Valid @RequestBody UpdateFloorRequest request
+    ) {
+        FloorResponse response = floorService.updateFloor(buildingId, floorId, request);
+        return ResponseEntity.ok(ApiResponse.success(FloorSuccessCode.FLOOR_UPDATED, response));
     }
 
     // 도면 삭제

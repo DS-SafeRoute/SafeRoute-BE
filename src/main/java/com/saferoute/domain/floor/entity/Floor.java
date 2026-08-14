@@ -93,6 +93,10 @@ public class Floor {
     return new Floor(building, floorNum);
   }
 
+  public void updateFloorNum(Integer floorNum) {
+    this.floorNum = floorNum;
+  }
+
   public void updateSegmentationStatus(SegmentationStatus status) {
     this.segmentationStatus = status;
   }
