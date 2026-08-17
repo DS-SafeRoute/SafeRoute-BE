@@ -4,6 +4,7 @@ import com.saferoute.domain.analysis.service.FloorAnalysisService;
 import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.building.repository.BuildingRepository;
 import com.saferoute.domain.floor.dto.request.CreateFloorRequest;
+import com.saferoute.domain.floor.dto.request.UpdateFloorRequest;
 import com.saferoute.domain.floor.dto.request.UploadFloorRequest;
 import com.saferoute.domain.floor.dto.response.FloorResponse;
 import com.saferoute.domain.floor.entity.Floor;
@@ -73,6 +74,19 @@ public class FloorService {
             s3Service.upload(request.file());
 
         floor.upload(request.realHeight(), request.realWidth(), uploadResult.key());
+
+        return FloorResponse.from(floor);
+    }
+
+    @Transactional
+    public FloorResponse updateFloor(UUID buildingId, UUID floorId, UpdateFloorRequest request) {
+        Floor floor = findFloor(buildingId, floorId);
+
+        if (!floor.getFloorNum().equals(request.floorNum())) {
+            validateDuplicateFloorNum(buildingId, request.floorNum());
+        }
+
+        floor.updateFloorNum(request.floorNum());
 
         return FloorResponse.from(floor);
     }
