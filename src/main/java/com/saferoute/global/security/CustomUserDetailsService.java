@@ -3,6 +3,7 @@ package com.saferoute.global.security;
 import com.saferoute.domain.user.entity.User;
 import com.saferoute.domain.user.repository.UserRepository;
 import java.util.List;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -28,6 +29,22 @@ public class CustomUserDetailsService implements UserDetailsService {
                                 "사용자를 찾을 수 없습니다."
                         ));
 
+        return toUserDetails(user);
+    }
+
+    public UserDetails loadUserById(UUID userId)
+            throws UsernameNotFoundException {
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() ->
+                        new UsernameNotFoundException(
+                                "사용자를 찾을 수 없습니다."
+                        ));
+
+        return toUserDetails(user);
+    }
+
+    private UserDetails toUserDetails(User user) {
         return new org.springframework.security.core.userdetails.User(
                 user.getEmail(),
                 user.getPassword(),

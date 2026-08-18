@@ -2,27 +2,25 @@ package com.saferoute.domain.user.dto;
 
 import com.saferoute.domain.user.entity.User;
 import com.saferoute.domain.user.entity.UserRole;
-import java.time.Instant;
 import java.util.UUID;
 
-public record SignupResponse(
+public record UserProfileResponse(
         UUID id,
         String username,
-        String email,
         String phoneNumber,
+        String email,
         UserRole role,
-        String schoolName,
-        Instant createdAt
+        String schoolName
 ) {
-    public static SignupResponse from(User user) {
-        return new SignupResponse(
+
+    public static UserProfileResponse from(User user) {
+        return new UserProfileResponse(
                 user.getId(),
                 user.getUsername(),
-                user.getEmail(),
                 user.getPhoneNumber(),
+                user.getEmail(),
                 user.getRole(),
-                user.getSchoolName(),
-                user.getCreatedAt()
+                user.getSchoolName()
         );
     }
 }

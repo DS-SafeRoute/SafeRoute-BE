@@ -6,6 +6,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.AuthenticationException;
@@ -24,6 +25,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String WEBSOCKET_PATH_PREFIX = "/ws";
 
     private final JwtTokenProvider jwtTokenProvider;
+    private final AccessTokenRevocationService accessTokenRevocationService;
     private final CustomUserDetailsService userDetailsService;
     private final JwtAuthenticationEntryPoint authenticationEntryPoint;
 
@@ -50,10 +52,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         try {
-            String email = jwtTokenProvider.getEmail(token);
+            UUID userId = jwtTokenProvider.getUserId(token);
+
+            if (accessTokenRevocationService.isRevoked(token)) {
+                throw new JwtException("로그아웃된 JWT입니다.");
+            }
 
             UserDetails userDetails =
-                    userDetailsService.loadUserByUsername(email);
+                    userDetailsService.loadUserById(userId);
 
             UsernamePasswordAuthenticationToken authentication =
                     UsernamePasswordAuthenticationToken.authenticated(
