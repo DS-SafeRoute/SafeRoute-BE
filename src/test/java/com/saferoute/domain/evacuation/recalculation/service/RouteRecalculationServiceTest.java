@@ -21,7 +21,6 @@ import com.saferoute.domain.evacuation.recalculation.repository.RouteRecalculati
 import com.saferoute.domain.evacuation.service.EvacuationRoute;
 import com.saferoute.domain.evacuation.service.EvacuationRouteService;
 import com.saferoute.domain.floor.entity.Floor;
-import com.saferoute.domain.telemetry.dynamo.repository.TrainingEventRepository;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.global.api.error.EvacuationErrorCode;
 import com.saferoute.global.api.exception.ApiException;
@@ -51,9 +50,6 @@ class RouteRecalculationServiceTest {
 
     @Mock
     private EvacuationRouteService evacuationRouteService;
-
-    @Mock
-    private TrainingEventRepository trainingEventRepository;
 
     @Mock
     private TrainingEventPublisher trainingEventPublisher;
@@ -106,7 +102,6 @@ class RouteRecalculationServiceTest {
 
         // then
         verify(routeRecalculationRepository, never()).save(any());
-        verify(trainingEventRepository, never()).save(any());
         verify(trainingEventPublisher, never()).publishRouteRecalculationRequestedAfterCommit(any());
     }
 
@@ -135,7 +130,6 @@ class RouteRecalculationServiceTest {
         assertThat(excludedEdgesCaptor.getValue()).containsExactly(triggerEdge.getId());
 
         verify(routeRecalculationRepository, times(1)).save(any());
-        verify(trainingEventRepository, times(1)).save(any());
         verify(trainingEventPublisher, times(1)).publishRouteRecalculationRequestedAfterCommit(saved);
     }
 

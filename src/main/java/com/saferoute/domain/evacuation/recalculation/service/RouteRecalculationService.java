@@ -8,9 +8,6 @@ import com.saferoute.domain.evacuation.recalculation.entity.RouteRecalculation;
 import com.saferoute.domain.evacuation.recalculation.repository.RouteRecalculationRepository;
 import com.saferoute.domain.evacuation.service.EvacuationRoute;
 import com.saferoute.domain.evacuation.service.EvacuationRouteService;
-import com.saferoute.domain.telemetry.dynamo.entity.EventType;
-import com.saferoute.domain.telemetry.dynamo.entity.TrainingEventItem;
-import com.saferoute.domain.telemetry.dynamo.repository.TrainingEventRepository;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.global.api.error.EvacuationErrorCode;
@@ -31,11 +28,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class RouteRecalculationService {
 
-    private static final String TRIGGER_TYPE_CONGESTION = "CONGESTION";
-
     private final RouteRecalculationRepository routeRecalculationRepository;
     private final EvacuationRouteService evacuationRouteService;
-    private final TrainingEventRepository trainingEventRepository;
     private final TrainingEventPublisher trainingEventPublisher;
 
     // 혼잡 감지로 트리거되는 우회 경로 재탐색. 같은 세션+엣지에 이미 PENDING이 있으면 새로 만들지 않고,
@@ -75,20 +69,6 @@ public class RouteRecalculationService {
             log.debug("동시 요청으로 인한 중복 재탐색 저장을 무시함: sessionId={}, edgeId={}", session.getId(), triggerEdge.getId());
             return;
         }
-
-        trainingEventRepository.save(TrainingEventItem.create(
-                session.getId().toString(),
-                UUID.randomUUID().toString(),
-                Instant.now().toEpochMilli(),
-                EventType.ROUTE_RECALCULATED,
-                TRIGGER_TYPE_CONGESTION,
-                List.of(triggerEdge.getId().toString()),
-                null,
-                newPathNodeIds.stream().map(UUID::toString).toList(),
-                null,
-                null,
-                null
-        ));
 
         trainingEventPublisher.publishRouteRecalculationRequestedAfterCommit(recalculation);
     }
