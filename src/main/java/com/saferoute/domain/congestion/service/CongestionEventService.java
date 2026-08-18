@@ -12,9 +12,9 @@ import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.global.api.error.EvacuationErrorCode;
+import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
-import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -33,20 +33,16 @@ public class CongestionEventService {
     private final RouteRecalculationService routeRecalculationService;
 
     // Raspberry Pi / YOLO가 보고하는 혼잡 이벤트를 받아 DynamoDB에 저장하고, CROWDED이면 재탐색을 트리거한다.
-    // 대상 건물에 RUNNING 세션이 없으면(훈련 중이 아니면) 저장/트리거 없이 조용히 종료한다.
+    // 대상 건물에 RUNNING 세션이 없으면 공통 에러 응답으로 처리한다.
     @Transactional
-    public Optional<IdempotentSaveResult<ObservationItem>> reportCongestion(ReportCongestionRequest request) {
+    public IdempotentSaveResult<ObservationItem> reportCongestion(ReportCongestionRequest request) {
         MapEdge edge = mapEdgeJpaRepository.findById(request.edgeId())
                 .orElseThrow(() -> new ApiException(EvacuationErrorCode.MAP_EDGE_NOT_FOUND));
 
         var buildingId = edge.getFloor().getBuilding().getId();
         TrainingSession session = trainingSessionRepository
                 .findFirstByStatusAndScenario_Building_IdOrderByStartedAtAsc(TrainingStatus.RUNNING, buildingId)
-                .orElse(null);
-        if (session == null) {
-            log.debug("훈련 중이 아닌 건물의 혼잡 이벤트라 무시함: buildingId={}, edgeId={}", buildingId, edge.getId());
-            return Optional.empty();
-        }
+                .orElseThrow(() -> new ApiException(TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND));
 
         ObservationItem item = ObservationItem.create(
                 request.eventId().toString(),
@@ -65,7 +61,7 @@ public class CongestionEventService {
         );
         IdempotentSaveResult<ObservationItem> saveResult = observationRepository.saveIfAbsent(item);
         if (!saveResult.created()) {
-            return Optional.of(saveResult);
+            return saveResult;
         }
 
         trainingEventPublisher.publishCongestionUpdated(session.getId(), edge.getId(), saveResult.item());
@@ -74,6 +70,6 @@ public class CongestionEventService {
         if (level == CongestionLevel.CROWDED) {
             routeRecalculationService.trigger(session, edge, level);
         }
-        return Optional.of(saveResult);
+        return saveResult;
     }
 }

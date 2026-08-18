@@ -23,6 +23,7 @@ import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.global.api.error.EvacuationErrorCode;
+import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
 import java.util.Optional;
@@ -91,15 +92,19 @@ class CongestionEventServiceTest {
     }
 
     @Test
-    @DisplayName("대상 건물에 RUNNING 세션이 없으면 저장/발행/트리거 없이 조용히 종료한다")
-    void reportCongestion_noOpWhenNoRunningSession() {
+    @DisplayName("대상 건물에 RUNNING 세션이 없으면 전용 에러를 반환한다")
+    void reportCongestion_throwsWhenNoRunningSession() {
         given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
         given(trainingSessionRepository.findFirstByStatusAndScenario_Building_IdOrderByStartedAtAsc(TrainingStatus.RUNNING, buildingId))
                 .willReturn(Optional.empty());
 
-        var result = congestionEventService.reportCongestion(request(CongestionLevel.CROWDED));
+        assertThatThrownBy(() -> congestionEventService.reportCongestion(request(CongestionLevel.CROWDED)))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue(
+                        "errorCode",
+                        TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND
+                );
 
-        assertThat(result).isEmpty();
         verify(observationRepository, never()).saveIfAbsent(any());
         verify(trainingEventPublisher, never()).publishCongestionUpdated(any(), any(), any());
         verify(routeRecalculationService, never()).trigger(any(), any(), any());
@@ -161,7 +166,7 @@ class CongestionEventServiceTest {
 
         var result = congestionEventService.reportCongestion(request(CongestionLevel.CROWDED));
 
-        assertThat(result).hasValueSatisfying(saveResult -> assertThat(saveResult.created()).isFalse());
+        assertThat(result.created()).isFalse();
         verify(trainingEventPublisher, never()).publishCongestionUpdated(any(), any(), any());
         verify(routeRecalculationService, never()).trigger(any(), any(), any());
     }

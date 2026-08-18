@@ -13,11 +13,11 @@ import com.saferoute.domain.congestion.service.CongestionEventService;
 import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import com.saferoute.domain.telemetry.dynamo.repository.IdempotentSaveResult;
 import com.saferoute.global.api.error.EvacuationErrorCode;
+import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.global.config.SecurityConfig;
 import com.saferoute.global.security.JwtAuthenticationFilter;
 import java.util.UUID;
-import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -59,7 +59,7 @@ class CongestionControllerTest {
     @DisplayName("처음 수신한 eventId이면 관측값과 201을 반환한다")
     void reportCongestion_returnsCreated() throws Exception {
         given(congestionEventService.reportCongestion(any()))
-                .willReturn(Optional.of(IdempotentSaveResult.created(observation())));
+                .willReturn(IdempotentSaveResult.created(observation()));
 
         mockMvc.perform(post("/api/v1/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -73,7 +73,7 @@ class CongestionControllerTest {
     @DisplayName("중복 eventId이면 기존 관측값과 200을 반환한다")
     void reportCongestion_returnsExistingObservation() throws Exception {
         given(congestionEventService.reportCongestion(any()))
-                .willReturn(Optional.of(IdempotentSaveResult.existing(observation())));
+                .willReturn(IdempotentSaveResult.existing(observation()));
 
         mockMvc.perform(post("/api/v1/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -162,6 +162,20 @@ class CongestionControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(validRequest())))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("진행 중인 훈련 세션이 없으면 공통 에러 코드와 404를 반환한다")
+    void reportCongestion_returnsNotFoundWhenRunningSessionMissing() throws Exception {
+        given(congestionEventService.reportCongestion(any()))
+                .willThrow(new ApiException(TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND));
+
+        mockMvc.perform(post("/api/v1/congestion-events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.code").value("TRAINING006"));
     }
 
     private ObservationItem observation() {

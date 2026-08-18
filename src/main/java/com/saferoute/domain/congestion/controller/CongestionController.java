@@ -3,6 +3,7 @@ package com.saferoute.domain.congestion.controller;
 import com.saferoute.domain.congestion.dto.request.ReportCongestionRequest;
 import com.saferoute.domain.congestion.dto.response.ObservationResponse;
 import com.saferoute.domain.congestion.service.CongestionEventService;
+import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import com.saferoute.domain.telemetry.dynamo.repository.IdempotentSaveResult;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -26,13 +27,8 @@ public class CongestionController {
     public ResponseEntity<ObservationResponse> reportCongestion(
             @Valid @RequestBody ReportCongestionRequest request
     ) {
-        var result = congestionEventService.reportCongestion(request);
-        if (result.isEmpty()) {
-            return ResponseEntity.noContent().build();
-        }
-
-        IdempotentSaveResult<?> saveResult = result.get();
-        ObservationResponse response = ObservationResponse.from(result.get().item());
+        IdempotentSaveResult<ObservationItem> saveResult = congestionEventService.reportCongestion(request);
+        ObservationResponse response = ObservationResponse.from(saveResult.item());
         HttpStatus status = saveResult.created() ? HttpStatus.CREATED : HttpStatus.OK;
         return ResponseEntity.status(status).body(response);
     }
