@@ -1,6 +1,8 @@
 package com.saferoute.domain.telemetry.dynamo.repository;
 
 import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventItem;
+import com.saferoute.domain.telemetry.dynamo.entity.EventProcessingStatus;
+import com.saferoute.domain.telemetry.dynamo.entity.ImageUploadStatus;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,6 +17,8 @@ import software.amazon.awssdk.enhanced.dynamodb.model.GetItemEnhancedRequest;
 import software.amazon.awssdk.enhanced.dynamodb.model.PutItemEnhancedRequest;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
+import software.amazon.awssdk.enhanced.dynamodb.model.UpdateItemEnhancedRequest;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
 
 @Repository
@@ -85,6 +89,93 @@ public class CongestionEventRepository {
                 .flatMap(page -> page.items().stream())
                 .limit(limit)
                 .toList();
+    }
+
+    public boolean updateEventStatus(
+            String eventId,
+            EventProcessingStatus expectedStatus,
+            EventProcessingStatus newStatus
+    ) {
+        validateEventStatusTransition(expectedStatus, newStatus);
+        return updateItem(eventId, "eventStatus", expectedStatus.name(), item -> item.setEventStatus(newStatus));
+    }
+
+    public boolean updateImageUploadStatus(
+            String eventId,
+            ImageUploadStatus expectedStatus,
+            ImageUploadStatus newStatus
+    ) {
+        validateImageStatusTransition(expectedStatus, newStatus);
+        return updateItem(
+                eventId,
+                "imageUploadStatus",
+                expectedStatus.name(),
+                item -> item.setImageUploadStatus(newStatus)
+        );
+    }
+
+    private boolean updateItem(
+            String eventId,
+            String statusAttribute,
+            String expectedStatus,
+            java.util.function.Consumer<CongestionEventItem> update
+    ) {
+        Optional<CongestionEventItem> existing = findByEventId(eventId);
+        if (existing.isEmpty()) {
+            return false;
+        }
+
+        CongestionEventItem item = existing.get();
+        update.accept(item);
+        Expression condition = Expression.builder()
+                .expression("#status = :expectedStatus")
+                .putExpressionName("#status", statusAttribute)
+                .putExpressionValue(":expectedStatus", AttributeValue.fromS(expectedStatus))
+                .build();
+        UpdateItemEnhancedRequest<CongestionEventItem> request =
+                UpdateItemEnhancedRequest.builder(CongestionEventItem.class)
+                        .item(item)
+                        .conditionExpression(condition)
+                        .build();
+
+        try {
+            table.updateItem(request);
+            return true;
+        } catch (ConditionalCheckFailedException exception) {
+            return false;
+        }
+    }
+
+    private void validateEventStatusTransition(
+            EventProcessingStatus expectedStatus,
+            EventProcessingStatus newStatus
+    ) {
+        boolean retryOrStart = (expectedStatus == EventProcessingStatus.RECEIVED
+                || expectedStatus == EventProcessingStatus.FAILED)
+                && newStatus == EventProcessingStatus.PROCESSING;
+        boolean finish = expectedStatus == EventProcessingStatus.PROCESSING
+                && (newStatus == EventProcessingStatus.PROCESSED
+                || newStatus == EventProcessingStatus.FAILED);
+        if (!retryOrStart && !finish) {
+            throw new IllegalArgumentException(
+                    "허용되지 않은 이벤트 상태 변경입니다: " + expectedStatus + " -> " + newStatus
+            );
+        }
+    }
+
+    private void validateImageStatusTransition(
+            ImageUploadStatus expectedStatus,
+            ImageUploadStatus newStatus
+    ) {
+        boolean complete = expectedStatus == ImageUploadStatus.PENDING
+                && (newStatus == ImageUploadStatus.UPLOADED || newStatus == ImageUploadStatus.FAILED);
+        boolean retry = expectedStatus == ImageUploadStatus.FAILED
+                && newStatus == ImageUploadStatus.PENDING;
+        if (!complete && !retry) {
+            throw new IllegalArgumentException(
+                    "허용되지 않은 이미지 상태 변경입니다: " + expectedStatus + " -> " + newStatus
+            );
+        }
     }
 
     private void validateLimit(int limit) {

@@ -10,6 +10,8 @@ import static org.mockito.Mockito.when;
 import com.saferoute.domain.congestion.entity.CongestionLevel;
 import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventItem;
 import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventType;
+import com.saferoute.domain.telemetry.dynamo.entity.EventProcessingStatus;
+import com.saferoute.domain.telemetry.dynamo.entity.ImageUploadStatus;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,6 +27,7 @@ import software.amazon.awssdk.enhanced.dynamodb.model.Page;
 import software.amazon.awssdk.enhanced.dynamodb.model.PageIterable;
 import software.amazon.awssdk.enhanced.dynamodb.model.PutItemEnhancedRequest;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
+import software.amazon.awssdk.enhanced.dynamodb.model.UpdateItemEnhancedRequest;
 import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
 
 @ExtendWith(MockitoExtension.class)
@@ -96,9 +99,73 @@ class CongestionEventRepositoryTest {
         assertThat(result).containsExactly(first, second);
     }
 
+    @Test
+    void 이벤트를_RECEIVED_PROCESSING_PROCESSED_순서로_변경한다() {
+        CongestionEventItem item = item("event-1", 1_000L);
+        when(table.getItem(any(software.amazon.awssdk.enhanced.dynamodb.model.GetItemEnhancedRequest.class)))
+                .thenReturn(item);
+        ArgumentCaptor<UpdateItemEnhancedRequest<CongestionEventItem>> captor = updateCaptor();
+
+        assertThat(repository.updateEventStatus(
+                "event-1", EventProcessingStatus.RECEIVED, EventProcessingStatus.PROCESSING
+        )).isTrue();
+        assertThat(repository.updateEventStatus(
+                "event-1", EventProcessingStatus.PROCESSING, EventProcessingStatus.PROCESSED
+        )).isTrue();
+
+        verify(table, org.mockito.Mockito.times(2)).updateItem(captor.capture());
+        assertThat(captor.getAllValues())
+                .extracting(request -> request.conditionExpression()
+                        .expressionValues().get(":expectedStatus").s())
+                .containsExactly("RECEIVED", "PROCESSING");
+        assertThat(item.getEventStatus()).isEqualTo(EventProcessingStatus.PROCESSED);
+    }
+
+    @Test
+    void FAILED_이벤트를_PROCESSING으로_재처리할_수_있다() {
+        CongestionEventItem item = item("event-1", 1_000L);
+        item.setEventStatus(EventProcessingStatus.FAILED);
+        when(table.getItem(any(software.amazon.awssdk.enhanced.dynamodb.model.GetItemEnhancedRequest.class)))
+                .thenReturn(item);
+
+        boolean updated = repository.updateEventStatus(
+                "event-1", EventProcessingStatus.FAILED, EventProcessingStatus.PROCESSING
+        );
+
+        assertThat(updated).isTrue();
+        assertThat(item.getEventStatus()).isEqualTo(EventProcessingStatus.PROCESSING);
+    }
+
+    @Test
+    void 이미지_업로드_실패_후_PENDING으로_재시도할_수_있다() {
+        CongestionEventItem item = item("event-1", 1_000L);
+        item.setImageUploadStatus(ImageUploadStatus.FAILED);
+        when(table.getItem(any(software.amazon.awssdk.enhanced.dynamodb.model.GetItemEnhancedRequest.class)))
+                .thenReturn(item);
+
+        boolean updated = repository.updateImageUploadStatus(
+                "event-1", ImageUploadStatus.FAILED, ImageUploadStatus.PENDING
+        );
+
+        assertThat(updated).isTrue();
+    }
+
+    @Test
+    void 허용되지_않은_이벤트_상태_변경은_거부한다() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> repository.updateEventStatus(
+                        "event-1", EventProcessingStatus.RECEIVED, EventProcessingStatus.PROCESSED
+                ))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     @SuppressWarnings({"unchecked", "rawtypes"})
     private ArgumentCaptor<PutItemEnhancedRequest<CongestionEventItem>> requestCaptor() {
         return (ArgumentCaptor) ArgumentCaptor.forClass(PutItemEnhancedRequest.class);
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private ArgumentCaptor<UpdateItemEnhancedRequest<CongestionEventItem>> updateCaptor() {
+        return (ArgumentCaptor) ArgumentCaptor.forClass(UpdateItemEnhancedRequest.class);
     }
 
     private CongestionEventItem item(String eventId, long detectedAt) {
