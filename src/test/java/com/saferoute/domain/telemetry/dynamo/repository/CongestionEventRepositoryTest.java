@@ -101,9 +101,6 @@ class CongestionEventRepositoryTest {
 
     @Test
     void 이벤트를_RECEIVED_PROCESSING_PROCESSED_순서로_변경한다() {
-        CongestionEventItem item = item("event-1", 1_000L);
-        when(table.getItem(any(software.amazon.awssdk.enhanced.dynamodb.model.GetItemEnhancedRequest.class)))
-                .thenReturn(item);
         ArgumentCaptor<UpdateItemEnhancedRequest<CongestionEventItem>> captor = updateCaptor();
 
         assertThat(repository.updateEventStatus(
@@ -118,31 +115,29 @@ class CongestionEventRepositoryTest {
                 .extracting(request -> request.conditionExpression()
                         .expressionValues().get(":expectedStatus").s())
                 .containsExactly("RECEIVED", "PROCESSING");
-        assertThat(item.getEventStatus()).isEqualTo(EventProcessingStatus.PROCESSED);
+        assertThat(captor.getAllValues())
+                .extracting(request -> request.item().getEventStatus())
+                .containsExactly(EventProcessingStatus.PROCESSING, EventProcessingStatus.PROCESSED);
+        assertThat(captor.getAllValues())
+                .allSatisfy(request -> {
+                    assertThat(request.ignoreNullsMode()).isEqualTo(
+                            software.amazon.awssdk.enhanced.dynamodb.model.IgnoreNullsMode.SCALAR_ONLY
+                    );
+                    assertThat(request.item().getImageUploadStatus()).isNull();
+                });
     }
 
     @Test
     void FAILED_이벤트를_PROCESSING으로_재처리할_수_있다() {
-        CongestionEventItem item = item("event-1", 1_000L);
-        item.setEventStatus(EventProcessingStatus.FAILED);
-        when(table.getItem(any(software.amazon.awssdk.enhanced.dynamodb.model.GetItemEnhancedRequest.class)))
-                .thenReturn(item);
-
         boolean updated = repository.updateEventStatus(
                 "event-1", EventProcessingStatus.FAILED, EventProcessingStatus.PROCESSING
         );
 
         assertThat(updated).isTrue();
-        assertThat(item.getEventStatus()).isEqualTo(EventProcessingStatus.PROCESSING);
     }
 
     @Test
     void 이미지_업로드_실패_후_PENDING으로_재시도할_수_있다() {
-        CongestionEventItem item = item("event-1", 1_000L);
-        item.setImageUploadStatus(ImageUploadStatus.FAILED);
-        when(table.getItem(any(software.amazon.awssdk.enhanced.dynamodb.model.GetItemEnhancedRequest.class)))
-                .thenReturn(item);
-
         boolean updated = repository.updateImageUploadStatus(
                 "event-1", ImageUploadStatus.FAILED, ImageUploadStatus.PENDING
         );

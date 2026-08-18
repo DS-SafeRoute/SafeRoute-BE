@@ -14,6 +14,7 @@ import software.amazon.awssdk.enhanced.dynamodb.Expression;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
 import software.amazon.awssdk.enhanced.dynamodb.model.GetItemEnhancedRequest;
+import software.amazon.awssdk.enhanced.dynamodb.model.IgnoreNullsMode;
 import software.amazon.awssdk.enhanced.dynamodb.model.PutItemEnhancedRequest;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
@@ -120,12 +121,9 @@ public class CongestionEventRepository {
             String expectedStatus,
             java.util.function.Consumer<CongestionEventItem> update
     ) {
-        Optional<CongestionEventItem> existing = findByEventId(eventId);
-        if (existing.isEmpty()) {
-            return false;
-        }
-
-        CongestionEventItem item = existing.get();
+        CongestionEventItem item = new CongestionEventItem();
+        item.setPk(CongestionEventItem.buildPk(eventId));
+        item.setSk("META");
         update.accept(item);
         Expression condition = Expression.builder()
                 .expression("#status = :expectedStatus")
@@ -135,6 +133,7 @@ public class CongestionEventRepository {
         UpdateItemEnhancedRequest<CongestionEventItem> request =
                 UpdateItemEnhancedRequest.builder(CongestionEventItem.class)
                         .item(item)
+                        .ignoreNullsMode(IgnoreNullsMode.SCALAR_ONLY)
                         .conditionExpression(condition)
                         .build();
 
