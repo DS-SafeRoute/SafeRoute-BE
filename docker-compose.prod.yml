@@ -9,12 +9,15 @@ services:
       ai:
         condition: service_healthy
     ports:
-      - "8080:8080"
+      # 호스트 Nginx만 애플리케이션에 접근하도록 외부 인터페이스 노출을 차단한다.
+      - "127.0.0.1:8080:8080"
     environment:
       SPRING_PROFILES_ACTIVE: prod
 
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_ACCESS_TOKEN_EXPIRATION: ${JWT_ACCESS_TOKEN_EXPIRATION:-1h}
+      MAX_FILE_SIZE: ${MAX_FILE_SIZE:-50MB}
+      MAX_REQUEST_SIZE: ${MAX_REQUEST_SIZE:-50MB}
 
       DB_URL: ${DB_URL:?DB_URL is required}
       DB_USERNAME: ${DB_USERNAME:?DB_USERNAME is required}
