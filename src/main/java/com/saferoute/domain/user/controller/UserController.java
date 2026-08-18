@@ -9,16 +9,19 @@ import com.saferoute.domain.user.dto.UserProfileResponse;
 import com.saferoute.domain.user.service.UserService;
 import com.saferoute.global.api.response.ApiResponse;
 import com.saferoute.global.api.response.UserSuccessCode;
+import com.saferoute.global.security.AccessTokenRevocationService;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -29,6 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserController {
 
     private final UserService userService;
+    private final AccessTokenRevocationService accessTokenRevocationService;
 
     // 회원가입
     @PostMapping("/auth/signup")
@@ -60,5 +64,14 @@ public class UserController {
     ) {
         UserProfileResponse response = userService.updateProfile(authentication.getName(), request);
         return ResponseEntity.ok(ApiResponse.success(UserSuccessCode.PROFILE_UPDATED, response));
+    }
+
+    @PostMapping("/auth/logout")
+    public ResponseEntity<ApiResponse<Void>> logout(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization
+    ) {
+        String accessToken = authorization.substring("Bearer ".length()).trim();
+        accessTokenRevocationService.revoke(accessToken);
+        return ResponseEntity.ok(ApiResponse.success(UserSuccessCode.LOGOUT_COMPLETED, null));
     }
 }

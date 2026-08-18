@@ -25,6 +25,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String WEBSOCKET_PATH_PREFIX = "/ws";
 
     private final JwtTokenProvider jwtTokenProvider;
+    private final AccessTokenRevocationService accessTokenRevocationService;
     private final CustomUserDetailsService userDetailsService;
     private final JwtAuthenticationEntryPoint authenticationEntryPoint;
 
@@ -52,6 +53,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         try {
             UUID userId = jwtTokenProvider.getUserId(token);
+
+            if (accessTokenRevocationService.isRevoked(token)) {
+                throw new JwtException("로그아웃된 JWT입니다.");
+            }
 
             UserDetails userDetails =
                     userDetailsService.loadUserById(userId);

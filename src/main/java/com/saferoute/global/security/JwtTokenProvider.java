@@ -63,6 +63,10 @@ public class JwtTokenProvider {
         }
     }
 
+    public Instant getExpiration(String token) {
+        return parseClaims(token).getExpiration().toInstant();
+    }
+
     public long getAccessTokenExpirationSeconds() {
         return properties.accessTokenExpiration().toSeconds();
     }
