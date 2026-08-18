@@ -85,7 +85,7 @@ class RouteRecalculationServiceTest {
                 session.getId(), triggerEdge.getId(), RecalculationStatus.PENDING)).willReturn(true);
 
         // when
-        routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.HIGH);
+        routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.CROWDED);
 
         // then
         verify(evacuationRouteService, never()).findShortestRoute(any(), any(), anySet());
@@ -102,7 +102,7 @@ class RouteRecalculationServiceTest {
                 .willThrow(new ApiException(EvacuationErrorCode.EVACUATION_ROUTE_NOT_FOUND));
 
         // when
-        routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.HIGH);
+        routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.CROWDED);
 
         // then
         verify(routeRecalculationRepository, never()).save(any());
@@ -123,11 +123,11 @@ class RouteRecalculationServiceTest {
         given(evacuationRouteService.findShortestRoute(any(), any(), anySet())).willReturn(route);
 
         RouteRecalculation saved = RouteRecalculation.createPending(
-                session, triggerEdge, CongestionLevel.HIGH, List.of(exitNode.getId()), 12.5);
+                session, triggerEdge, CongestionLevel.CROWDED, List.of(exitNode.getId()), 12.5);
         given(routeRecalculationRepository.save(any())).willReturn(saved);
 
         // when
-        routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.HIGH);
+        routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.CROWDED);
 
         // then
         ArgumentCaptor<Set<UUID>> excludedEdgesCaptor = ArgumentCaptor.forClass(Set.class);
@@ -141,7 +141,7 @@ class RouteRecalculationServiceTest {
 
     private RouteRecalculation pendingRecalculation() {
         RouteRecalculation recalculation = RouteRecalculation.createPending(
-                session, triggerEdge, CongestionLevel.HIGH, List.of(UUID.randomUUID()), 12.5);
+                session, triggerEdge, CongestionLevel.CROWDED, List.of(UUID.randomUUID()), 12.5);
         ReflectionTestUtils.setField(recalculation, "id", UUID.randomUUID());
         return recalculation;
     }

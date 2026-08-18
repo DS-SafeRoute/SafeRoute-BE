@@ -78,7 +78,7 @@ class CongestionEventServiceTest {
     void reportCongestion_throwsWhenEdgeNotFound() {
         given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> congestionEventService.reportCongestion(request(CongestionLevel.LOW)))
+        assertThatThrownBy(() -> congestionEventService.reportCongestion(request(CongestionLevel.NORMAL)))
                 .isInstanceOf(ApiException.class)
                 .hasFieldOrPropertyWithValue("errorCode", EvacuationErrorCode.MAP_EDGE_NOT_FOUND);
     }
@@ -90,7 +90,7 @@ class CongestionEventServiceTest {
         given(trainingSessionRepository.findFirstByStatusAndScenario_Building_IdOrderByStartedAtAsc(TrainingStatus.RUNNING, buildingId))
                 .willReturn(Optional.empty());
 
-        congestionEventService.reportCongestion(request(CongestionLevel.HIGH));
+        congestionEventService.reportCongestion(request(CongestionLevel.CROWDED));
 
         verify(congestionSummaryRepository, never()).save(any());
         verify(trainingEventPublisher, never()).publishCongestionUpdated(any(), any(), any());
@@ -107,7 +107,7 @@ class CongestionEventServiceTest {
         given(trainingSessionRepository.findFirstByStatusAndScenario_Building_IdOrderByStartedAtAsc(TrainingStatus.RUNNING, buildingId))
                 .willReturn(Optional.of(session));
 
-        congestionEventService.reportCongestion(request(CongestionLevel.MEDIUM));
+        congestionEventService.reportCongestion(request(CongestionLevel.CAUTION));
 
         verify(congestionSummaryRepository, org.mockito.Mockito.times(1)).save(any());
         verify(trainingEventPublisher, org.mockito.Mockito.times(1)).publishCongestionUpdated(any(), any(), any());
@@ -124,9 +124,9 @@ class CongestionEventServiceTest {
         given(trainingSessionRepository.findFirstByStatusAndScenario_Building_IdOrderByStartedAtAsc(TrainingStatus.RUNNING, buildingId))
                 .willReturn(Optional.of(session));
 
-        congestionEventService.reportCongestion(request(CongestionLevel.CRITICAL));
+        congestionEventService.reportCongestion(request(CongestionLevel.CROWDED));
 
         verify(routeRecalculationService, org.mockito.Mockito.times(1))
-                .trigger(session, edge, CongestionLevel.CRITICAL);
+                .trigger(session, edge, CongestionLevel.CROWDED);
     }
 }

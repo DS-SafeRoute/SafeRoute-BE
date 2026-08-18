@@ -170,7 +170,7 @@ class TrainingTelemetryRepositoryTest {
     private TrainingTelemetryItem createItem(String cameraCode, long timestamp) {
         return TrainingTelemetryItem.create(
                 "session-1", cameraCode, timestamp, 4, 10, 0.4,
-                CongestionLevel.LOW, 3_600L
+                CongestionLevel.NORMAL, 3_600L
         );
     }
 }

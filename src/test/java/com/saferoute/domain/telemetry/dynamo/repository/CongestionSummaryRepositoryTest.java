@@ -190,7 +190,7 @@ class CongestionSummaryRepositoryTest {
 
     private CongestionSummaryItem createItem(long windowStart) {
         return CongestionSummaryItem.create(
-                "session-1", "edge-1", "CCTV-01", 4, 6, CongestionLevel.HIGH,
+                "session-1", "edge-1", "CCTV-01", 4, 6, CongestionLevel.CROWDED,
                 windowStart, windowStart + 5,
                 "training/session-1/CCTV-01/" + windowStart + ".jpg"
         );

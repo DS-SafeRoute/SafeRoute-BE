@@ -113,7 +113,7 @@ class ObservationRepositoryTest {
     private ObservationItem item(String eventId, long capturedAt) {
         return ObservationItem.create(
                 eventId, "session-1", "CCTV_001", 5.0, 8, 25, 2.5,
-                CongestionLevel.MEDIUM, capturedAt - 5_000, capturedAt,
+                CongestionLevel.CAUTION, capturedAt - 5_000, capturedAt,
                 capturedAt, null, 1L
         );
     }

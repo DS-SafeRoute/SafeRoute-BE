@@ -30,7 +30,7 @@ public class CongestionEventService {
     private final TrainingEventPublisher trainingEventPublisher;
     private final RouteRecalculationService routeRecalculationService;
 
-    // Raspberry Pi / YOLO가 보고하는 혼잡 이벤트를 받아 DynamoDB에 저장하고, HIGH/CRITICAL이면 재탐색을 트리거한다.
+    // Raspberry Pi / YOLO가 보고하는 혼잡 이벤트를 받아 DynamoDB에 저장하고, CROWDED이면 재탐색을 트리거한다.
     // 대상 건물에 RUNNING 세션이 없으면(훈련 중이 아니면) 저장/트리거 없이 조용히 종료한다.
     @Transactional
     public void reportCongestion(ReportCongestionRequest request) {
@@ -62,7 +62,7 @@ public class CongestionEventService {
         trainingEventPublisher.publishCongestionUpdated(session.getId(), edge.getId(), item);
 
         CongestionLevel level = request.congestionLevel();
-        if (level == CongestionLevel.HIGH || level == CongestionLevel.CRITICAL) {
+        if (level == CongestionLevel.CROWDED) {
             routeRecalculationService.trigger(session, edge, level);
         }
     }

@@ -166,8 +166,8 @@ class CongestionEventRepositoryTest {
     private CongestionEventItem item(String eventId, long detectedAt) {
         return CongestionEventItem.received(
                 eventId, "session-1", "CCTV_001", CongestionEventType.CONGESTION_STARTED,
-                detectedAt, 9, 4.5, CongestionLevel.HIGH, 4.5,
-                CongestionLevel.HIGH, 1L, null
+                detectedAt, 9, 4.5, CongestionLevel.CROWDED, 4.5,
+                CongestionLevel.CROWDED, 1L, null
         );
     }
 }

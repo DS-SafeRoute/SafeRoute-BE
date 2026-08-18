@@ -58,7 +58,7 @@ class TelemetryItemTest {
     @Test
     void 현재_상태는_세션과_CCTV로_키를_만들고_TTL이_없다() {
         CurrentCctvStateItem item = CurrentCctvStateItem.create(
-                "session-1", "CCTV_001", 9, 4.5, CongestionLevel.HIGH,
+                "session-1", "CCTV_001", 9, 4.5, CongestionLevel.CROWDED,
                 1_786_500_002_300L, 1L
         );
 
@@ -71,7 +71,7 @@ class TelemetryItemTest {
     private ObservationItem observation() {
         return ObservationItem.create(
                 "observation-1", "session-1", "CCTV_001", 5.0, 8, 25,
-                2.5, CongestionLevel.MEDIUM, 1_786_500_000_000L,
+                2.5, CongestionLevel.CAUTION, 1_786_500_000_000L,
                 1_786_500_005_000L, 1_786_500_005_000L, null, 1L
         );
     }
@@ -80,7 +80,7 @@ class TelemetryItemTest {
         return CongestionEventItem.received(
                 "event-1", "session-1", "CCTV_001",
                 CongestionEventType.CONGESTION_STARTED, 1_786_500_002_300L,
-                9, 4.5, CongestionLevel.HIGH, 4.5, CongestionLevel.HIGH,
+                9, 4.5, CongestionLevel.CROWDED, 4.5, CongestionLevel.CROWDED,
                 1L, null
         );
     }

@@ -57,7 +57,7 @@ class TrainingTelemetryRepositoryAwsIntegrationTest {
                             4,
                             10,
                             0.4,
-                            CongestionLevel.LOW,
+                            CongestionLevel.NORMAL,
                             expiresAt
                     );
 
