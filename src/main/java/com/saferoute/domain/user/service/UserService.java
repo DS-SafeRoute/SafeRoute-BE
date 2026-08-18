@@ -13,6 +13,7 @@ import com.saferoute.global.api.error.UserErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.global.security.JwtTokenProvider;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -94,7 +95,40 @@ public class UserService {
                 request.schoolName()
         );
 
+        try {
+            userRepository.flush();
+        } catch (DataIntegrityViolationException exception) {
+            throw mapProfileConflict(request, exception);
+        }
+
         return UserProfileResponse.from(user);
+    }
+
+    private ApiException mapProfileConflict(
+            UpdateUserProfileRequest request,
+            DataIntegrityViolationException exception
+    ) {
+        String detail = exception.getMostSpecificCause().getMessage();
+        String normalizedDetail = detail == null ? "" : detail.toLowerCase();
+
+        if (request.email() != null && request.username() == null) {
+            return new ApiException(UserErrorCode.DUPLICATE_EMAIL);
+        }
+        if (request.username() != null && request.email() == null) {
+            return new ApiException(UserErrorCode.DUPLICATE_USERNAME);
+        }
+        if (normalizedDetail.contains("users(email")
+                || normalizedDetail.contains("users_email")
+                || normalizedDetail.contains("key (email)")) {
+            return new ApiException(UserErrorCode.DUPLICATE_EMAIL);
+        }
+        if (normalizedDetail.contains("users(username")
+                || normalizedDetail.contains("users_username")
+                || normalizedDetail.contains("key (username)")) {
+            return new ApiException(UserErrorCode.DUPLICATE_USERNAME);
+        }
+
+        throw exception;
     }
 
     private User findUserByEmail(String email) {
