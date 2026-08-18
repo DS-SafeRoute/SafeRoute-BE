@@ -38,6 +38,7 @@ aws:
 
   dynamodb:
     table-name: ${DYNAMODB_TABLE:saferoute-telemetry}
+    gsi1-name: ${DYNAMODB_GSI1_NAME:GSI1}
 
 saferoute:
   ai-service:
