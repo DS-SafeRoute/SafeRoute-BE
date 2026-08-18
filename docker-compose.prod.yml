@@ -43,6 +43,12 @@ services:
       retries: 20
       start_period: 60s
 
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
     restart: unless-stopped
 
   ai:
@@ -77,6 +83,12 @@ services:
       timeout: 10s
       retries: 30
       start_period: 30s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
     restart: unless-stopped
 
