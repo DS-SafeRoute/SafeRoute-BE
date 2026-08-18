@@ -5,8 +5,9 @@ import com.saferoute.domain.congestion.entity.CongestionLevel;
 import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.evacuation.graph.repository.MapEdgeJpaRepository;
 import com.saferoute.domain.evacuation.recalculation.service.RouteRecalculationService;
-import com.saferoute.domain.telemetry.dynamo.entity.CongestionSummaryItem;
-import com.saferoute.domain.telemetry.dynamo.repository.CongestionSummaryRepository;
+import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
+import com.saferoute.domain.telemetry.dynamo.repository.IdempotentSaveResult;
+import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
@@ -26,7 +27,7 @@ public class CongestionEventService {
 
     private final MapEdgeJpaRepository mapEdgeJpaRepository;
     private final TrainingSessionRepository trainingSessionRepository;
-    private final CongestionSummaryRepository congestionSummaryRepository;
+    private final ObservationRepository observationRepository;
     private final TrainingEventPublisher trainingEventPublisher;
     private final RouteRecalculationService routeRecalculationService;
 
@@ -46,20 +47,27 @@ public class CongestionEventService {
             return;
         }
 
-        CongestionSummaryItem item = CongestionSummaryItem.create(
+        ObservationItem item = ObservationItem.create(
+                request.eventId().toString(),
                 session.getId().toString(),
-                edge.getId().toString(),
                 request.cctvCode(),
                 request.avgHeadcount(),
                 request.peakHeadcount(),
+                request.sampleCount(),
+                request.density(),
                 request.congestionLevel(),
                 request.windowStart(),
                 request.windowEnd(),
-                request.s3ImageKey()
+                request.capturedAt(),
+                request.monitoringImageKey(),
+                request.configVersion()
         );
-        congestionSummaryRepository.save(item);
+        IdempotentSaveResult<ObservationItem> saveResult = observationRepository.saveIfAbsent(item);
+        if (!saveResult.created()) {
+            return;
+        }
 
-        trainingEventPublisher.publishCongestionUpdated(session.getId(), edge.getId(), item);
+        trainingEventPublisher.publishCongestionUpdated(session.getId(), edge.getId(), saveResult.item());
 
         CongestionLevel level = request.congestionLevel();
         if (level == CongestionLevel.CROWDED) {

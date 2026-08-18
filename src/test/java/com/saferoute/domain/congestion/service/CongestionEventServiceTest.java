@@ -3,6 +3,7 @@ package com.saferoute.domain.congestion.service;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -14,7 +15,9 @@ import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.evacuation.graph.repository.MapEdgeJpaRepository;
 import com.saferoute.domain.evacuation.recalculation.service.RouteRecalculationService;
 import com.saferoute.domain.floor.entity.Floor;
-import com.saferoute.domain.telemetry.dynamo.repository.CongestionSummaryRepository;
+import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
+import com.saferoute.domain.telemetry.dynamo.repository.IdempotentSaveResult;
+import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
@@ -44,7 +47,7 @@ class CongestionEventServiceTest {
     private TrainingSessionRepository trainingSessionRepository;
 
     @Mock
-    private CongestionSummaryRepository congestionSummaryRepository;
+    private ObservationRepository observationRepository;
 
     @Mock
     private TrainingEventPublisher trainingEventPublisher;
@@ -70,7 +73,10 @@ class CongestionEventServiceTest {
     }
 
     private ReportCongestionRequest request(CongestionLevel level) {
-        return new ReportCongestionRequest(edgeId, "CCTV_001", 5, 8, level, 1000L, 2000L, null);
+        return new ReportCongestionRequest(
+                UUID.randomUUID(), edgeId, "CCTV_001", 5.0, 8, 25, 2.5,
+                level, 1_000L, 2_000L, 2_000L, 1L, null
+        );
     }
 
     @Test
@@ -92,13 +98,13 @@ class CongestionEventServiceTest {
 
         congestionEventService.reportCongestion(request(CongestionLevel.CROWDED));
 
-        verify(congestionSummaryRepository, never()).save(any());
+        verify(observationRepository, never()).saveIfAbsent(any());
         verify(trainingEventPublisher, never()).publishCongestionUpdated(any(), any(), any());
         verify(routeRecalculationService, never()).trigger(any(), any(), any());
     }
 
     @Test
-    @DisplayName("LOW/MEDIUM은 저장·발행만 하고 재탐색은 트리거하지 않는다")
+    @DisplayName("NORMAL/CAUTION은 저장·발행만 하고 재탐색은 트리거하지 않는다")
     void reportCongestion_doesNotTriggerRecalculationForLowLevel() {
         TrainingSession session = mock(TrainingSession.class);
         given(session.getId()).willReturn(UUID.randomUUID());
@@ -106,16 +112,23 @@ class CongestionEventServiceTest {
         given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
         given(trainingSessionRepository.findFirstByStatusAndScenario_Building_IdOrderByStartedAtAsc(TrainingStatus.RUNNING, buildingId))
                 .willReturn(Optional.of(session));
+        given(observationRepository.saveIfAbsent(any())).willAnswer(invocation ->
+                IdempotentSaveResult.created(invocation.getArgument(0, ObservationItem.class)));
 
         congestionEventService.reportCongestion(request(CongestionLevel.CAUTION));
 
-        verify(congestionSummaryRepository, org.mockito.Mockito.times(1)).save(any());
+        verify(observationRepository).saveIfAbsent(argThat(item ->
+                item.getAvgHeadcount().equals(5.0)
+                        && item.getSampleCount().equals(25)
+                        && item.getDensity().equals(2.5)
+                        && item.getExpiresAt() == 2_592_002L
+        ));
         verify(trainingEventPublisher, org.mockito.Mockito.times(1)).publishCongestionUpdated(any(), any(), any());
         verify(routeRecalculationService, never()).trigger(any(), any(), any());
     }
 
     @Test
-    @DisplayName("HIGH/CRITICAL이면 저장·발행 후 재탐색을 트리거한다")
+    @DisplayName("CROWDED이면 저장·발행 후 재탐색을 트리거한다")
     void reportCongestion_triggersRecalculationForHighLevel() {
         TrainingSession session = mock(TrainingSession.class);
         given(session.getId()).willReturn(UUID.randomUUID());
@@ -123,10 +136,30 @@ class CongestionEventServiceTest {
         given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
         given(trainingSessionRepository.findFirstByStatusAndScenario_Building_IdOrderByStartedAtAsc(TrainingStatus.RUNNING, buildingId))
                 .willReturn(Optional.of(session));
+        given(observationRepository.saveIfAbsent(any())).willAnswer(invocation ->
+                IdempotentSaveResult.created(invocation.getArgument(0, ObservationItem.class)));
 
         congestionEventService.reportCongestion(request(CongestionLevel.CROWDED));
 
         verify(routeRecalculationService, org.mockito.Mockito.times(1))
                 .trigger(session, edge, CongestionLevel.CROWDED);
+    }
+
+    @Test
+    @DisplayName("중복 eventId이면 발행과 재탐색을 다시 수행하지 않는다")
+    void reportCongestion_doesNotRepeatSideEffectsForDuplicateEvent() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(UUID.randomUUID());
+        given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
+        given(trainingSessionRepository.findFirstByStatusAndScenario_Building_IdOrderByStartedAtAsc(
+                TrainingStatus.RUNNING, buildingId
+        )).willReturn(Optional.of(session));
+        given(observationRepository.saveIfAbsent(any())).willAnswer(invocation ->
+                IdempotentSaveResult.existing(invocation.getArgument(0, ObservationItem.class)));
+
+        congestionEventService.reportCongestion(request(CongestionLevel.CROWDED));
+
+        verify(trainingEventPublisher, never()).publishCongestionUpdated(any(), any(), any());
+        verify(routeRecalculationService, never()).trigger(any(), any(), any());
     }
 }

@@ -1,19 +1,19 @@
 package com.saferoute.infrastructure.websocket.dto;
 
 import com.saferoute.domain.congestion.entity.CongestionLevel;
-import com.saferoute.domain.telemetry.dynamo.entity.CongestionSummaryItem;
+import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import java.util.UUID;
 
 public record CongestionEventData(
         UUID edgeId,
-        Integer avgHeadcount,
+        Double avgHeadcount,
         Integer peakHeadcount,
         CongestionLevel congestionLevel,
         Long windowStart,
         Long windowEnd
 ) {
 
-    public static CongestionEventData from(UUID edgeId, CongestionSummaryItem item) {
+    public static CongestionEventData from(UUID edgeId, ObservationItem item) {
         return new CongestionEventData(
                 edgeId,
                 item.getAvgHeadcount(),

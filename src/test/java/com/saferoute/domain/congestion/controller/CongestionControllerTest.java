@@ -47,7 +47,9 @@ class CongestionControllerTest {
 
     private ReportCongestionRequest validRequest() {
         return new ReportCongestionRequest(
-                UUID.randomUUID(), "CCTV_001", 5, 8, CongestionLevel.CROWDED, 1000L, 2000L, null);
+                UUID.randomUUID(), UUID.randomUUID(), "CCTV_001", 5.0, 8, 25, 2.5,
+                CongestionLevel.CROWDED, 1_000L, 2_000L, 2_000L, 1L, null
+        );
     }
 
     @Test
@@ -63,7 +65,9 @@ class CongestionControllerTest {
     @DisplayName("edgeId가 없으면 400을 반환한다")
     void reportCongestion_returnsBadRequestWhenEdgeIdMissing() throws Exception {
         ReportCongestionRequest invalid = new ReportCongestionRequest(
-                null, "CCTV_001", 5, 8, CongestionLevel.CROWDED, 1000L, 2000L, null);
+                UUID.randomUUID(), null, "CCTV_001", 5.0, 8, 25, 2.5,
+                CongestionLevel.CROWDED, 1_000L, 2_000L, 2_000L, 1L, null
+        );
 
         mockMvc.perform(post("/api/v1/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -75,7 +79,9 @@ class CongestionControllerTest {
     @DisplayName("avgHeadcount가 음수면 400을 반환한다")
     void reportCongestion_returnsBadRequestWhenAvgHeadcountNegative() throws Exception {
         ReportCongestionRequest invalid = new ReportCongestionRequest(
-                UUID.randomUUID(), "CCTV_001", -1, 8, CongestionLevel.CROWDED, 1000L, 2000L, null);
+                UUID.randomUUID(), UUID.randomUUID(), "CCTV_001", -1.0, 8, 25, 2.5,
+                CongestionLevel.CROWDED, 1_000L, 2_000L, 2_000L, 1L, null
+        );
 
         mockMvc.perform(post("/api/v1/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -87,7 +93,9 @@ class CongestionControllerTest {
     @DisplayName("peakHeadcount가 음수면 400을 반환한다")
     void reportCongestion_returnsBadRequestWhenPeakHeadcountNegative() throws Exception {
         ReportCongestionRequest invalid = new ReportCongestionRequest(
-                UUID.randomUUID(), "CCTV_001", 5, -1, CongestionLevel.CROWDED, 1000L, 2000L, null);
+                UUID.randomUUID(), UUID.randomUUID(), "CCTV_001", 5.0, -1, 25, 2.5,
+                CongestionLevel.CROWDED, 1_000L, 2_000L, 2_000L, 1L, null
+        );
 
         mockMvc.perform(post("/api/v1/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -99,7 +107,9 @@ class CongestionControllerTest {
     @DisplayName("avgHeadcount가 peakHeadcount보다 크면 400을 반환한다")
     void reportCongestion_returnsBadRequestWhenAvgExceedsPeak() throws Exception {
         ReportCongestionRequest invalid = new ReportCongestionRequest(
-                UUID.randomUUID(), "CCTV_001", 9, 8, CongestionLevel.CROWDED, 1000L, 2000L, null);
+                UUID.randomUUID(), UUID.randomUUID(), "CCTV_001", 9.0, 8, 25, 2.5,
+                CongestionLevel.CROWDED, 1_000L, 2_000L, 2_000L, 1L, null
+        );
 
         mockMvc.perform(post("/api/v1/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -111,7 +121,9 @@ class CongestionControllerTest {
     @DisplayName("windowStart가 windowEnd보다 이후이면 400을 반환한다")
     void reportCongestion_returnsBadRequestWhenWindowStartAfterWindowEnd() throws Exception {
         ReportCongestionRequest invalid = new ReportCongestionRequest(
-                UUID.randomUUID(), "CCTV_001", 5, 8, CongestionLevel.CROWDED, 2000L, 1000L, null);
+                UUID.randomUUID(), UUID.randomUUID(), "CCTV_001", 5.0, 8, 25, 2.5,
+                CongestionLevel.CROWDED, 2_000L, 1_000L, 2_000L, 1L, null
+        );
 
         mockMvc.perform(post("/api/v1/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)
