@@ -3,7 +3,7 @@ package com.saferoute.infrastructure.websocket.service;
 import com.saferoute.domain.device.entity.IoTLight;
 import com.saferoute.domain.device.entity.IoTLightDirection;
 import com.saferoute.domain.evacuation.recalculation.entity.RouteRecalculation;
-import com.saferoute.domain.telemetry.dynamo.entity.CongestionSummaryItem;
+import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.infrastructure.websocket.dto.CongestionEventData;
 import com.saferoute.infrastructure.websocket.dto.IoTLightEventMessage;
@@ -132,7 +132,7 @@ public class TrainingEventPublisher {
     }
 
     // 혼잡 이벤트 수신 시 즉시 발행한다 (DynamoDB 저장은 DB 트랜잭션과 무관하므로 AfterCommit 버전을 두지 않는다).
-    public void publishCongestionUpdated(UUID sessionId, UUID edgeId, CongestionSummaryItem item) {
+    public void publishCongestionUpdated(UUID sessionId, UUID edgeId, ObservationItem item) {
         TrainingEventMessage<CongestionEventData> message = TrainingEventMessage.of(
                 TrainingEventType.CONGESTION_UPDATED,
                 sessionId,

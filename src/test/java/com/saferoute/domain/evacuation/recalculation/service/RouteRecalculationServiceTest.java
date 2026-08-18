@@ -21,7 +21,6 @@ import com.saferoute.domain.evacuation.recalculation.repository.RouteRecalculati
 import com.saferoute.domain.evacuation.service.EvacuationRoute;
 import com.saferoute.domain.evacuation.service.EvacuationRouteService;
 import com.saferoute.domain.floor.entity.Floor;
-import com.saferoute.domain.telemetry.dynamo.repository.TrainingEventRepository;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.global.api.error.EvacuationErrorCode;
 import com.saferoute.global.api.exception.ApiException;
@@ -53,9 +52,6 @@ class RouteRecalculationServiceTest {
     private EvacuationRouteService evacuationRouteService;
 
     @Mock
-    private TrainingEventRepository trainingEventRepository;
-
-    @Mock
     private TrainingEventPublisher trainingEventPublisher;
 
     private TrainingSession session;
@@ -85,7 +81,7 @@ class RouteRecalculationServiceTest {
                 session.getId(), triggerEdge.getId(), RecalculationStatus.PENDING)).willReturn(true);
 
         // when
-        routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.HIGH);
+        routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.CROWDED);
 
         // then
         verify(evacuationRouteService, never()).findShortestRoute(any(), any(), anySet());
@@ -102,11 +98,10 @@ class RouteRecalculationServiceTest {
                 .willThrow(new ApiException(EvacuationErrorCode.EVACUATION_ROUTE_NOT_FOUND));
 
         // when
-        routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.HIGH);
+        routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.CROWDED);
 
         // then
         verify(routeRecalculationRepository, never()).save(any());
-        verify(trainingEventRepository, never()).save(any());
         verify(trainingEventPublisher, never()).publishRouteRecalculationRequestedAfterCommit(any());
     }
 
@@ -123,11 +118,11 @@ class RouteRecalculationServiceTest {
         given(evacuationRouteService.findShortestRoute(any(), any(), anySet())).willReturn(route);
 
         RouteRecalculation saved = RouteRecalculation.createPending(
-                session, triggerEdge, CongestionLevel.HIGH, List.of(exitNode.getId()), 12.5);
+                session, triggerEdge, CongestionLevel.CROWDED, List.of(exitNode.getId()), 12.5);
         given(routeRecalculationRepository.save(any())).willReturn(saved);
 
         // when
-        routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.HIGH);
+        routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.CROWDED);
 
         // then
         ArgumentCaptor<Set<UUID>> excludedEdgesCaptor = ArgumentCaptor.forClass(Set.class);
@@ -135,13 +130,12 @@ class RouteRecalculationServiceTest {
         assertThat(excludedEdgesCaptor.getValue()).containsExactly(triggerEdge.getId());
 
         verify(routeRecalculationRepository, times(1)).save(any());
-        verify(trainingEventRepository, times(1)).save(any());
         verify(trainingEventPublisher, times(1)).publishRouteRecalculationRequestedAfterCommit(saved);
     }
 
     private RouteRecalculation pendingRecalculation() {
         RouteRecalculation recalculation = RouteRecalculation.createPending(
-                session, triggerEdge, CongestionLevel.HIGH, List.of(UUID.randomUUID()), 12.5);
+                session, triggerEdge, CongestionLevel.CROWDED, List.of(UUID.randomUUID()), 12.5);
         ReflectionTestUtils.setField(recalculation, "id", UUID.randomUUID());
         return recalculation;
     }

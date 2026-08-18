@@ -48,7 +48,7 @@ class RouteRecalculationControllerTest {
 
     private RouteRecalculationResponse response(RecalculationStatus status) {
         return new RouteRecalculationResponse(
-                recalculationId, UUID.randomUUID(), UUID.randomUUID(), CongestionLevel.HIGH,
+                recalculationId, UUID.randomUUID(), UUID.randomUUID(), CongestionLevel.CROWDED,
                 List.of(UUID.randomUUID()), 12.5, status, Instant.now(), Instant.now());
     }
 
