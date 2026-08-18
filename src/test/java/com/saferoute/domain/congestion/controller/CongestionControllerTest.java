@@ -2,19 +2,22 @@ package com.saferoute.domain.congestion.controller;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.BDDMockito.willThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.saferoute.domain.congestion.dto.request.ReportCongestionRequest;
 import com.saferoute.domain.congestion.entity.CongestionLevel;
 import com.saferoute.domain.congestion.service.CongestionEventService;
+import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
+import com.saferoute.domain.telemetry.dynamo.repository.IdempotentSaveResult;
 import com.saferoute.global.api.error.EvacuationErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.global.config.SecurityConfig;
 import com.saferoute.global.security.JwtAuthenticationFilter;
 import java.util.UUID;
+import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,12 +56,30 @@ class CongestionControllerTest {
     }
 
     @Test
-    @DisplayName("유효한 요청이면 200을 반환한다")
-    void reportCongestion_returnsOk() throws Exception {
+    @DisplayName("처음 수신한 eventId이면 관측값과 201을 반환한다")
+    void reportCongestion_returnsCreated() throws Exception {
+        given(congestionEventService.reportCongestion(any()))
+                .willReturn(Optional.of(IdempotentSaveResult.created(observation())));
+
         mockMvc.perform(post("/api/v1/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(validRequest())))
-                .andExpect(status().isOk());
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.eventId").value("observation-1"))
+                .andExpect(jsonPath("$.avgHeadcount").value(5.0));
+    }
+
+    @Test
+    @DisplayName("중복 eventId이면 기존 관측값과 200을 반환한다")
+    void reportCongestion_returnsExistingObservation() throws Exception {
+        given(congestionEventService.reportCongestion(any()))
+                .willReturn(Optional.of(IdempotentSaveResult.existing(observation())));
+
+        mockMvc.perform(post("/api/v1/congestion-events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.eventId").value("observation-1"));
     }
 
     @Test
@@ -134,12 +155,20 @@ class CongestionControllerTest {
     @Test
     @DisplayName("서비스가 MAP_EDGE_NOT_FOUND를 던지면 404를 반환한다")
     void reportCongestion_returnsNotFoundWhenEdgeMissing() throws Exception {
-        willThrow(new ApiException(EvacuationErrorCode.MAP_EDGE_NOT_FOUND))
-                .given(congestionEventService).reportCongestion(any());
+        given(congestionEventService.reportCongestion(any()))
+                .willThrow(new ApiException(EvacuationErrorCode.MAP_EDGE_NOT_FOUND));
 
         mockMvc.perform(post("/api/v1/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(validRequest())))
                 .andExpect(status().isNotFound());
+    }
+
+    private ObservationItem observation() {
+        return ObservationItem.create(
+                "observation-1", "session-1", "CCTV_001", 5.0, 8, 25,
+                2.5, CongestionLevel.CROWDED, 1_000L, 2_000L,
+                2_000L, null, 1L
+        );
     }
 }

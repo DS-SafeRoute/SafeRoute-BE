@@ -1,5 +1,6 @@
 package com.saferoute.domain.congestion.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
@@ -96,8 +97,9 @@ class CongestionEventServiceTest {
         given(trainingSessionRepository.findFirstByStatusAndScenario_Building_IdOrderByStartedAtAsc(TrainingStatus.RUNNING, buildingId))
                 .willReturn(Optional.empty());
 
-        congestionEventService.reportCongestion(request(CongestionLevel.CROWDED));
+        var result = congestionEventService.reportCongestion(request(CongestionLevel.CROWDED));
 
+        assertThat(result).isEmpty();
         verify(observationRepository, never()).saveIfAbsent(any());
         verify(trainingEventPublisher, never()).publishCongestionUpdated(any(), any(), any());
         verify(routeRecalculationService, never()).trigger(any(), any(), any());
@@ -157,8 +159,9 @@ class CongestionEventServiceTest {
         given(observationRepository.saveIfAbsent(any())).willAnswer(invocation ->
                 IdempotentSaveResult.existing(invocation.getArgument(0, ObservationItem.class)));
 
-        congestionEventService.reportCongestion(request(CongestionLevel.CROWDED));
+        var result = congestionEventService.reportCongestion(request(CongestionLevel.CROWDED));
 
+        assertThat(result).hasValueSatisfying(saveResult -> assertThat(saveResult.created()).isFalse());
         verify(trainingEventPublisher, never()).publishCongestionUpdated(any(), any(), any());
         verify(routeRecalculationService, never()).trigger(any(), any(), any());
     }
