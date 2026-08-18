@@ -8,6 +8,7 @@ import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import java.time.Instant;
 import java.util.Date;
+import java.util.UUID;
 import javax.crypto.SecretKey;
 import org.springframework.stereotype.Component;
 
@@ -46,6 +47,20 @@ public class JwtTokenProvider {
         }
 
         return email;
+    }
+
+    public UUID getUserId(String token) {
+        String subject = parseClaims(token).getSubject();
+
+        if (subject == null || subject.isBlank()) {
+            throw new JwtException("JWT subject가 없습니다.");
+        }
+
+        try {
+            return UUID.fromString(subject);
+        } catch (IllegalArgumentException exception) {
+            throw new JwtException("JWT subject가 올바르지 않습니다.", exception);
+        }
     }
 
     public long getAccessTokenExpirationSeconds() {

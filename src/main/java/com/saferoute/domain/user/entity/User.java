@@ -54,6 +54,10 @@ public class User {
   @Column(nullable = false, unique = true, length = 255)
   private String email;
 
+  @Size(max = 20)
+  @Column(name = "phone_number", length = 20)
+  private String phoneNumber;
+
   //유저 타입 (MANAGER, NORMAL)
   @NotNull
   @Enumerated(EnumType.STRING)
@@ -79,16 +83,55 @@ public class User {
     @OneToMany(mappedBy = "admin", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<TrainingSession> trainingSessions = new ArrayList<>();
 
-    private User(String username, String password, String email, UserRole role, String schoolName) {
+    private User(
+            String username,
+            String password,
+            String email,
+            String phoneNumber,
+            UserRole role,
+            String schoolName
+    ) {
         this.username = username;
         this.password = password;
         this.email = email;
+        this.phoneNumber = phoneNumber;
         this.role = role;
         this.schoolName = schoolName;
     }
 
     // 회원가입용 정적 팩토리 메서드
     public static User create(String username, String password, String email, UserRole role, String schoolName) {
-        return new User(username, password, email, role, schoolName);
+        return create(username, password, email, null, role, schoolName);
+    }
+
+    public static User create(
+            String username,
+            String password,
+            String email,
+            String phoneNumber,
+            UserRole role,
+            String schoolName
+    ) {
+        return new User(username, password, email, phoneNumber, role, schoolName);
+    }
+
+    public void updateProfile(
+            String username,
+            String phoneNumber,
+            String email,
+            String schoolName
+    ) {
+        if (username != null) {
+            this.username = username;
+        }
+        if (phoneNumber != null) {
+            this.phoneNumber = phoneNumber;
+        }
+        if (email != null) {
+            this.email = email;
+        }
+        if (schoolName != null) {
+            this.schoolName = schoolName;
+        }
     }
 }
