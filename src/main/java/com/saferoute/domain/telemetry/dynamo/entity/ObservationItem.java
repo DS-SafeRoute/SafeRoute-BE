@@ -21,6 +21,7 @@ public class ObservationItem {
     private String gsi1Sk;
     private String eventId;
     private String trainingSessionId;
+    private String edgeId;
     private String cctvCode;
     private Double avgHeadcount;
     private Integer peakHeadcount;
@@ -44,6 +45,7 @@ public class ObservationItem {
     public static ObservationItem create(
             UUID eventId,
             UUID trainingSessionId,
+            UUID edgeId,
             String cctvCode,
             Double avgHeadcount,
             Integer peakHeadcount,
@@ -59,6 +61,7 @@ public class ObservationItem {
         ObservationItem item = new ObservationItem();
         item.eventId = eventId.toString();
         item.trainingSessionId = trainingSessionId.toString();
+        item.edgeId = edgeId.toString();
         item.cctvCode = cctvCode;
         item.avgHeadcount = avgHeadcount;
         item.peakHeadcount = peakHeadcount;
@@ -143,6 +146,14 @@ public class ObservationItem {
 
     public void setTrainingSessionId(String trainingSessionId) {
         this.trainingSessionId = trainingSessionId;
+    }
+
+    public String getEdgeId() {
+        return edgeId;
+    }
+
+    public void setEdgeId(String edgeId) {
+        this.edgeId = edgeId;
     }
 
     public String getCctvCode() {

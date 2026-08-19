@@ -39,6 +39,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @ExtendWith(MockitoExtension.class)
 class CongestionEventServiceTest {
@@ -200,6 +202,34 @@ class CongestionEventServiceTest {
     }
 
     @Test
+    @DisplayName("동일한 eventId가 다른 edge를 가리키면 CONGESTION002를 반환한다")
+    void reportCongestion_rejectsMismatchedEventIdentity() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId
+        )).willReturn(Optional.of(session));
+        given(observationRepository.saveIfAbsent(any())).willAnswer(invocation -> {
+            ObservationItem existing = invocation.getArgument(0, ObservationItem.class);
+            existing.setEdgeId(UUID.randomUUID().toString());
+            return IdempotentSaveResult.existing(existing);
+        });
+
+        assertThatThrownBy(() -> congestionEventService.reportCongestion(request(CongestionLevel.CROWDED)))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue(
+                        "errorCode",
+                        CongestionErrorCode.EVENT_IDENTITY_MISMATCH
+                );
+
+        verify(observationRepository, never())
+                .claimProcessing(anyString(), anyString(), anyLong(), anyLong());
+        verify(trainingEventPublisher, never()).publishCongestionUpdated(any(), any(), any());
+        verify(routeRecalculationService, never()).trigger(any(), any(), any());
+    }
+
+    @Test
     @DisplayName("중복 eventId가 RECEIVED이면 후속 처리를 재개한다")
     void reportCongestion_resumesReceivedDuplicate() {
         TrainingSession session = mock(TrainingSession.class);
@@ -245,6 +275,68 @@ class CongestionEventServiceTest {
 
         verify(observationRepository).failProcessing(anyString(), anyString());
         verify(routeRecalculationService, never()).trigger(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("후속 처리 성공 상태는 PostgreSQL 커밋 이후에 기록한다")
+    void reportCongestion_marksProcessedAfterCommit() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId
+        )).willReturn(Optional.of(session));
+        given(observationRepository.saveIfAbsent(any())).willAnswer(invocation ->
+                IdempotentSaveResult.created(invocation.getArgument(0, ObservationItem.class)));
+        givenProcessingClaimed();
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            congestionEventService.reportCongestion(request(CongestionLevel.CROWDED));
+
+            verify(observationRepository, never()).completeProcessing(anyString(), anyString());
+            TransactionSynchronization synchronization = TransactionSynchronizationManager
+                    .getSynchronizations()
+                    .get(0);
+            synchronization.afterCommit();
+            synchronization.afterCompletion(TransactionSynchronization.STATUS_COMMITTED);
+
+            verify(observationRepository).completeProcessing(anyString(), anyString());
+            verify(observationRepository, never()).failProcessing(anyString(), anyString());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    @DisplayName("PostgreSQL 트랜잭션이 롤백되면 처리 상태를 FAILED로 기록한다")
+    void reportCongestion_marksFailedAfterRollback() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId
+        )).willReturn(Optional.of(session));
+        given(observationRepository.saveIfAbsent(any())).willAnswer(invocation ->
+                IdempotentSaveResult.created(invocation.getArgument(0, ObservationItem.class)));
+        given(observationRepository.claimProcessing(anyString(), anyString(), anyLong(), anyLong()))
+                .willReturn(true);
+        given(observationRepository.failProcessing(anyString(), anyString())).willReturn(true);
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            congestionEventService.reportCongestion(request(CongestionLevel.CAUTION));
+
+            TransactionSynchronization synchronization = TransactionSynchronizationManager
+                    .getSynchronizations()
+                    .get(0);
+            synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+
+            verify(observationRepository).failProcessing(anyString(), anyString());
+            verify(observationRepository, never()).completeProcessing(anyString(), anyString());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     private void givenProcessingClaimed() {

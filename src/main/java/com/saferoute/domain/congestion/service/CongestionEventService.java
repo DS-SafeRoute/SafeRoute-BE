@@ -18,6 +18,7 @@ import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Objects;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -59,6 +60,7 @@ public class CongestionEventService {
         ObservationItem item = ObservationItem.create(
                 request.eventId(),
                 session.getId(),
+                edge.getId(),
                 request.cctvCode(),
                 request.avgHeadcount(),
                 request.peakHeadcount(),
@@ -72,6 +74,7 @@ public class CongestionEventService {
                 request.configVersion()
         );
         IdempotentSaveResult<ObservationItem> saveResult = observationRepository.saveIfAbsent(item);
+        validateEventIdentity(saveResult.item(), request);
         String processingOwner = UUID.randomUUID().toString();
         long processingStartedAt = Instant.now().toEpochMilli();
         boolean claimed = observationRepository.claimProcessing(
@@ -100,6 +103,15 @@ public class CongestionEventService {
             throw new ApiException(CongestionErrorCode.EVENT_PROCESSING_FAILED, exception);
         }
         return saveResult;
+    }
+
+    private void validateEventIdentity(ObservationItem item, ReportCongestionRequest request) {
+        boolean sameIdentity = Objects.equals(item.getTrainingSessionId(), request.trainingSessionId().toString())
+                && Objects.equals(item.getEdgeId(), request.edgeId().toString())
+                && Objects.equals(item.getCctvCode(), request.cctvCode());
+        if (!sameIdentity) {
+            throw new ApiException(CongestionErrorCode.EVENT_IDENTITY_MISMATCH);
+        }
     }
 
     private void completeAfterCommit(String eventId, String processingOwner) {

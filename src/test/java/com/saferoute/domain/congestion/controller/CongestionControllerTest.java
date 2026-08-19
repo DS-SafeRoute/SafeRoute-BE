@@ -15,6 +15,7 @@ import com.saferoute.domain.device.service.DeviceAuthorizationService;
 import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import com.saferoute.domain.telemetry.dynamo.repository.IdempotentSaveResult;
 import com.saferoute.global.api.error.EvacuationErrorCode;
+import com.saferoute.global.api.error.CongestionErrorCode;
 import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.global.config.SecurityConfig;
@@ -48,6 +49,7 @@ class CongestionControllerTest {
 
     private static final UUID OBSERVATION_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID SESSION_ID = UUID.fromString("00000000-0000-0000-0000-000000000003");
+    private static final UUID EDGE_ID = UUID.fromString("00000000-0000-0000-0000-000000000004");
 
     @Autowired
     private MockMvc mockMvc;
@@ -221,9 +223,39 @@ class CongestionControllerTest {
                 .andExpect(jsonPath("$.code").value("TRAINING006"));
     }
 
+    @Test
+    @DisplayName("후속 처리 실패 시 공통 형식의 CONGESTION001과 503을 반환한다")
+    void reportCongestion_returnsServiceUnavailableWhenProcessingFails() throws Exception {
+        given(congestionEventService.reportCongestion(any()))
+                .willThrow(new ApiException(CongestionErrorCode.EVENT_PROCESSING_FAILED));
+
+        mockMvc.perform(post("/api/v1/device/congestion-events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.code").value("CONGESTION001"))
+                .andExpect(jsonPath("$.message")
+                        .value("혼잡 관측 후속 처리에 실패했습니다. 잠시 후 다시 시도해 주세요."));
+    }
+
+    @Test
+    @DisplayName("동일 eventId의 식별 정보가 다르면 CONGESTION002와 409를 반환한다")
+    void reportCongestion_returnsConflictWhenEventIdentityMismatches() throws Exception {
+        given(congestionEventService.reportCongestion(any()))
+                .willThrow(new ApiException(CongestionErrorCode.EVENT_IDENTITY_MISMATCH));
+
+        mockMvc.perform(post("/api/v1/device/congestion-events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.code").value("CONGESTION002"));
+    }
+
     private ObservationItem observation() {
         return ObservationItem.create(
-                OBSERVATION_ID, SESSION_ID, "CCTV_001", 5.0, 8, 25,
+                OBSERVATION_ID, SESSION_ID, EDGE_ID, "CCTV_001", 5.0, 8, 25,
                 2.5, CongestionLevel.CROWDED, 1_000L, 2_000L,
                 2_000L, null, 1L
         );

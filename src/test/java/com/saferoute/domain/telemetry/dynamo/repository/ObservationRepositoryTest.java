@@ -34,6 +34,7 @@ import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedExce
 class ObservationRepositoryTest {
 
     private static final UUID SESSION_ID = UUID.fromString("00000000-0000-0000-0000-000000000003");
+    private static final UUID EDGE_ID = UUID.fromString("00000000-0000-0000-0000-000000000004");
 
     @Mock
     private DynamoDbEnhancedClient enhancedClient;
@@ -175,7 +176,7 @@ class ObservationRepositoryTest {
 
     private ObservationItem item(String eventId, long capturedAt) {
         return ObservationItem.create(
-                UUID.nameUUIDFromBytes(eventId.getBytes(StandardCharsets.UTF_8)), SESSION_ID,
+                UUID.nameUUIDFromBytes(eventId.getBytes(StandardCharsets.UTF_8)), SESSION_ID, EDGE_ID,
                 "CCTV_001", 5.0, 8, 25, 2.5,
                 CongestionLevel.CAUTION, capturedAt - 5_000, capturedAt,
                 capturedAt, null, 1L

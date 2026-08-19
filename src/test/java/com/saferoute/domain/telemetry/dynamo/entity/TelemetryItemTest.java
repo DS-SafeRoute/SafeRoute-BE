@@ -13,6 +13,7 @@ class TelemetryItemTest {
     private static final UUID OBSERVATION_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID EVENT_ID = UUID.fromString("00000000-0000-0000-0000-000000000002");
     private static final UUID SESSION_ID = UUID.fromString("00000000-0000-0000-0000-000000000003");
+    private static final UUID EDGE_ID = UUID.fromString("00000000-0000-0000-0000-000000000004");
 
     @Test
     void 혼잡도와_이벤트_타입은_정의된_계약값만_사용한다() {
@@ -35,6 +36,7 @@ class TelemetryItemTest {
 
         assertThat(item.getPk()).isEqualTo("OBSERVATION#" + OBSERVATION_ID);
         assertThat(item.getSk()).isEqualTo("META");
+        assertThat(item.getEdgeId()).isEqualTo(EDGE_ID.toString());
         assertThat(item.getGsi1Pk()).isEqualTo("SESSION#" + SESSION_ID + "#CCTV#CCTV_001");
         assertThat(item.getGsi1Sk()).isEqualTo("TIME#1786500005000");
         assertThat(item.getEventStatus()).isEqualTo(EventProcessingStatus.RECEIVED);
@@ -57,6 +59,7 @@ class TelemetryItemTest {
         assertThat(attributes.get("peakHeadcount").n()).isEqualTo("8");
         assertThat(attributes.get("sampleCount").n()).isEqualTo("25");
         assertThat(attributes.get("density").n()).isEqualTo("2.5");
+        assertThat(attributes.get("edgeId").s()).isEqualTo(EDGE_ID.toString());
         assertThat(attributes)
                 .containsEntry("GSI1_PK", AttributeValue.fromS("SESSION#" + SESSION_ID + "#CCTV#CCTV_001"))
                 .containsEntry("GSI1_SK", AttributeValue.fromS("TIME#1786500005000"));
@@ -91,7 +94,7 @@ class TelemetryItemTest {
 
     private ObservationItem observation() {
         return ObservationItem.create(
-                OBSERVATION_ID, SESSION_ID, "CCTV_001", 5.0, 8, 25,
+                OBSERVATION_ID, SESSION_ID, EDGE_ID, "CCTV_001", 5.0, 8, 25,
                 2.5, CongestionLevel.CAUTION, 1_786_500_000_000L,
                 1_786_500_005_000L, 1_786_500_005_000L, null, 1L
         );
