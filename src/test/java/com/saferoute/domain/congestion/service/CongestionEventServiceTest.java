@@ -274,7 +274,7 @@ class CongestionEventServiceTest {
                 );
 
         verify(observationRepository).failProcessing(anyString(), anyString());
-        verify(routeRecalculationService, never()).trigger(any(), any(), any());
+        verify(routeRecalculationService).trigger(session, edge, CongestionLevel.CROWDED);
     }
 
     @Test
@@ -295,6 +295,7 @@ class CongestionEventServiceTest {
             congestionEventService.reportCongestion(request(CongestionLevel.CROWDED));
 
             verify(observationRepository, never()).completeProcessing(anyString(), anyString());
+            verify(trainingEventPublisher, never()).publishCongestionUpdated(any(), any(), any());
             TransactionSynchronization synchronization = TransactionSynchronizationManager
                     .getSynchronizations()
                     .get(0);
@@ -303,6 +304,7 @@ class CongestionEventServiceTest {
 
             verify(observationRepository).completeProcessing(anyString(), anyString());
             verify(observationRepository, never()).failProcessing(anyString(), anyString());
+            verify(trainingEventPublisher).publishCongestionUpdated(any(), any(), any());
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }
@@ -327,10 +329,51 @@ class CongestionEventServiceTest {
         try {
             congestionEventService.reportCongestion(request(CongestionLevel.CAUTION));
 
+            verify(trainingEventPublisher, never()).publishCongestionUpdated(any(), any(), any());
             TransactionSynchronization synchronization = TransactionSynchronizationManager
                     .getSynchronizations()
                     .get(0);
             synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+
+            verify(observationRepository).failProcessing(anyString(), anyString());
+            verify(observationRepository, never()).completeProcessing(anyString(), anyString());
+            verify(trainingEventPublisher, never()).publishCongestionUpdated(any(), any(), any());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    @DisplayName("커밋 후 WebSocket 발행 실패를 FAILED로 기록한다")
+    void reportCongestion_marksFailedWhenAfterCommitPublishFails() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId
+        )).willReturn(Optional.of(session));
+        given(observationRepository.saveIfAbsent(any())).willAnswer(invocation ->
+                IdempotentSaveResult.created(invocation.getArgument(0, ObservationItem.class)));
+        given(observationRepository.claimProcessing(anyString(), anyString(), anyLong(), anyLong()))
+                .willReturn(true);
+        given(observationRepository.failProcessing(anyString(), anyString())).willReturn(true);
+        doThrow(new IllegalStateException("websocket unavailable"))
+                .when(trainingEventPublisher).publishCongestionUpdated(any(), any(), any());
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            congestionEventService.reportCongestion(request(CongestionLevel.CAUTION));
+            TransactionSynchronization synchronization = TransactionSynchronizationManager
+                    .getSynchronizations()
+                    .get(0);
+
+            assertThatThrownBy(synchronization::afterCommit)
+                    .isInstanceOf(ApiException.class)
+                    .hasFieldOrPropertyWithValue(
+                            "errorCode",
+                            CongestionErrorCode.EVENT_PROCESSING_FAILED
+                    );
+            synchronization.afterCompletion(TransactionSynchronization.STATUS_COMMITTED);
 
             verify(observationRepository).failProcessing(anyString(), anyString());
             verify(observationRepository, never()).completeProcessing(anyString(), anyString());

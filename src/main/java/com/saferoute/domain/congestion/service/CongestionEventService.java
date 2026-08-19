@@ -88,13 +88,16 @@ public class CongestionEventService {
         }
 
         try {
-            trainingEventPublisher.publishCongestionUpdated(session.getId(), edge.getId(), saveResult.item());
-
             CongestionLevel level = saveResult.item().getCongestionLevel();
             if (level.requiresRouteRecalculation()) {
                 routeRecalculationService.trigger(session, edge, level);
             }
-            completeAfterCommit(saveResult.item().getEventId(), processingOwner);
+            publishAndCompleteAfterCommit(
+                    session.getId(),
+                    edge.getId(),
+                    saveResult.item(),
+                    processingOwner
+            );
         } catch (ApiException exception) {
             failProcessing(saveResult.item().getEventId(), processingOwner, exception);
             throw exception;
@@ -114,22 +117,34 @@ public class CongestionEventService {
         }
     }
 
-    private void completeAfterCommit(String eventId, String processingOwner) {
+    private void publishAndCompleteAfterCommit(
+            UUID sessionId,
+            UUID edgeId,
+            ObservationItem item,
+            String processingOwner
+    ) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            completeProcessing(eventId, processingOwner);
+            trainingEventPublisher.publishCongestionUpdated(sessionId, edgeId, item);
+            completeProcessing(item.getEventId(), processingOwner);
             return;
         }
 
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                completeProcessing(eventId, processingOwner);
+                try {
+                    trainingEventPublisher.publishCongestionUpdated(sessionId, edgeId, item);
+                    completeProcessing(item.getEventId(), processingOwner);
+                } catch (RuntimeException exception) {
+                    failProcessing(item.getEventId(), processingOwner, exception);
+                    throw new ApiException(CongestionErrorCode.EVENT_PROCESSING_FAILED, exception);
+                }
             }
 
             @Override
             public void afterCompletion(int status) {
                 if (status != TransactionSynchronization.STATUS_COMMITTED) {
-                    failProcessing(eventId, processingOwner, null);
+                    failProcessing(item.getEventId(), processingOwner, null);
                 }
             }
         });
