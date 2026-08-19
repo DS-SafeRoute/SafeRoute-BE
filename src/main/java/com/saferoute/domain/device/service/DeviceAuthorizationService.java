@@ -24,5 +24,8 @@ public class DeviceAuthorizationService {
         if (!requestedCctv.getId().equals(principal.cctvId())) {
             throw new ApiException(DeviceErrorCode.CCTV_CODE_MISMATCH);
         }
+        if (!requestedCctv.isEnabled()) {
+            throw new ApiException(DeviceErrorCode.CCTV_DISABLED);
+        }
     }
 }

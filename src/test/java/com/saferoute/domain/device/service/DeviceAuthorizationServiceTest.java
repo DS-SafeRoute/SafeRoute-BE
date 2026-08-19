@@ -55,9 +55,24 @@ class DeviceAuthorizationServiceTest {
                 .hasFieldOrPropertyWithValue("errorCode", DeviceErrorCode.CCTV_CODE_MISMATCH);
     }
 
+    @Test
+    void rejectsCctvDisabledAfterAuthentication() {
+        UUID cctvId = UUID.randomUUID();
+        Cctv requestedCctv = cctv(cctvId);
+        given(requestedCctv.isEnabled()).willReturn(false);
+        given(repository.findByCode("CCTV_001")).willReturn(Optional.of(requestedCctv));
+
+        assertThatThrownBy(() -> service.validateCctv(
+                new DevicePrincipal(cctvId, "CCTV_001"),
+                "CCTV_001"
+        )).isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", DeviceErrorCode.CCTV_DISABLED);
+    }
+
     private Cctv cctv(UUID id) {
         Cctv cctv = mock(Cctv.class);
         given(cctv.getId()).willReturn(id);
+        given(cctv.isEnabled()).willReturn(true);
         return cctv;
     }
 }
