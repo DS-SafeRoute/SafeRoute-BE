@@ -40,6 +40,7 @@ class TelemetryItemTest {
         assertThat(item.getGsi1Pk()).isEqualTo("SESSION#" + SESSION_ID + "#CCTV#CCTV_001");
         assertThat(item.getGsi1Sk()).isEqualTo("TIME#1786500005000");
         assertThat(item.getEventStatus()).isEqualTo(EventProcessingStatus.RECEIVED);
+        assertThat(item.getImageUploadStatus()).isEqualTo(ImageUploadStatus.PENDING);
     }
 
     @Test

@@ -168,6 +168,26 @@ class ObservationRepositoryTest {
         assertThat(captor.getValue().item().getEventStatus().name()).isEqualTo("FAILED");
     }
 
+    @Test
+    void PROCESSED이고_이미지가_PENDING_FAILED일_때만_이미지를_완료한다() {
+        ArgumentCaptor<UpdateItemEnhancedRequest<ObservationItem>> captor = updateRequestCaptor();
+
+        boolean completed = repository.completeImageUpload(
+                "observation-1", "training/session/events/CCTV_001/event.jpg", 2_000L
+        );
+
+        assertThat(completed).isTrue();
+        verify(table).updateItem(captor.capture());
+        UpdateItemEnhancedRequest<ObservationItem> request = captor.getValue();
+        assertThat(request.item().getEventImageKey())
+                .isEqualTo("training/session/events/CCTV_001/event.jpg");
+        assertThat(request.item().getImageUploadedAt()).isEqualTo(2_000L);
+        assertThat(request.item().getImageUploadStatus().name()).isEqualTo("COMPLETED");
+        assertThat(request.conditionExpression().expression())
+                .contains("#eventStatus = :processed")
+                .contains("#imageStatus = :pending OR #imageStatus = :failed");
+    }
+
     @SuppressWarnings({"unchecked", "rawtypes"})
     private ArgumentCaptor<PutItemEnhancedRequest<ObservationItem>> requestCaptor() {
         return (ArgumentCaptor) ArgumentCaptor.forClass(PutItemEnhancedRequest.class);

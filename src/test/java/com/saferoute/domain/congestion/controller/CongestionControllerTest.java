@@ -2,7 +2,9 @@ package com.saferoute.domain.congestion.controller;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -11,6 +13,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.saferoute.domain.congestion.dto.request.ReportCongestionRequest;
 import com.saferoute.domain.congestion.entity.CongestionLevel;
 import com.saferoute.domain.congestion.service.CongestionEventService;
+import com.saferoute.domain.congestion.service.CongestionEventImageService;
 import com.saferoute.domain.device.service.DeviceAuthorizationService;
 import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import com.saferoute.domain.telemetry.dynamo.repository.IdempotentSaveResult;
@@ -59,6 +62,9 @@ class CongestionControllerTest {
 
     @MockitoBean
     private CongestionEventService congestionEventService;
+
+    @MockitoBean
+    private CongestionEventImageService congestionEventImageService;
 
     @MockitoBean
     private DeviceAuthorizationService deviceAuthorizationService;
@@ -251,6 +257,34 @@ class CongestionControllerTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.isSuccess").value(false))
                 .andExpect(jsonPath("$.code").value("CONGESTION002"));
+    }
+
+    @Test
+    @DisplayName("이벤트 이미지 연결 성공 시 204를 반환한다")
+    void connectEventImage_returnsNoContent() throws Exception {
+        ObjectNode body = objectMapper.createObjectNode()
+                .put("eventImageKey", "training/" + SESSION_ID + "/events/CCTV_001/"
+                        + OBSERVATION_ID + ".jpg")
+                .put("uploadedAt", 1_786_500_002_800L);
+
+        mockMvc.perform(patch("/api/v1/device/congestion-events/{eventId}/image", OBSERVATION_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isNoContent());
+
+        verify(congestionEventImageService).connectImage(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("eventImageKey가 없으면 400을 반환한다")
+    void connectEventImage_returnsBadRequestWithoutImageKey() throws Exception {
+        ObjectNode body = objectMapper.createObjectNode()
+                .put("uploadedAt", 1_786_500_002_800L);
+
+        mockMvc.perform(patch("/api/v1/device/congestion-events/{eventId}/image", OBSERVATION_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isBadRequest());
     }
 
     private ObservationItem observation() {

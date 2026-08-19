@@ -25,6 +25,9 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectResponse;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 @ExtendWith(MockitoExtension.class)
 class S3ServiceTest {
@@ -91,5 +94,27 @@ class S3ServiceTest {
 
         verify(s3Client, never())
                 .putObject(any(PutObjectRequest.class), any(RequestBody.class));
+    }
+
+    @Test
+    void findsExistingObjectWithHeadRequest() {
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenReturn(HeadObjectResponse.builder().build());
+
+        assertThat(s3Service.objectExists("training/session/events/CCTV_001/event.jpg")).isTrue();
+
+        ArgumentCaptor<HeadObjectRequest> captor = ArgumentCaptor.forClass(HeadObjectRequest.class);
+        verify(s3Client).headObject(captor.capture());
+        assertThat(captor.getValue().bucket()).isEqualTo("test-bucket");
+        assertThat(captor.getValue().key())
+                .isEqualTo("training/session/events/CCTV_001/event.jpg");
+    }
+
+    @Test
+    void returnsFalseWhenObjectDoesNotExist() {
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenThrow(S3Exception.builder().statusCode(404).message("not found").build());
+
+        assertThat(s3Service.objectExists("missing.jpg")).isFalse();
     }
 }
