@@ -18,6 +18,36 @@ public enum CongestionErrorCode implements BaseErrorCode {
             HttpStatus.CONFLICT,
             "CONGESTION002",
             "동일한 eventId에 다른 세션, CCTV 또는 경로 정보가 전달되었습니다."
+    ),
+    EVENT_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "CONGESTION003",
+            "혼잡 이벤트를 찾을 수 없습니다."
+    ),
+    EVENT_NOT_PROCESSED(
+            HttpStatus.CONFLICT,
+            "CONGESTION004",
+            "처리가 완료된 혼잡 이벤트에만 이미지를 연결할 수 있습니다."
+    ),
+    EVENT_IMAGE_STATE_CONFLICT(
+            HttpStatus.CONFLICT,
+            "CONGESTION005",
+            "현재 이미지 상태에서는 이미지를 연결할 수 없습니다."
+    ),
+    EVENT_IMAGE_KEY_INVALID(
+            HttpStatus.BAD_REQUEST,
+            "CONGESTION006",
+            "이벤트 이미지 경로 형식이 올바르지 않습니다."
+    ),
+    EVENT_IMAGE_IDENTITY_MISMATCH(
+            HttpStatus.CONFLICT,
+            "CONGESTION007",
+            "이미지 경로의 세션, CCTV 또는 eventId가 이벤트와 일치하지 않습니다."
+    ),
+    EVENT_IMAGE_OBJECT_NOT_FOUND(
+            HttpStatus.CONFLICT,
+            "CONGESTION008",
+            "업로드가 완료된 이벤트 이미지 객체를 찾을 수 없습니다."
     );
 
     private final HttpStatus httpStatus;
