@@ -79,7 +79,8 @@ class CctvServiceTest {
     void issueDeviceToken_success() {
         UUID cctvId = UUID.randomUUID();
         Cctv cctv = cctv(cctvId);
-        given(cctvJpaRepository.findById(cctvId)).willReturn(Optional.of(cctv));
+        given(cctvJpaRepository.findByIdForDeviceTokenIssue(cctvId))
+                .willReturn(Optional.of(cctv));
         given(deviceTokenService.issue()).willReturn(
                 new DeviceTokenService.IssuedDeviceToken("raw-token", "hashed-token")
         );
@@ -96,7 +97,8 @@ class CctvServiceTest {
         UUID cctvId = UUID.randomUUID();
         Cctv cctv = cctv(cctvId);
         given(cctv.getDeviceTokenHash()).willReturn("existing-hash");
-        given(cctvJpaRepository.findById(cctvId)).willReturn(Optional.of(cctv));
+        given(cctvJpaRepository.findByIdForDeviceTokenIssue(cctvId))
+                .willReturn(Optional.of(cctv));
 
         org.assertj.core.api.Assertions.assertThatThrownBy(
                         () -> cctvService.issueDeviceToken(cctvId)

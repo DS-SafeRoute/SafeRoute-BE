@@ -44,7 +44,7 @@ public class CctvService {
 
     @Transactional
     public DeviceTokenIssueResponse issueDeviceToken(UUID cctvId) {
-        Cctv cctv = cctvJpaRepository.findById(cctvId)
+        Cctv cctv = cctvJpaRepository.findByIdForDeviceTokenIssue(cctvId)
                 .orElseThrow(() -> new ApiException(CctvErrorCode.CCTV_NOT_FOUND));
         if (cctv.getDeviceTokenHash() != null) {
             throw new ApiException(DeviceErrorCode.DEVICE_TOKEN_ALREADY_ISSUED);
