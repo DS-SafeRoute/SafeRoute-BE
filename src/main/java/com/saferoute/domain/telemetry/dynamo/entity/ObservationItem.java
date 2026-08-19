@@ -32,6 +32,9 @@ public class ObservationItem {
     private Long windowEnd;
     private Long capturedAt;
     private String monitoringImageKey;
+    private String eventImageKey;
+    private Long imageUploadedAt;
+    private ImageUploadStatus imageUploadStatus;
     private Long configVersion;
     private Long expiresAt;
     private EventProcessingStatus eventStatus;
@@ -72,6 +75,7 @@ public class ObservationItem {
         item.windowEnd = windowEnd;
         item.capturedAt = capturedAt;
         item.monitoringImageKey = monitoringImageKey;
+        item.imageUploadStatus = ImageUploadStatus.PENDING;
         item.configVersion = configVersion;
         item.expiresAt = Math.floorDiv(capturedAt, 1_000L) + TTL_SECONDS;
         item.eventStatus = EventProcessingStatus.RECEIVED;
@@ -234,6 +238,30 @@ public class ObservationItem {
 
     public void setMonitoringImageKey(String monitoringImageKey) {
         this.monitoringImageKey = monitoringImageKey;
+    }
+
+    public String getEventImageKey() {
+        return eventImageKey;
+    }
+
+    public void setEventImageKey(String eventImageKey) {
+        this.eventImageKey = eventImageKey;
+    }
+
+    public Long getImageUploadedAt() {
+        return imageUploadedAt;
+    }
+
+    public void setImageUploadedAt(Long imageUploadedAt) {
+        this.imageUploadedAt = imageUploadedAt;
+    }
+
+    public ImageUploadStatus getImageUploadStatus() {
+        return imageUploadStatus;
+    }
+
+    public void setImageUploadStatus(ImageUploadStatus imageUploadStatus) {
+        this.imageUploadStatus = imageUploadStatus;
     }
 
     public Long getConfigVersion() {

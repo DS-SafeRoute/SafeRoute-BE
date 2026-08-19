@@ -13,6 +13,9 @@ import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 @Service
 public class S3Service {
@@ -57,6 +60,26 @@ public class S3Service {
                 file.getSize(),
                 contentType
         );
+    }
+
+    public boolean objectExists(String key) {
+        HeadObjectRequest request = HeadObjectRequest.builder()
+                .bucket(s3Properties.bucket())
+                .key(key)
+                .build();
+        try {
+            s3Client.headObject(request);
+            return true;
+        } catch (NoSuchKeyException exception) {
+            return false;
+        } catch (S3Exception exception) {
+            if (exception.statusCode() == 404) {
+                return false;
+            }
+            throw new ApiException(S3ErrorCode.OBJECT_CHECK_FAILED, exception);
+        } catch (SdkException exception) {
+            throw new ApiException(S3ErrorCode.OBJECT_CHECK_FAILED, exception);
+        }
     }
 
     private String createObjectKey(String originalFilename) {

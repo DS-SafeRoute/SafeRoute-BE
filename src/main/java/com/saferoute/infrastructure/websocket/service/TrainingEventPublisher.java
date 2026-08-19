@@ -6,6 +6,7 @@ import com.saferoute.domain.evacuation.recalculation.entity.RouteRecalculation;
 import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.infrastructure.websocket.dto.CongestionEventData;
+import com.saferoute.infrastructure.websocket.dto.CongestionImageUpdatedData;
 import com.saferoute.infrastructure.websocket.dto.IoTLightEventMessage;
 import com.saferoute.infrastructure.websocket.dto.IoTLightStatusEventData;
 import com.saferoute.infrastructure.websocket.dto.RouteRecalculationEventData;
@@ -146,6 +147,21 @@ public class TrainingEventPublisher {
                 sessionId,
                 edgeId,
                 item.getCongestionLevel()
+        );
+    }
+
+    public void publishCongestionImageUpdated(UUID sessionId, ObservationItem item) {
+        TrainingEventMessage<CongestionImageUpdatedData> message = TrainingEventMessage.of(
+                TrainingEventType.CONGESTION_IMAGE_UPDATED,
+                sessionId,
+                CongestionImageUpdatedData.from(item)
+        );
+
+        messagingTemplate.convertAndSend(SESSION_TOPIC_PREFIX + sessionId, message);
+        log.debug(
+                "혼잡 이벤트 이미지 갱신 발행: sessionId={}, eventId={}",
+                sessionId,
+                item.getEventId()
         );
     }
 

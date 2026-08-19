@@ -1,6 +1,7 @@
 package com.saferoute.domain.telemetry.dynamo.repository;
 
 import com.saferoute.domain.telemetry.dynamo.entity.EventProcessingStatus;
+import com.saferoute.domain.telemetry.dynamo.entity.ImageUploadStatus;
 import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import java.util.List;
 import java.util.Optional;
@@ -112,6 +113,26 @@ public class ObservationRepository {
                 processingOwner,
                 EventProcessingStatus.FAILED
         );
+    }
+
+    public boolean completeImageUpload(String eventId, String eventImageKey, long uploadedAt) {
+        ObservationItem item = processingUpdateItem(eventId);
+        item.setEventImageKey(eventImageKey);
+        item.setImageUploadedAt(uploadedAt);
+        item.setImageUploadStatus(ImageUploadStatus.COMPLETED);
+
+        Expression condition = Expression.builder()
+                .expression("attribute_exists(#pk) AND #eventStatus = :processed"
+                        + " AND (attribute_not_exists(#imageStatus)"
+                        + " OR #imageStatus = :pending OR #imageStatus = :failed)")
+                .putExpressionName("#pk", "pk")
+                .putExpressionName("#eventStatus", "eventStatus")
+                .putExpressionName("#imageStatus", "imageUploadStatus")
+                .putExpressionValue(":processed", AttributeValue.fromS("PROCESSED"))
+                .putExpressionValue(":pending", AttributeValue.fromS("PENDING"))
+                .putExpressionValue(":failed", AttributeValue.fromS("FAILED"))
+                .build();
+        return updateConditionally(item, condition);
     }
 
     public List<ObservationItem> findAllBySessionIdAndCctvCode(
