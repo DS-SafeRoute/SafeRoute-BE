@@ -11,20 +11,28 @@ import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
+import com.saferoute.global.api.error.CongestionErrorCode;
 import com.saferoute.global.api.error.EvacuationErrorCode;
 import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class CongestionEventService {
+
+    static final Duration PROCESSING_LEASE = Duration.ofMinutes(1);
 
     private final MapEdgeJpaRepository mapEdgeJpaRepository;
     private final TrainingSessionRepository trainingSessionRepository;
@@ -64,16 +72,77 @@ public class CongestionEventService {
                 request.configVersion()
         );
         IdempotentSaveResult<ObservationItem> saveResult = observationRepository.saveIfAbsent(item);
-        if (!saveResult.created()) {
+        String processingOwner = UUID.randomUUID().toString();
+        long processingStartedAt = Instant.now().toEpochMilli();
+        boolean claimed = observationRepository.claimProcessing(
+                saveResult.item().getEventId(),
+                processingOwner,
+                processingStartedAt,
+                processingStartedAt + PROCESSING_LEASE.toMillis()
+        );
+        if (!claimed) {
             return saveResult;
         }
 
-        trainingEventPublisher.publishCongestionUpdated(session.getId(), edge.getId(), saveResult.item());
+        try {
+            trainingEventPublisher.publishCongestionUpdated(session.getId(), edge.getId(), saveResult.item());
 
-        CongestionLevel level = request.congestionLevel();
-        if (level.requiresRouteRecalculation()) {
-            routeRecalculationService.trigger(session, edge, level);
+            CongestionLevel level = saveResult.item().getCongestionLevel();
+            if (level.requiresRouteRecalculation()) {
+                routeRecalculationService.trigger(session, edge, level);
+            }
+            completeAfterCommit(saveResult.item().getEventId(), processingOwner);
+        } catch (ApiException exception) {
+            failProcessing(saveResult.item().getEventId(), processingOwner, exception);
+            throw exception;
+        } catch (RuntimeException exception) {
+            failProcessing(saveResult.item().getEventId(), processingOwner, exception);
+            throw new ApiException(CongestionErrorCode.EVENT_PROCESSING_FAILED, exception);
         }
         return saveResult;
+    }
+
+    private void completeAfterCommit(String eventId, String processingOwner) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            completeProcessing(eventId, processingOwner);
+            return;
+        }
+
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                completeProcessing(eventId, processingOwner);
+            }
+
+            @Override
+            public void afterCompletion(int status) {
+                if (status != TransactionSynchronization.STATUS_COMMITTED) {
+                    failProcessing(eventId, processingOwner, null);
+                }
+            }
+        });
+    }
+
+    private void completeProcessing(String eventId, String processingOwner) {
+        try {
+            if (!observationRepository.completeProcessing(eventId, processingOwner)) {
+                log.warn("혼잡 관측 처리 완료 상태 갱신 실패: eventId={}", eventId);
+            }
+        } catch (RuntimeException exception) {
+            log.error("혼잡 관측 처리 완료 상태 저장 중 오류: eventId={}", eventId, exception);
+        }
+    }
+
+    private void failProcessing(String eventId, String processingOwner, RuntimeException cause) {
+        try {
+            if (!observationRepository.failProcessing(eventId, processingOwner)) {
+                log.warn("혼잡 관측 처리 실패 상태 갱신 실패: eventId={}", eventId);
+            }
+        } catch (RuntimeException statusException) {
+            if (cause != null) {
+                cause.addSuppressed(statusException);
+            }
+            log.error("혼잡 관측 처리 실패 상태 저장 중 오류: eventId={}", eventId, statusException);
+        }
     }
 }

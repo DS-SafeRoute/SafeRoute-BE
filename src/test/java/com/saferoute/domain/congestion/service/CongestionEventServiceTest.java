@@ -3,8 +3,11 @@ package com.saferoute.domain.congestion.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -23,6 +26,7 @@ import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.global.api.error.EvacuationErrorCode;
+import com.saferoute.global.api.error.CongestionErrorCode;
 import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
@@ -124,6 +128,7 @@ class CongestionEventServiceTest {
         )).willReturn(Optional.of(session));
         given(observationRepository.saveIfAbsent(any())).willAnswer(invocation ->
                 IdempotentSaveResult.created(invocation.getArgument(0, ObservationItem.class)));
+        givenProcessingClaimed();
 
         congestionEventService.reportCongestion(request(CongestionLevel.CAUTION));
 
@@ -149,6 +154,7 @@ class CongestionEventServiceTest {
         )).willReturn(Optional.of(session));
         given(observationRepository.saveIfAbsent(any())).willAnswer(invocation ->
                 IdempotentSaveResult.created(invocation.getArgument(0, ObservationItem.class)));
+        givenProcessingClaimed();
 
         congestionEventService.reportCongestion(request(CongestionLevel.CROWDED));
 
@@ -167,6 +173,7 @@ class CongestionEventServiceTest {
         )).willReturn(Optional.of(session));
         given(observationRepository.saveIfAbsent(any())).willAnswer(invocation ->
                 IdempotentSaveResult.created(invocation.getArgument(0, ObservationItem.class)));
+        givenProcessingClaimed();
 
         congestionEventService.reportCongestion(request(CongestionLevel.VERY_CROWDED));
 
@@ -190,5 +197,59 @@ class CongestionEventServiceTest {
         assertThat(result.created()).isFalse();
         verify(trainingEventPublisher, never()).publishCongestionUpdated(any(), any(), any());
         verify(routeRecalculationService, never()).trigger(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("중복 eventId가 RECEIVED이면 후속 처리를 재개한다")
+    void reportCongestion_resumesReceivedDuplicate() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId
+        )).willReturn(Optional.of(session));
+        given(observationRepository.saveIfAbsent(any())).willAnswer(invocation ->
+                IdempotentSaveResult.existing(invocation.getArgument(0, ObservationItem.class)));
+        givenProcessingClaimed();
+
+        var result = congestionEventService.reportCongestion(request(CongestionLevel.CROWDED));
+
+        assertThat(result.created()).isFalse();
+        verify(trainingEventPublisher).publishCongestionUpdated(any(), any(), any());
+        verify(routeRecalculationService).trigger(session, edge, CongestionLevel.CROWDED);
+    }
+
+    @Test
+    @DisplayName("후속 처리 실패를 FAILED로 기록하고 공통 혼잡 에러를 반환한다")
+    void reportCongestion_marksFailedWhenSideEffectFails() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId
+        )).willReturn(Optional.of(session));
+        given(observationRepository.saveIfAbsent(any())).willAnswer(invocation ->
+                IdempotentSaveResult.created(invocation.getArgument(0, ObservationItem.class)));
+        given(observationRepository.claimProcessing(anyString(), anyString(), anyLong(), anyLong()))
+                .willReturn(true);
+        given(observationRepository.failProcessing(anyString(), anyString())).willReturn(true);
+        doThrow(new IllegalStateException("websocket unavailable"))
+                .when(trainingEventPublisher).publishCongestionUpdated(any(), any(), any());
+
+        assertThatThrownBy(() -> congestionEventService.reportCongestion(request(CongestionLevel.CROWDED)))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue(
+                        "errorCode",
+                        CongestionErrorCode.EVENT_PROCESSING_FAILED
+                );
+
+        verify(observationRepository).failProcessing(anyString(), anyString());
+        verify(routeRecalculationService, never()).trigger(any(), any(), any());
+    }
+
+    private void givenProcessingClaimed() {
+        given(observationRepository.claimProcessing(anyString(), anyString(), anyLong(), anyLong()))
+                .willReturn(true);
+        given(observationRepository.completeProcessing(anyString(), anyString())).willReturn(true);
     }
 }
