@@ -167,7 +167,7 @@ public class CongestionEventRepository {
             ImageUploadStatus newStatus
     ) {
         boolean complete = expectedStatus == ImageUploadStatus.PENDING
-                && (newStatus == ImageUploadStatus.UPLOADED || newStatus == ImageUploadStatus.FAILED);
+                && (newStatus == ImageUploadStatus.COMPLETED || newStatus == ImageUploadStatus.FAILED);
         boolean retry = expectedStatus == ImageUploadStatus.FAILED
                 && newStatus == ImageUploadStatus.PENDING;
         if (!complete && !retry) {
