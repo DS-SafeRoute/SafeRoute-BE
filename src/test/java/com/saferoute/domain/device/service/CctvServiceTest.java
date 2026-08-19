@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import com.saferoute.domain.device.dto.request.ConfigureCctvGridCellsRequest;
 import com.saferoute.domain.device.dto.request.CreateCctvRequest;
 import com.saferoute.domain.device.dto.response.CctvResponse;
+import com.saferoute.domain.device.dto.response.CctvRegistrationResponse;
 import com.saferoute.domain.device.entity.Cctv;
 import com.saferoute.domain.device.entity.CctvGridCell;
 import com.saferoute.domain.device.repository.CctvGridCellRepository;
@@ -54,11 +55,11 @@ class CctvServiceTest {
     @DisplayName("CCTV 등록 시 생성한 코드를 별도 트랜잭션 등록 서비스에 전달한다")
     void createCctv_success() {
         CreateCctvRequest request = request();
-        CctvResponse expected = org.mockito.Mockito.mock(CctvResponse.class);
+        CctvRegistrationResponse expected = org.mockito.Mockito.mock(CctvRegistrationResponse.class);
         given(cctvCodeAllocator.allocate()).willReturn("CCTV_001");
         given(cctvRegistrationService.register(any(), any())).willReturn(expected);
 
-        CctvResponse response = cctvService.createCctv(request);
+        CctvRegistrationResponse response = cctvService.createCctv(request);
 
         assertThat(response).isSameAs(expected);
         verify(cctvRegistrationService).register(

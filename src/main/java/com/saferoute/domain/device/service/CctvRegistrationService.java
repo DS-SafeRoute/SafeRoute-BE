@@ -2,6 +2,7 @@ package com.saferoute.domain.device.service;
 
 import com.saferoute.domain.device.dto.request.CreateCctvRequest;
 import com.saferoute.domain.device.dto.response.CctvResponse;
+import com.saferoute.domain.device.dto.response.CctvRegistrationResponse;
 import com.saferoute.domain.device.entity.Cctv;
 import com.saferoute.domain.device.entity.CctvGridCell;
 import com.saferoute.domain.device.repository.CctvGridCellRepository;
@@ -16,6 +17,7 @@ import com.saferoute.domain.floor.repository.FloorRepository;
 import com.saferoute.global.api.error.CctvErrorCode;
 import com.saferoute.global.api.error.FloorErrorCode;
 import com.saferoute.global.api.exception.ApiException;
+import com.saferoute.global.security.DeviceTokenService;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -34,11 +36,12 @@ public class CctvRegistrationService {
     private final FloorGridCellRepository floorGridCellRepository;
     private final MapNodeJpaRepository mapNodeJpaRepository;
     private final FloorRepository floorRepository;
+    private final DeviceTokenService deviceTokenService;
 
     // MapNode/Cctv/매핑 저장은 하나의 트랜잭션으로 처리한다.
     // CCTV 코드는 호출 전에 독립 트랜잭션의 DB sequence로 이미 발급된다.
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public CctvResponse register(CreateCctvRequest request, String code) {
+    public CctvRegistrationResponse register(CreateCctvRequest request, String code) {
         Floor floor = floorRepository.findById(request.floorId())
                 .orElseThrow(() -> new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
         validateGridConfigured(floor);
@@ -55,14 +58,20 @@ public class CctvRegistrationService {
                         CustomDeviceType.CCTV
                 )
         );
-        Cctv cctv = cctvJpaRepository.save(Cctv.create(code, request.name(), customNode));
+        DeviceTokenService.IssuedDeviceToken issuedToken = deviceTokenService.issue();
+        Cctv cctv = Cctv.create(code, request.name(), customNode);
+        cctv.issueDeviceToken(issuedToken.hash());
+        Cctv savedCctv = cctvJpaRepository.save(cctv);
         cctvGridCellRepository.saveAll(
                 gridCells.stream()
-                        .map(cell -> CctvGridCell.create(cctv, cell))
+                        .map(cell -> CctvGridCell.create(savedCctv, cell))
                         .toList()
         );
 
-        return CctvResponse.of(cctv, gridCells);
+        return new CctvRegistrationResponse(
+                CctvResponse.of(savedCctv, gridCells),
+                issuedToken.rawToken()
+        );
     }
 
     private List<FloorGridCell> findAndValidateGridCells(

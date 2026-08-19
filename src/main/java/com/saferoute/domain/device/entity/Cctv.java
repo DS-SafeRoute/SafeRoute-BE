@@ -48,6 +48,9 @@ public class Cctv {
     @Column(name = "enabled", nullable = false)
     private boolean enabled;
 
+    @Column(name = "device_token_hash", length = 64, unique = true)
+    private String deviceTokenHash;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -85,6 +88,16 @@ public class Cctv {
 
     public void enable() {
         this.enabled = true;
+    }
+
+    public void issueDeviceToken(String deviceTokenHash) {
+        if (deviceTokenHash == null || deviceTokenHash.isBlank()) {
+            throw new IllegalArgumentException("디바이스 토큰 해시는 필수입니다.");
+        }
+        if (this.deviceTokenHash != null) {
+            throw new IllegalStateException("디바이스 토큰은 이미 발급되었습니다.");
+        }
+        this.deviceTokenHash = deviceTokenHash;
     }
 
     // FK만으로는 NodeType을 강제할 수 없으므로 생성/변경 시점에 도메인 레벨에서 검증한다.

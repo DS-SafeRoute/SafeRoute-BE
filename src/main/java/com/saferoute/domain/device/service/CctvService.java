@@ -3,6 +3,7 @@ package com.saferoute.domain.device.service;
 import com.saferoute.domain.device.dto.request.ConfigureCctvGridCellsRequest;
 import com.saferoute.domain.device.dto.request.CreateCctvRequest;
 import com.saferoute.domain.device.dto.response.CctvResponse;
+import com.saferoute.domain.device.dto.response.CctvRegistrationResponse;
 import com.saferoute.domain.device.entity.Cctv;
 import com.saferoute.domain.device.entity.CctvGridCell;
 import com.saferoute.domain.device.repository.CctvGridCellRepository;
@@ -33,7 +34,7 @@ public class CctvService {
     private final CctvCodeAllocator cctvCodeAllocator;
     private final CctvRegistrationService cctvRegistrationService;
 
-    public CctvResponse createCctv(CreateCctvRequest request) {
+    public CctvRegistrationResponse createCctv(CreateCctvRequest request) {
         return cctvRegistrationService.register(request, cctvCodeAllocator.allocate());
     }
 

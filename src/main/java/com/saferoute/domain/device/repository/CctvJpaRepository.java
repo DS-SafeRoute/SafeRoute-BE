@@ -27,6 +27,8 @@ public interface CctvJpaRepository extends JpaRepository<Cctv, UUID> {
     // 라즈베리파이가 보내온 code 로 기기 식별 (전역 unique)
     Optional<Cctv> findByCode(String code);
 
+    Optional<Cctv> findByDeviceTokenHash(String deviceTokenHash);
+
     boolean existsByCode(String code);
 
     Optional<Cctv> findByCustomNode_Id(UUID customNodeId);
