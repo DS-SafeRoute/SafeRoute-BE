@@ -17,7 +17,7 @@ public class DeviceAuthorizationService {
 
     private final CctvJpaRepository cctvJpaRepository;
 
-    public void validateCctv(DevicePrincipal principal, String requestedCctvCode) {
+    public Cctv validateCctv(DevicePrincipal principal, String requestedCctvCode) {
         Cctv requestedCctv = cctvJpaRepository.findByCode(requestedCctvCode)
                 .orElseThrow(() -> new ApiException(CctvErrorCode.CCTV_NOT_FOUND));
 
@@ -27,5 +27,6 @@ public class DeviceAuthorizationService {
         if (!requestedCctv.isEnabled()) {
             throw new ApiException(DeviceErrorCode.CCTV_DISABLED);
         }
+        return requestedCctv;
     }
 }
