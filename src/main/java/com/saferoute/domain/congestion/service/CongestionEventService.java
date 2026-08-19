@@ -11,20 +11,29 @@ import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
+import com.saferoute.global.api.error.CongestionErrorCode;
 import com.saferoute.global.api.error.EvacuationErrorCode;
 import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Objects;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class CongestionEventService {
+
+    static final Duration PROCESSING_LEASE = Duration.ofMinutes(1);
 
     private final MapEdgeJpaRepository mapEdgeJpaRepository;
     private final TrainingSessionRepository trainingSessionRepository;
@@ -51,6 +60,7 @@ public class CongestionEventService {
         ObservationItem item = ObservationItem.create(
                 request.eventId(),
                 session.getId(),
+                edge.getId(),
                 request.cctvCode(),
                 request.avgHeadcount(),
                 request.peakHeadcount(),
@@ -64,16 +74,102 @@ public class CongestionEventService {
                 request.configVersion()
         );
         IdempotentSaveResult<ObservationItem> saveResult = observationRepository.saveIfAbsent(item);
-        if (!saveResult.created()) {
+        validateEventIdentity(saveResult.item(), request);
+        String processingOwner = UUID.randomUUID().toString();
+        long processingStartedAt = Instant.now().toEpochMilli();
+        boolean claimed = observationRepository.claimProcessing(
+                saveResult.item().getEventId(),
+                processingOwner,
+                processingStartedAt,
+                processingStartedAt + PROCESSING_LEASE.toMillis()
+        );
+        if (!claimed) {
             return saveResult;
         }
 
-        trainingEventPublisher.publishCongestionUpdated(session.getId(), edge.getId(), saveResult.item());
-
-        CongestionLevel level = request.congestionLevel();
-        if (level.requiresRouteRecalculation()) {
-            routeRecalculationService.trigger(session, edge, level);
+        try {
+            CongestionLevel level = saveResult.item().getCongestionLevel();
+            if (level.requiresRouteRecalculation()) {
+                routeRecalculationService.trigger(session, edge, level);
+            }
+            publishAndCompleteAfterCommit(
+                    session.getId(),
+                    edge.getId(),
+                    saveResult.item(),
+                    processingOwner
+            );
+        } catch (ApiException exception) {
+            failProcessing(saveResult.item().getEventId(), processingOwner, exception);
+            throw exception;
+        } catch (RuntimeException exception) {
+            failProcessing(saveResult.item().getEventId(), processingOwner, exception);
+            throw new ApiException(CongestionErrorCode.EVENT_PROCESSING_FAILED, exception);
         }
         return saveResult;
+    }
+
+    private void validateEventIdentity(ObservationItem item, ReportCongestionRequest request) {
+        boolean sameIdentity = Objects.equals(item.getTrainingSessionId(), request.trainingSessionId().toString())
+                && Objects.equals(item.getEdgeId(), request.edgeId().toString())
+                && Objects.equals(item.getCctvCode(), request.cctvCode());
+        if (!sameIdentity) {
+            throw new ApiException(CongestionErrorCode.EVENT_IDENTITY_MISMATCH);
+        }
+    }
+
+    private void publishAndCompleteAfterCommit(
+            UUID sessionId,
+            UUID edgeId,
+            ObservationItem item,
+            String processingOwner
+    ) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            trainingEventPublisher.publishCongestionUpdated(sessionId, edgeId, item);
+            completeProcessing(item.getEventId(), processingOwner);
+            return;
+        }
+
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                try {
+                    trainingEventPublisher.publishCongestionUpdated(sessionId, edgeId, item);
+                    completeProcessing(item.getEventId(), processingOwner);
+                } catch (RuntimeException exception) {
+                    failProcessing(item.getEventId(), processingOwner, exception);
+                    throw new ApiException(CongestionErrorCode.EVENT_PROCESSING_FAILED, exception);
+                }
+            }
+
+            @Override
+            public void afterCompletion(int status) {
+                if (status != TransactionSynchronization.STATUS_COMMITTED) {
+                    failProcessing(item.getEventId(), processingOwner, null);
+                }
+            }
+        });
+    }
+
+    private void completeProcessing(String eventId, String processingOwner) {
+        try {
+            if (!observationRepository.completeProcessing(eventId, processingOwner)) {
+                log.warn("혼잡 관측 처리 완료 상태 갱신 실패: eventId={}", eventId);
+            }
+        } catch (RuntimeException exception) {
+            log.error("혼잡 관측 처리 완료 상태 저장 중 오류: eventId={}", eventId, exception);
+        }
+    }
+
+    private void failProcessing(String eventId, String processingOwner, RuntimeException cause) {
+        try {
+            if (!observationRepository.failProcessing(eventId, processingOwner)) {
+                log.warn("혼잡 관측 처리 실패 상태 갱신 실패: eventId={}", eventId);
+            }
+        } catch (RuntimeException statusException) {
+            if (cause != null) {
+                cause.addSuppressed(statusException);
+            }
+            log.error("혼잡 관측 처리 실패 상태 저장 중 오류: eventId={}", eventId, statusException);
+        }
     }
 }

@@ -63,6 +63,7 @@ class DeviceSecurityIntegrationTest {
             ObservationItem item = ObservationItem.create(
                     request.eventId(),
                     request.trainingSessionId(),
+                    request.edgeId(),
                     request.cctvCode(),
                     request.avgHeadcount(),
                     request.peakHeadcount(),
