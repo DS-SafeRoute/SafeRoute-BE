@@ -3,6 +3,8 @@ package com.saferoute.domain.device.service;
 import com.saferoute.domain.device.dto.request.ConfigureCctvGridCellsRequest;
 import com.saferoute.domain.device.dto.request.CreateCctvRequest;
 import com.saferoute.domain.device.dto.response.CctvResponse;
+import com.saferoute.domain.device.dto.response.CctvRegistrationResponse;
+import com.saferoute.domain.device.dto.response.DeviceTokenIssueResponse;
 import com.saferoute.domain.device.entity.Cctv;
 import com.saferoute.domain.device.entity.CctvGridCell;
 import com.saferoute.domain.device.repository.CctvGridCellRepository;
@@ -11,7 +13,9 @@ import com.saferoute.domain.evacuation.grid.entity.FloorGridCell;
 import com.saferoute.domain.evacuation.grid.repository.FloorGridCellRepository;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.global.api.error.CctvErrorCode;
+import com.saferoute.global.api.error.DeviceErrorCode;
 import com.saferoute.global.api.exception.ApiException;
+import com.saferoute.global.security.DeviceTokenService;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Map;
@@ -32,9 +36,23 @@ public class CctvService {
     private final FloorGridCellRepository floorGridCellRepository;
     private final CctvCodeAllocator cctvCodeAllocator;
     private final CctvRegistrationService cctvRegistrationService;
+    private final DeviceTokenService deviceTokenService;
 
-    public CctvResponse createCctv(CreateCctvRequest request) {
+    public CctvRegistrationResponse createCctv(CreateCctvRequest request) {
         return cctvRegistrationService.register(request, cctvCodeAllocator.allocate());
+    }
+
+    @Transactional
+    public DeviceTokenIssueResponse issueDeviceToken(UUID cctvId) {
+        Cctv cctv = cctvJpaRepository.findByIdForDeviceTokenIssue(cctvId)
+                .orElseThrow(() -> new ApiException(CctvErrorCode.CCTV_NOT_FOUND));
+        if (cctv.getDeviceTokenHash() != null) {
+            throw new ApiException(DeviceErrorCode.DEVICE_TOKEN_ALREADY_ISSUED);
+        }
+
+        DeviceTokenService.IssuedDeviceToken issuedToken = deviceTokenService.issue();
+        cctv.issueDeviceToken(issuedToken.hash());
+        return new DeviceTokenIssueResponse(issuedToken.rawToken());
     }
 
     public List<CctvResponse> getCctvs(UUID floorId) {

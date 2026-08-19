@@ -10,6 +10,8 @@ import static org.mockito.Mockito.verify;
 import com.saferoute.domain.device.dto.request.ConfigureCctvGridCellsRequest;
 import com.saferoute.domain.device.dto.request.CreateCctvRequest;
 import com.saferoute.domain.device.dto.response.CctvResponse;
+import com.saferoute.domain.device.dto.response.CctvRegistrationResponse;
+import com.saferoute.domain.device.dto.response.DeviceTokenIssueResponse;
 import com.saferoute.domain.device.entity.Cctv;
 import com.saferoute.domain.device.entity.CctvGridCell;
 import com.saferoute.domain.device.repository.CctvGridCellRepository;
@@ -18,6 +20,9 @@ import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.evacuation.grid.entity.FloorGridCell;
 import com.saferoute.domain.evacuation.grid.repository.FloorGridCellRepository;
 import com.saferoute.domain.floor.entity.Floor;
+import com.saferoute.global.api.error.DeviceErrorCode;
+import com.saferoute.global.api.exception.ApiException;
+import com.saferoute.global.security.DeviceTokenService;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -36,6 +41,7 @@ class CctvServiceTest {
     @Mock FloorGridCellRepository floorGridCellRepository;
     @Mock CctvCodeAllocator cctvCodeAllocator;
     @Mock CctvRegistrationService cctvRegistrationService;
+    @Mock DeviceTokenService deviceTokenService;
 
     private CctvService cctvService;
 
@@ -46,7 +52,8 @@ class CctvServiceTest {
                 cctvGridCellRepository,
                 floorGridCellRepository,
                 cctvCodeAllocator,
-                cctvRegistrationService
+                cctvRegistrationService,
+                deviceTokenService
         );
     }
 
@@ -54,17 +61,54 @@ class CctvServiceTest {
     @DisplayName("CCTV 등록 시 생성한 코드를 별도 트랜잭션 등록 서비스에 전달한다")
     void createCctv_success() {
         CreateCctvRequest request = request();
-        CctvResponse expected = org.mockito.Mockito.mock(CctvResponse.class);
+        CctvRegistrationResponse expected = org.mockito.Mockito.mock(CctvRegistrationResponse.class);
         given(cctvCodeAllocator.allocate()).willReturn("CCTV_001");
         given(cctvRegistrationService.register(any(), any())).willReturn(expected);
 
-        CctvResponse response = cctvService.createCctv(request);
+        CctvRegistrationResponse response = cctvService.createCctv(request);
 
         assertThat(response).isSameAs(expected);
         verify(cctvRegistrationService).register(
                 org.mockito.ArgumentMatchers.eq(request),
                 org.mockito.ArgumentMatchers.eq("CCTV_001")
         );
+    }
+
+    @Test
+    @DisplayName("토큰이 없는 기존 CCTV에는 디바이스 토큰을 최초 1회 발급한다")
+    void issueDeviceToken_success() {
+        UUID cctvId = UUID.randomUUID();
+        Cctv cctv = cctv(cctvId);
+        given(cctvJpaRepository.findByIdForDeviceTokenIssue(cctvId))
+                .willReturn(Optional.of(cctv));
+        given(deviceTokenService.issue()).willReturn(
+                new DeviceTokenService.IssuedDeviceToken("raw-token", "hashed-token")
+        );
+
+        DeviceTokenIssueResponse response = cctvService.issueDeviceToken(cctvId);
+
+        assertThat(response.deviceToken()).isEqualTo("raw-token");
+        verify(cctv).issueDeviceToken("hashed-token");
+    }
+
+    @Test
+    @DisplayName("이미 토큰이 있는 CCTV에는 토큰을 다시 발급하지 않는다")
+    void issueDeviceToken_rejectsAlreadyIssuedToken() {
+        UUID cctvId = UUID.randomUUID();
+        Cctv cctv = cctv(cctvId);
+        given(cctv.getDeviceTokenHash()).willReturn("existing-hash");
+        given(cctvJpaRepository.findByIdForDeviceTokenIssue(cctvId))
+                .willReturn(Optional.of(cctv));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> cctvService.issueDeviceToken(cctvId)
+                )
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue(
+                        "errorCode",
+                        DeviceErrorCode.DEVICE_TOKEN_ALREADY_ISSUED
+                );
+        verify(deviceTokenService, never()).issue();
     }
 
     @Test

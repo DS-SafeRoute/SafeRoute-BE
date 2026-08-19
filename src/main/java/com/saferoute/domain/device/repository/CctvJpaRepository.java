@@ -1,11 +1,13 @@
 package com.saferoute.domain.device.repository;
 
 import com.saferoute.domain.device.entity.Cctv;
+import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.EntityGraph;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -26,6 +28,12 @@ public interface CctvJpaRepository extends JpaRepository<Cctv, UUID> {
 
     // 라즈베리파이가 보내온 code 로 기기 식별 (전역 unique)
     Optional<Cctv> findByCode(String code);
+
+    Optional<Cctv> findByDeviceTokenHash(String deviceTokenHash);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select cctv from Cctv cctv where cctv.id = :cctvId")
+    Optional<Cctv> findByIdForDeviceTokenIssue(@Param("cctvId") UUID cctvId);
 
     boolean existsByCode(String code);
 

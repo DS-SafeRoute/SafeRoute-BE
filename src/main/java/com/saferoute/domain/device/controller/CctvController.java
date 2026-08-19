@@ -3,6 +3,8 @@ package com.saferoute.domain.device.controller;
 import com.saferoute.domain.device.dto.request.ConfigureCctvGridCellsRequest;
 import com.saferoute.domain.device.dto.request.CreateCctvRequest;
 import com.saferoute.domain.device.dto.response.CctvResponse;
+import com.saferoute.domain.device.dto.response.CctvRegistrationResponse;
+import com.saferoute.domain.device.dto.response.DeviceTokenIssueResponse;
 import com.saferoute.domain.device.service.CctvService;
 import com.saferoute.global.api.response.ApiResponse;
 import com.saferoute.global.api.response.CctvSuccessCode;
@@ -31,12 +33,19 @@ public class CctvController {
     private final CctvService cctvService;
 
     @PostMapping
-    public ResponseEntity<ApiResponse<CctvResponse>> createCctv(
+    public ResponseEntity<ApiResponse<CctvRegistrationResponse>> createCctv(
             @Valid @RequestBody CreateCctvRequest request
     ) {
-        CctvResponse response = cctvService.createCctv(request);
+        CctvRegistrationResponse response = cctvService.createCctv(request);
         return ResponseEntity.status(CctvSuccessCode.CCTV_CREATED.getHttpStatus())
                 .body(ApiResponse.success(CctvSuccessCode.CCTV_CREATED, response));
+    }
+
+    @PostMapping("/{cctvId}/device-token")
+    public ResponseEntity<ApiResponse<DeviceTokenIssueResponse>> issueDeviceToken(
+            @PathVariable UUID cctvId
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(cctvService.issueDeviceToken(cctvId)));
     }
 
     @GetMapping

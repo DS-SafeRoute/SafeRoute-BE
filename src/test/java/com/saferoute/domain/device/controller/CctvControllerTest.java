@@ -15,6 +15,8 @@ import com.saferoute.domain.device.dto.request.ConfigureCctvGridCellsRequest;
 import com.saferoute.domain.device.dto.request.CreateCctvRequest;
 import com.saferoute.domain.device.dto.response.CctvGridCellResponse;
 import com.saferoute.domain.device.dto.response.CctvResponse;
+import com.saferoute.domain.device.dto.response.CctvRegistrationResponse;
+import com.saferoute.domain.device.dto.response.DeviceTokenIssueResponse;
 import com.saferoute.domain.device.service.CctvService;
 import com.saferoute.global.config.SecurityConfig;
 import com.saferoute.global.security.JwtAuthenticationFilter;
@@ -51,16 +53,19 @@ class CctvControllerTest {
     void createCctv_returnsCreatedCoverage() throws Exception {
         CreateCctvRequest request = new CreateCctvRequest(
                 "3층 복도 CCTV", floorId, 0.6, 0.4, List.of(cellId));
-        given(cctvService.createCctv(any())).willReturn(response(true));
+        given(cctvService.createCctv(any())).willReturn(
+                new CctvRegistrationResponse(response(true), "device-token")
+        );
 
         mockMvc.perform(post("/api/v1/cctvs")
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.isSuccess").value(true))
-                .andExpect(jsonPath("$.result.x").value(0.6))
-                .andExpect(jsonPath("$.result.gridCells[0].id").value(cellId.toString()))
-                .andExpect(jsonPath("$.result.monitoredAreaM2").value(0.25));
+                .andExpect(jsonPath("$.result.cctv.x").value(0.6))
+                .andExpect(jsonPath("$.result.cctv.gridCells[0].id").value(cellId.toString()))
+                .andExpect(jsonPath("$.result.cctv.monitoredAreaM2").value(0.25))
+                .andExpect(jsonPath("$.result.deviceToken").value("device-token"));
     }
 
     @Test
@@ -72,6 +77,16 @@ class CctvControllerTest {
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void issueDeviceToken_returnsRawTokenOnce() throws Exception {
+        given(cctvService.issueDeviceToken(cctvId))
+                .willReturn(new DeviceTokenIssueResponse("device-token"));
+
+        mockMvc.perform(post("/api/v1/cctvs/{cctvId}/device-token", cctvId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.deviceToken").value("device-token"));
     }
 
     @Test

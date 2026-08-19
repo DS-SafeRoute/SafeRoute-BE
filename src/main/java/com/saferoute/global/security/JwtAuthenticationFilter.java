@@ -23,6 +23,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String WEBSOCKET_PATH_PREFIX = "/ws";
+    private static final String DEVICE_PATH_PREFIX = "/api/v1/device/";
 
     private final JwtTokenProvider jwtTokenProvider;
     private final AccessTokenRevocationService accessTokenRevocationService;
@@ -34,7 +35,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     // STOMP 레이어까지 요청이 도달하지 못한다.
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return request.getRequestURI().startsWith(WEBSOCKET_PATH_PREFIX);
+        String requestUri = request.getRequestURI();
+        return requestUri.startsWith(WEBSOCKET_PATH_PREFIX)
+                || requestUri.startsWith(DEVICE_PATH_PREFIX);
     }
 
     @Override

@@ -8,7 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.saferoute.domain.device.dto.request.CreateCctvRequest;
-import com.saferoute.domain.device.dto.response.CctvResponse;
+import com.saferoute.domain.device.dto.response.CctvRegistrationResponse;
 import com.saferoute.domain.device.entity.CctvGridCell;
 import com.saferoute.domain.device.repository.CctvGridCellRepository;
 import com.saferoute.domain.device.repository.CctvJpaRepository;
@@ -19,6 +19,7 @@ import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.floor.repository.FloorRepository;
 import com.saferoute.global.api.error.CctvErrorCode;
 import com.saferoute.global.api.exception.ApiException;
+import com.saferoute.global.security.DeviceTokenService;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -38,6 +39,7 @@ class CctvRegistrationServiceTest {
     @Mock FloorGridCellRepository floorGridCellRepository;
     @Mock MapNodeJpaRepository mapNodeJpaRepository;
     @Mock FloorRepository floorRepository;
+    @Mock DeviceTokenService deviceTokenService;
 
     private CctvRegistrationService service;
     private Floor floor;
@@ -50,7 +52,8 @@ class CctvRegistrationServiceTest {
                 cctvGridCellRepository,
                 floorGridCellRepository,
                 mapNodeJpaRepository,
-                floorRepository
+                floorRepository,
+                deviceTokenService
         );
         floor = org.mockito.Mockito.mock(Floor.class);
         floorId = UUID.randomUUID();
@@ -71,12 +74,16 @@ class CctvRegistrationServiceTest {
                 .willReturn(List.of(second, first));
         given(mapNodeJpaRepository.save(any())).willAnswer(invocation -> invocation.getArgument(0));
         given(cctvJpaRepository.save(any())).willAnswer(invocation -> invocation.getArgument(0));
+        given(deviceTokenService.issue()).willReturn(
+                new DeviceTokenService.IssuedDeviceToken("raw-token", "hashed-token")
+        );
 
-        CctvResponse response = service.register(request, "CCTV_001");
+        CctvRegistrationResponse response = service.register(request, "CCTV_001");
 
-        assertThat(response.code()).isEqualTo("CCTV_001");
-        assertThat(response.monitoredGridCellCount()).isEqualTo(2);
-        assertThat(response.gridCells()).extracting("id").containsExactly(firstId, secondId);
+        assertThat(response.cctv().code()).isEqualTo("CCTV_001");
+        assertThat(response.cctv().monitoredGridCellCount()).isEqualTo(2);
+        assertThat(response.cctv().gridCells()).extracting("id").containsExactly(firstId, secondId);
+        assertThat(response.deviceToken()).isEqualTo("raw-token");
         ArgumentCaptor<List<CctvGridCell>> mappings = ArgumentCaptor.forClass(List.class);
         verify(cctvGridCellRepository).saveAll(mappings.capture());
         assertThat(mappings.getValue()).hasSize(2);
