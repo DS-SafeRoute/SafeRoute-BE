@@ -11,6 +11,8 @@ import static org.mockito.Mockito.when;
 import com.saferoute.domain.congestion.entity.CongestionLevel;
 import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import java.util.List;
+import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,6 +31,8 @@ import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedExce
 
 @ExtendWith(MockitoExtension.class)
 class ObservationRepositoryTest {
+
+    private static final UUID SESSION_ID = UUID.fromString("00000000-0000-0000-0000-000000000003");
 
     @Mock
     private DynamoDbEnhancedClient enhancedClient;
@@ -112,7 +116,8 @@ class ObservationRepositoryTest {
 
     private ObservationItem item(String eventId, long capturedAt) {
         return ObservationItem.create(
-                eventId, "session-1", "CCTV_001", 5.0, 8, 25, 2.5,
+                UUID.nameUUIDFromBytes(eventId.getBytes(StandardCharsets.UTF_8)), SESSION_ID,
+                "CCTV_001", 5.0, 8, 25, 2.5,
                 CongestionLevel.CAUTION, capturedAt - 5_000, capturedAt,
                 capturedAt, null, 1L
         );

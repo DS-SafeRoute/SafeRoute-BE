@@ -3,19 +3,39 @@ package com.saferoute.domain.telemetry.dynamo.entity;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.saferoute.domain.congestion.entity.CongestionLevel;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 class TelemetryItemTest {
 
+    private static final UUID OBSERVATION_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    private static final UUID EVENT_ID = UUID.fromString("00000000-0000-0000-0000-000000000002");
+    private static final UUID SESSION_ID = UUID.fromString("00000000-0000-0000-0000-000000000003");
+
+    @Test
+    void 혼잡도와_이벤트_타입은_정의된_계약값만_사용한다() {
+        assertThat(CongestionLevel.values()).containsExactly(
+                CongestionLevel.NORMAL,
+                CongestionLevel.CAUTION,
+                CongestionLevel.CROWDED,
+                CongestionLevel.VERY_CROWDED
+        );
+        assertThat(CongestionEventType.values()).containsExactly(
+                CongestionEventType.CONGESTION_STARTED,
+                CongestionEventType.CONGESTION_LEVEL_UP,
+                CongestionEventType.CONGESTION_ENDED
+        );
+    }
+
     @Test
     void 관측값은_eventId_기본키와_세션_CCTV_시간_GSI키를_생성한다() {
         ObservationItem item = observation();
 
-        assertThat(item.getPk()).isEqualTo("OBSERVATION#observation-1");
+        assertThat(item.getPk()).isEqualTo("OBSERVATION#" + OBSERVATION_ID);
         assertThat(item.getSk()).isEqualTo("META");
-        assertThat(item.getGsi1Pk()).isEqualTo("SESSION#session-1#CCTV#CCTV_001");
+        assertThat(item.getGsi1Pk()).isEqualTo("SESSION#" + SESSION_ID + "#CCTV#CCTV_001");
         assertThat(item.getGsi1Sk()).isEqualTo("TIME#1786500005000");
     }
 
@@ -37,7 +57,7 @@ class TelemetryItemTest {
         assertThat(attributes.get("sampleCount").n()).isEqualTo("25");
         assertThat(attributes.get("density").n()).isEqualTo("2.5");
         assertThat(attributes)
-                .containsEntry("GSI1_PK", AttributeValue.fromS("SESSION#session-1#CCTV#CCTV_001"))
+                .containsEntry("GSI1_PK", AttributeValue.fromS("SESSION#" + SESSION_ID + "#CCTV#CCTV_001"))
                 .containsEntry("GSI1_SK", AttributeValue.fromS("TIME#1786500005000"));
     }
 
@@ -45,10 +65,10 @@ class TelemetryItemTest {
     void 혼잡_이벤트는_RECEIVED와_PENDING으로_시작하고_TTL이_없다() {
         CongestionEventItem item = congestionEvent();
 
-        assertThat(item.getPk()).isEqualTo("CONGESTION_EVENT#event-1");
+        assertThat(item.getPk()).isEqualTo("CONGESTION_EVENT#" + EVENT_ID);
         assertThat(item.getSk()).isEqualTo("META");
-        assertThat(item.getGsi1Pk()).isEqualTo("SESSION#session-1");
-        assertThat(item.getGsi1Sk()).isEqualTo("EVENT#1786500002300#event-1");
+        assertThat(item.getGsi1Pk()).isEqualTo("SESSION#" + SESSION_ID);
+        assertThat(item.getGsi1Sk()).isEqualTo("EVENT#1786500002300#" + EVENT_ID);
         assertThat(item.getEventStatus()).isEqualTo(EventProcessingStatus.RECEIVED);
         assertThat(item.getImageUploadStatus()).isEqualTo(ImageUploadStatus.PENDING);
         assertThat(TableSchema.fromBean(CongestionEventItem.class).itemToMap(item, true))
@@ -58,11 +78,11 @@ class TelemetryItemTest {
     @Test
     void 현재_상태는_세션과_CCTV로_키를_만들고_TTL이_없다() {
         CurrentCctvStateItem item = CurrentCctvStateItem.create(
-                "session-1", "CCTV_001", 9, 4.5, CongestionLevel.CROWDED,
+                SESSION_ID, "CCTV_001", 9, 4.5, CongestionLevel.CROWDED,
                 1_786_500_002_300L, 1L
         );
 
-        assertThat(item.getPk()).isEqualTo("CURRENT_STATE#session-1");
+        assertThat(item.getPk()).isEqualTo("CURRENT_STATE#" + SESSION_ID);
         assertThat(item.getSk()).isEqualTo("CCTV#CCTV_001");
         assertThat(TableSchema.fromBean(CurrentCctvStateItem.class).itemToMap(item, true))
                 .doesNotContainKey("expiresAt");
@@ -70,7 +90,7 @@ class TelemetryItemTest {
 
     private ObservationItem observation() {
         return ObservationItem.create(
-                "observation-1", "session-1", "CCTV_001", 5.0, 8, 25,
+                OBSERVATION_ID, SESSION_ID, "CCTV_001", 5.0, 8, 25,
                 2.5, CongestionLevel.CAUTION, 1_786_500_000_000L,
                 1_786_500_005_000L, 1_786_500_005_000L, null, 1L
         );
@@ -78,7 +98,7 @@ class TelemetryItemTest {
 
     private CongestionEventItem congestionEvent() {
         return CongestionEventItem.received(
-                "event-1", "session-1", "CCTV_001",
+                EVENT_ID, SESSION_ID, "CCTV_001",
                 CongestionEventType.CONGESTION_STARTED, 1_786_500_002_300L,
                 9, 4.5, CongestionLevel.CROWDED, 4.5, CongestionLevel.CROWDED,
                 1L, null

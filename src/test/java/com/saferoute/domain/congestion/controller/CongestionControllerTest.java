@@ -39,6 +39,9 @@ import org.springframework.test.web.servlet.MockMvc;
 @AutoConfigureMockMvc(addFilters = false)
 class CongestionControllerTest {
 
+    private static final UUID OBSERVATION_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    private static final UUID SESSION_ID = UUID.fromString("00000000-0000-0000-0000-000000000003");
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -65,7 +68,7 @@ class CongestionControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(validRequest())))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.eventId").value("observation-1"))
+                .andExpect(jsonPath("$.eventId").value(OBSERVATION_ID.toString()))
                 .andExpect(jsonPath("$.avgHeadcount").value(5.0));
     }
 
@@ -79,7 +82,7 @@ class CongestionControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(validRequest())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.eventId").value("observation-1"));
+                .andExpect(jsonPath("$.eventId").value(OBSERVATION_ID.toString()));
     }
 
     @Test
@@ -180,7 +183,7 @@ class CongestionControllerTest {
 
     private ObservationItem observation() {
         return ObservationItem.create(
-                "observation-1", "session-1", "CCTV_001", 5.0, 8, 25,
+                OBSERVATION_ID, SESSION_ID, "CCTV_001", 5.0, 8, 25,
                 2.5, CongestionLevel.CROWDED, 1_000L, 2_000L,
                 2_000L, null, 1L
         );

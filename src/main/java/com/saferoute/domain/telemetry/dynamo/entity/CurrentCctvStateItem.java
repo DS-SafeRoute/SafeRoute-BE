@@ -1,6 +1,7 @@
 package com.saferoute.domain.telemetry.dynamo.entity;
 
 import com.saferoute.domain.congestion.entity.CongestionLevel;
+import java.util.UUID;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbPartitionKey;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSortKey;
@@ -22,7 +23,7 @@ public class CurrentCctvStateItem {
     }
 
     public static CurrentCctvStateItem create(
-            String trainingSessionId,
+            UUID trainingSessionId,
             String cctvCode,
             Integer headcount,
             Double density,
@@ -31,14 +32,14 @@ public class CurrentCctvStateItem {
             long configVersion
     ) {
         CurrentCctvStateItem item = new CurrentCctvStateItem();
-        item.trainingSessionId = trainingSessionId;
+        item.trainingSessionId = trainingSessionId.toString();
         item.cctvCode = cctvCode;
         item.headcount = headcount;
         item.density = density;
         item.congestionLevel = congestionLevel;
         item.lastDetectedAt = lastDetectedAt;
         item.configVersion = configVersion;
-        item.pk = buildPk(trainingSessionId);
+        item.pk = buildPk(item.trainingSessionId);
         item.sk = buildSk(cctvCode);
         return item;
     }

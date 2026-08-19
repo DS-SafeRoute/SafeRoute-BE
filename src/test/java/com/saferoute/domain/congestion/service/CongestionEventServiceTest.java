@@ -153,6 +153,23 @@ class CongestionEventServiceTest {
     }
 
     @Test
+    @DisplayName("VERY_CROWDED이면 저장·발행 후 재탐색을 트리거한다")
+    void reportCongestion_triggersRecalculationForVeryCrowdedLevel() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(UUID.randomUUID());
+        given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
+        given(trainingSessionRepository.findFirstByStatusAndScenario_Building_IdOrderByStartedAtAsc(
+                TrainingStatus.RUNNING, buildingId
+        )).willReturn(Optional.of(session));
+        given(observationRepository.saveIfAbsent(any())).willAnswer(invocation ->
+                IdempotentSaveResult.created(invocation.getArgument(0, ObservationItem.class)));
+
+        congestionEventService.reportCongestion(request(CongestionLevel.VERY_CROWDED));
+
+        verify(routeRecalculationService).trigger(session, edge, CongestionLevel.VERY_CROWDED);
+    }
+
+    @Test
     @DisplayName("중복 eventId이면 발행과 재탐색을 다시 수행하지 않는다")
     void reportCongestion_doesNotRepeatSideEffectsForDuplicateEvent() {
         TrainingSession session = mock(TrainingSession.class);

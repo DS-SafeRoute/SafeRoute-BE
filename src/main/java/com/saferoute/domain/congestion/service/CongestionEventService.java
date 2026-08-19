@@ -45,8 +45,8 @@ public class CongestionEventService {
                 .orElseThrow(() -> new ApiException(TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND));
 
         ObservationItem item = ObservationItem.create(
-                request.eventId().toString(),
-                session.getId().toString(),
+                request.eventId(),
+                session.getId(),
                 request.cctvCode(),
                 request.avgHeadcount(),
                 request.peakHeadcount(),
@@ -67,7 +67,7 @@ public class CongestionEventService {
         trainingEventPublisher.publishCongestionUpdated(session.getId(), edge.getId(), saveResult.item());
 
         CongestionLevel level = request.congestionLevel();
-        if (level == CongestionLevel.CROWDED) {
+        if (level.requiresRouteRecalculation()) {
             routeRecalculationService.trigger(session, edge, level);
         }
         return saveResult;
