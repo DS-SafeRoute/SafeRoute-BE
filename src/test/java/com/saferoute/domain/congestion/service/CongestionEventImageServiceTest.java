@@ -13,6 +13,7 @@ import com.saferoute.domain.telemetry.dynamo.entity.ImageUploadStatus;
 import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
 import com.saferoute.global.api.error.CongestionErrorCode;
+import com.saferoute.global.api.error.DeviceErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.global.security.DevicePrincipal;
 import com.saferoute.infrastructure.s3.service.S3Service;
@@ -22,6 +23,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -148,14 +151,68 @@ class CongestionEventImageServiceTest {
         item.setImageUploadedAt(request.uploadedAt());
         item.setImageUploadStatus(ImageUploadStatus.COMPLETED);
         given(observationRepository.findByEventId(EVENT_ID.toString())).willReturn(Optional.of(item));
-        given(s3Service.objectExists(IMAGE_KEY)).willReturn(true);
-        given(observationRepository.completeImageUpload(
-                EVENT_ID.toString(), IMAGE_KEY, request.uploadedAt()
-        )).willReturn(false);
 
         service.connectImage(principal, EVENT_ID, request);
 
+        verify(s3Service, never()).objectExists(IMAGE_KEY);
+        verify(observationRepository, never()).completeImageUpload(
+                EVENT_ID.toString(), IMAGE_KEY, request.uploadedAt()
+        );
         verify(trainingEventPublisher).publishCongestionImageUpdated(SESSION_ID, item);
+    }
+
+    @Test
+    @SuppressWarnings("deprecation")
+    void 기존_UPLOADED_완료_항목도_멱등하게_처리한다() {
+        item.setEventImageKey(IMAGE_KEY);
+        item.setImageUploadedAt(request.uploadedAt());
+        item.setImageUploadStatus(ImageUploadStatus.UPLOADED);
+        given(observationRepository.findByEventId(EVENT_ID.toString())).willReturn(Optional.of(item));
+
+        service.connectImage(principal, EVENT_ID, request);
+
+        verify(s3Service, never()).objectExists(IMAGE_KEY);
+        verify(observationRepository, never()).completeImageUpload(
+                EVENT_ID.toString(), IMAGE_KEY, request.uploadedAt()
+        );
+        verify(trainingEventPublisher).publishCongestionImageUpdated(SESSION_ID, item);
+    }
+
+    @Test
+    void 기존_항목의_누락된_이미지_상태는_PENDING으로_취급한다() {
+        item.setImageUploadStatus(null);
+        given(observationRepository.findByEventId(EVENT_ID.toString())).willReturn(Optional.of(item));
+        given(s3Service.objectExists(IMAGE_KEY)).willReturn(true);
+        given(observationRepository.completeImageUpload(
+                EVENT_ID.toString(), IMAGE_KEY, request.uploadedAt()
+        )).willReturn(true);
+
+        service.connectImage(principal, EVENT_ID, request);
+
+        verify(observationRepository).completeImageUpload(
+                EVENT_ID.toString(), IMAGE_KEY, request.uploadedAt()
+        );
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+            value = DeviceErrorCode.class,
+            names = {"CCTV_CODE_MISMATCH", "CCTV_DISABLED"}
+    )
+    void CCTV_권한_검증이_실패하면_후속_처리를_중단한다(DeviceErrorCode errorCode) {
+        given(observationRepository.findByEventId(EVENT_ID.toString())).willReturn(Optional.of(item));
+        given(deviceAuthorizationService.validateCctv(principal, CCTV_CODE))
+                .willThrow(new ApiException(errorCode));
+
+        assertThatThrownBy(() -> service.connectImage(principal, EVENT_ID, request))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", errorCode);
+
+        verify(s3Service, never()).objectExists(IMAGE_KEY);
+        verify(observationRepository, never()).completeImageUpload(
+                EVENT_ID.toString(), IMAGE_KEY, request.uploadedAt()
+        );
+        verify(trainingEventPublisher, never()).publishCongestionImageUpdated(SESSION_ID, item);
     }
 
     @Test

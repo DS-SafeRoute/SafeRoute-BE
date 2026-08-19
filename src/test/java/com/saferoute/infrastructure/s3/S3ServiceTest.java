@@ -22,6 +22,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectResponse;
@@ -116,5 +117,25 @@ class S3ServiceTest {
                 .thenThrow(S3Exception.builder().statusCode(404).message("not found").build());
 
         assertThat(s3Service.objectExists("missing.jpg")).isFalse();
+    }
+
+    @Test
+    void mapsS3ServerErrorToObjectCheckFailed() {
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenThrow(S3Exception.builder().statusCode(503).message("unavailable").build());
+
+        assertThatThrownBy(() -> s3Service.objectExists("event.jpg"))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", S3ErrorCode.OBJECT_CHECK_FAILED);
+    }
+
+    @Test
+    void mapsSdkFailureToObjectCheckFailed() {
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenThrow(SdkClientException.builder().message("network error").build());
+
+        assertThatThrownBy(() -> s3Service.objectExists("event.jpg"))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", S3ErrorCode.OBJECT_CHECK_FAILED);
     }
 }

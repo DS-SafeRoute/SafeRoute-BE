@@ -185,7 +185,20 @@ class ObservationRepositoryTest {
         assertThat(request.item().getImageUploadStatus().name()).isEqualTo("COMPLETED");
         assertThat(request.conditionExpression().expression())
                 .contains("#eventStatus = :processed")
+                .contains("attribute_not_exists(#imageStatus)")
                 .contains("#imageStatus = :pending OR #imageStatus = :failed");
+    }
+
+    @Test
+    void 이미지_조건부_갱신에_실패하면_false를_반환한다() {
+        doThrow(ConditionalCheckFailedException.builder().message("conflict").build())
+                .when(table).updateItem(any(UpdateItemEnhancedRequest.class));
+
+        boolean completed = repository.completeImageUpload(
+                "observation-1", "training/session/events/CCTV_001/event.jpg", 2_000L
+        );
+
+        assertThat(completed).isFalse();
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

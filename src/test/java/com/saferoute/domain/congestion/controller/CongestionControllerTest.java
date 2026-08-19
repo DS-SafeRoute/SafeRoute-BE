@@ -3,6 +3,7 @@ package com.saferoute.domain.congestion.controller;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.doThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -285,6 +286,41 @@ class CongestionControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("이벤트를 찾을 수 없으면 CONGESTION003과 404를 반환한다")
+    void connectEventImage_returnsNotFoundWhenEventMissing() throws Exception {
+        doThrow(new ApiException(CongestionErrorCode.EVENT_NOT_FOUND))
+                .when(congestionEventImageService).connectImage(any(), any(), any());
+
+        mockMvc.perform(patch("/api/v1/device/congestion-events/{eventId}/image", OBSERVATION_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validImageRequest())))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.code").value("CONGESTION003"));
+    }
+
+    @Test
+    @DisplayName("이미지 상태가 충돌하면 CONGESTION005와 409를 반환한다")
+    void connectEventImage_returnsConflictWhenImageStateConflicts() throws Exception {
+        doThrow(new ApiException(CongestionErrorCode.EVENT_IMAGE_STATE_CONFLICT))
+                .when(congestionEventImageService).connectImage(any(), any(), any());
+
+        mockMvc.perform(patch("/api/v1/device/congestion-events/{eventId}/image", OBSERVATION_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validImageRequest())))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.code").value("CONGESTION005"));
+    }
+
+    private ObjectNode validImageRequest() {
+        return objectMapper.createObjectNode()
+                .put("eventImageKey", "training/" + SESSION_ID + "/events/CCTV_001/"
+                        + OBSERVATION_ID + ".jpg")
+                .put("uploadedAt", 1_786_500_002_800L);
     }
 
     private ObservationItem observation() {
