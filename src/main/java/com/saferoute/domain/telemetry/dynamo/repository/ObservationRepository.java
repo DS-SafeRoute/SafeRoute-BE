@@ -83,10 +83,11 @@ public class ObservationRepository {
         item.setProcessingExpiresAt(processingExpiresAt);
 
         Expression condition = Expression.builder()
-                .expression("attribute_not_exists(#status)"
+                .expression("attribute_exists(#pk) AND (attribute_not_exists(#status)"
                         + " OR #status = :received"
                         + " OR #status = :failed"
-                        + " OR (#status = :processing AND #processingExpiresAt <= :now)")
+                        + " OR (#status = :processing AND #processingExpiresAt <= :now))")
+                .putExpressionName("#pk", "pk")
                 .putExpressionName("#status", "eventStatus")
                 .putExpressionName("#processingExpiresAt", "processingExpiresAt")
                 .putExpressionValue(":received", AttributeValue.fromS("RECEIVED"))

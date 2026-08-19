@@ -127,7 +127,11 @@ class ObservationRepositoryTest {
         assertThat(request.item().getProcessingStartedAt()).isEqualTo(10_000L);
         assertThat(request.item().getProcessingExpiresAt()).isEqualTo(40_000L);
         assertThat(request.conditionExpression().expression())
-                .contains("#status = :received", "#status = :failed", "#processingExpiresAt <= :now");
+                .startsWith("attribute_exists(#pk) AND (")
+                .contains("#status = :received", "#status = :failed", "#processingExpiresAt <= :now")
+                .endsWith(")");
+        assertThat(request.conditionExpression().expressionNames())
+                .containsEntry("#pk", "pk");
     }
 
     @Test
