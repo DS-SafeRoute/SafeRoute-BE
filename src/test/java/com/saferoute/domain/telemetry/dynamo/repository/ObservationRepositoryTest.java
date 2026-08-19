@@ -27,6 +27,7 @@ import software.amazon.awssdk.enhanced.dynamodb.model.Page;
 import software.amazon.awssdk.enhanced.dynamodb.model.PageIterable;
 import software.amazon.awssdk.enhanced.dynamodb.model.PutItemEnhancedRequest;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
+import software.amazon.awssdk.enhanced.dynamodb.model.UpdateItemEnhancedRequest;
 import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
 
 @ExtendWith(MockitoExtension.class)
@@ -111,9 +112,65 @@ class ObservationRepositoryTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void RECEIVED_FAILED_또는_만료된_PROCESSING만_조건부로_선점한다() {
+        ArgumentCaptor<UpdateItemEnhancedRequest<ObservationItem>> captor = updateRequestCaptor();
+
+        boolean claimed = repository.claimProcessing("observation-1", "worker-1", 10_000L, 40_000L);
+
+        assertThat(claimed).isTrue();
+        verify(table).updateItem(captor.capture());
+        UpdateItemEnhancedRequest<ObservationItem> request = captor.getValue();
+        assertThat(request.item().getEventStatus().name()).isEqualTo("PROCESSING");
+        assertThat(request.item().getProcessingOwner()).isEqualTo("worker-1");
+        assertThat(request.item().getProcessingStartedAt()).isEqualTo(10_000L);
+        assertThat(request.item().getProcessingExpiresAt()).isEqualTo(40_000L);
+        assertThat(request.conditionExpression().expression())
+                .contains("#status = :received", "#status = :failed", "#processingExpiresAt <= :now");
+    }
+
+    @Test
+    void 다른_요청이_처리_중이면_선점에_실패한다() {
+        doThrow(ConditionalCheckFailedException.builder().message("processing").build())
+                .when(table).updateItem(any(UpdateItemEnhancedRequest.class));
+
+        boolean claimed = repository.claimProcessing("observation-1", "worker-2", 10_000L, 40_000L);
+
+        assertThat(claimed).isFalse();
+    }
+
+    @Test
+    void 선점한_요청만_PROCESSED로_완료할_수_있다() {
+        ArgumentCaptor<UpdateItemEnhancedRequest<ObservationItem>> captor = updateRequestCaptor();
+
+        boolean completed = repository.completeProcessing("observation-1", "worker-1");
+
+        assertThat(completed).isTrue();
+        verify(table).updateItem(captor.capture());
+        assertThat(captor.getValue().item().getEventStatus().name()).isEqualTo("PROCESSED");
+        assertThat(captor.getValue().conditionExpression().expression())
+                .isEqualTo("#status = :processing AND #processingOwner = :processingOwner");
+    }
+
+    @Test
+    void 처리_실패를_FAILED로_기록한다() {
+        ArgumentCaptor<UpdateItemEnhancedRequest<ObservationItem>> captor = updateRequestCaptor();
+
+        boolean failed = repository.failProcessing("observation-1", "worker-1");
+
+        assertThat(failed).isTrue();
+        verify(table).updateItem(captor.capture());
+        assertThat(captor.getValue().item().getEventStatus().name()).isEqualTo("FAILED");
+    }
+
     @SuppressWarnings({"unchecked", "rawtypes"})
     private ArgumentCaptor<PutItemEnhancedRequest<ObservationItem>> requestCaptor() {
         return (ArgumentCaptor) ArgumentCaptor.forClass(PutItemEnhancedRequest.class);
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private ArgumentCaptor<UpdateItemEnhancedRequest<ObservationItem>> updateRequestCaptor() {
+        return (ArgumentCaptor) ArgumentCaptor.forClass(UpdateItemEnhancedRequest.class);
     }
 
     private ObservationItem item(String eventId, long capturedAt) {

@@ -33,6 +33,10 @@ public class ObservationItem {
     private String monitoringImageKey;
     private Long configVersion;
     private Long expiresAt;
+    private EventProcessingStatus eventStatus;
+    private Long processingStartedAt;
+    private Long processingExpiresAt;
+    private String processingOwner;
 
     public ObservationItem() {
     }
@@ -67,6 +71,7 @@ public class ObservationItem {
         item.monitoringImageKey = monitoringImageKey;
         item.configVersion = configVersion;
         item.expiresAt = Math.floorDiv(capturedAt, 1_000L) + TTL_SECONDS;
+        item.eventStatus = EventProcessingStatus.RECEIVED;
         item.pk = buildPk(item.eventId);
         item.sk = "META";
         item.gsi1Pk = buildGsi1Pk(item.trainingSessionId, cctvCode);
@@ -234,5 +239,37 @@ public class ObservationItem {
 
     public void setExpiresAt(Long expiresAt) {
         this.expiresAt = expiresAt;
+    }
+
+    public EventProcessingStatus getEventStatus() {
+        return eventStatus;
+    }
+
+    public void setEventStatus(EventProcessingStatus eventStatus) {
+        this.eventStatus = eventStatus;
+    }
+
+    public Long getProcessingStartedAt() {
+        return processingStartedAt;
+    }
+
+    public void setProcessingStartedAt(Long processingStartedAt) {
+        this.processingStartedAt = processingStartedAt;
+    }
+
+    public Long getProcessingExpiresAt() {
+        return processingExpiresAt;
+    }
+
+    public void setProcessingExpiresAt(Long processingExpiresAt) {
+        this.processingExpiresAt = processingExpiresAt;
+    }
+
+    public String getProcessingOwner() {
+        return processingOwner;
+    }
+
+    public void setProcessingOwner(String processingOwner) {
+        this.processingOwner = processingOwner;
     }
 }

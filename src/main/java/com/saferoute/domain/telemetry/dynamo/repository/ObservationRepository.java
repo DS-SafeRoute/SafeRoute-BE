@@ -1,5 +1,6 @@
 package com.saferoute.domain.telemetry.dynamo.repository;
 
+import com.saferoute.domain.telemetry.dynamo.entity.EventProcessingStatus;
 import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import java.util.List;
 import java.util.Optional;
@@ -12,9 +13,12 @@ import software.amazon.awssdk.enhanced.dynamodb.Expression;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
 import software.amazon.awssdk.enhanced.dynamodb.model.GetItemEnhancedRequest;
+import software.amazon.awssdk.enhanced.dynamodb.model.IgnoreNullsMode;
 import software.amazon.awssdk.enhanced.dynamodb.model.PutItemEnhancedRequest;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
+import software.amazon.awssdk.enhanced.dynamodb.model.UpdateItemEnhancedRequest;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
 
 @Repository
@@ -66,6 +70,49 @@ public class ObservationRepository {
         return Optional.ofNullable(table.getItem(request));
     }
 
+    public boolean claimProcessing(
+            String eventId,
+            String processingOwner,
+            long processingStartedAt,
+            long processingExpiresAt
+    ) {
+        ObservationItem item = processingUpdateItem(eventId);
+        item.setEventStatus(EventProcessingStatus.PROCESSING);
+        item.setProcessingOwner(processingOwner);
+        item.setProcessingStartedAt(processingStartedAt);
+        item.setProcessingExpiresAt(processingExpiresAt);
+
+        Expression condition = Expression.builder()
+                .expression("attribute_not_exists(#status)"
+                        + " OR #status = :received"
+                        + " OR #status = :failed"
+                        + " OR (#status = :processing AND #processingExpiresAt <= :now)")
+                .putExpressionName("#status", "eventStatus")
+                .putExpressionName("#processingExpiresAt", "processingExpiresAt")
+                .putExpressionValue(":received", AttributeValue.fromS("RECEIVED"))
+                .putExpressionValue(":failed", AttributeValue.fromS("FAILED"))
+                .putExpressionValue(":processing", AttributeValue.fromS("PROCESSING"))
+                .putExpressionValue(":now", AttributeValue.fromN(Long.toString(processingStartedAt)))
+                .build();
+        return updateConditionally(item, condition);
+    }
+
+    public boolean completeProcessing(String eventId, String processingOwner) {
+        return finishProcessing(
+                eventId,
+                processingOwner,
+                EventProcessingStatus.PROCESSED
+        );
+    }
+
+    public boolean failProcessing(String eventId, String processingOwner) {
+        return finishProcessing(
+                eventId,
+                processingOwner,
+                EventProcessingStatus.FAILED
+        );
+    }
+
     public List<ObservationItem> findAllBySessionIdAndCctvCode(
             String trainingSessionId,
             String cctvCode
@@ -96,6 +143,45 @@ public class ObservationRepository {
     private void validateLimit(int limit) {
         if (limit <= 0) {
             throw new IllegalArgumentException("limit은 0보다 커야합니다.");
+        }
+    }
+
+    private boolean finishProcessing(
+            String eventId,
+            String processingOwner,
+            EventProcessingStatus status
+    ) {
+        ObservationItem item = processingUpdateItem(eventId);
+        item.setEventStatus(status);
+        Expression condition = Expression.builder()
+                .expression("#status = :processing AND #processingOwner = :processingOwner")
+                .putExpressionName("#status", "eventStatus")
+                .putExpressionName("#processingOwner", "processingOwner")
+                .putExpressionValue(":processing", AttributeValue.fromS("PROCESSING"))
+                .putExpressionValue(":processingOwner", AttributeValue.fromS(processingOwner))
+                .build();
+        return updateConditionally(item, condition);
+    }
+
+    private ObservationItem processingUpdateItem(String eventId) {
+        ObservationItem item = new ObservationItem();
+        item.setPk(ObservationItem.buildPk(eventId));
+        item.setSk("META");
+        return item;
+    }
+
+    private boolean updateConditionally(ObservationItem item, Expression condition) {
+        UpdateItemEnhancedRequest<ObservationItem> request =
+                UpdateItemEnhancedRequest.builder(ObservationItem.class)
+                        .item(item)
+                        .ignoreNullsMode(IgnoreNullsMode.SCALAR_ONLY)
+                        .conditionExpression(condition)
+                        .build();
+        try {
+            table.updateItem(request);
+            return true;
+        } catch (ConditionalCheckFailedException exception) {
+            return false;
         }
     }
 }
