@@ -16,6 +16,7 @@ import com.saferoute.domain.device.dto.request.CreateCctvRequest;
 import com.saferoute.domain.device.dto.response.CctvGridCellResponse;
 import com.saferoute.domain.device.dto.response.CctvResponse;
 import com.saferoute.domain.device.dto.response.CctvRegistrationResponse;
+import com.saferoute.domain.device.dto.response.DeviceTokenIssueResponse;
 import com.saferoute.domain.device.service.CctvService;
 import com.saferoute.global.config.SecurityConfig;
 import com.saferoute.global.security.JwtAuthenticationFilter;
@@ -76,6 +77,16 @@ class CctvControllerTest {
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void issueDeviceToken_returnsRawTokenOnce() throws Exception {
+        given(cctvService.issueDeviceToken(cctvId))
+                .willReturn(new DeviceTokenIssueResponse("device-token"));
+
+        mockMvc.perform(post("/api/v1/cctvs/{cctvId}/device-token", cctvId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.deviceToken").value("device-token"));
     }
 
     @Test
