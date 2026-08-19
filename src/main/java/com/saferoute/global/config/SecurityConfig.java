@@ -1,6 +1,7 @@
 package com.saferoute.global.config;
 
 import com.saferoute.global.security.CustomUserDetailsService;
+import com.saferoute.global.security.DeviceAuthenticationFilter;
 import com.saferoute.global.security.JwtAccessDeniedHandler;
 import com.saferoute.global.security.JwtAuthenticationEntryPoint;
 import com.saferoute.global.security.JwtAuthenticationFilter;
@@ -29,6 +30,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final DeviceAuthenticationFilter deviceAuthenticationFilter;
     private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
     private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
 
@@ -80,6 +82,8 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers("/actuator/**").authenticated()
 
+                        .requestMatchers("/api/v1/device/**").hasRole("DEVICE")
+
                         .requestMatchers(
                                 HttpMethod.PATCH,
                                 "/api/v1/users/me"
@@ -109,6 +113,11 @@ public class SecurityConfig {
                 )
 
                 .authenticationProvider(authenticationProvider)
+
+                .addFilterBefore(
+                        deviceAuthenticationFilter,
+                        UsernamePasswordAuthenticationFilter.class
+                )
 
                 .addFilterBefore(
                         jwtAuthenticationFilter,
