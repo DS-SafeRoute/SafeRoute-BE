@@ -12,17 +12,13 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
-import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-@Component
-@RequiredArgsConstructor
 public class DeviceAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String DEVICE_PATH_PREFIX = "/api/v1/device/";
@@ -31,6 +27,16 @@ public class DeviceAuthenticationFilter extends OncePerRequestFilter {
     private final DeviceTokenService deviceTokenService;
     private final CctvJpaRepository cctvJpaRepository;
     private final ObjectMapper objectMapper;
+
+    public DeviceAuthenticationFilter(
+            DeviceTokenService deviceTokenService,
+            CctvJpaRepository cctvJpaRepository,
+            ObjectMapper objectMapper
+    ) {
+        this.deviceTokenService = deviceTokenService;
+        this.cctvJpaRepository = cctvJpaRepository;
+        this.objectMapper = objectMapper;
+    }
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {

@@ -1,7 +1,10 @@
 package com.saferoute.global.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.saferoute.domain.device.repository.CctvJpaRepository;
 import com.saferoute.global.security.CustomUserDetailsService;
 import com.saferoute.global.security.DeviceAuthenticationFilter;
+import com.saferoute.global.security.DeviceTokenService;
 import com.saferoute.global.security.JwtAccessDeniedHandler;
 import com.saferoute.global.security.JwtAuthenticationEntryPoint;
 import com.saferoute.global.security.JwtAuthenticationFilter;
@@ -30,7 +33,6 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
-    private final DeviceAuthenticationFilter deviceAuthenticationFilter;
     private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
     private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
 
@@ -38,8 +40,18 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             AuthenticationProvider authenticationProvider,
-            CorsConfigurationSource corsConfigurationSource
+            CorsConfigurationSource corsConfigurationSource,
+            DeviceTokenService deviceTokenService,
+            CctvJpaRepository cctvJpaRepository,
+            ObjectMapper objectMapper
     ) throws Exception {
+
+        DeviceAuthenticationFilter deviceAuthenticationFilter =
+                new DeviceAuthenticationFilter(
+                        deviceTokenService,
+                        cctvJpaRepository,
+                        objectMapper
+                );
 
         return http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource))
