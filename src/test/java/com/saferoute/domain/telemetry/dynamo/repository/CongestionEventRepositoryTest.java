@@ -91,7 +91,7 @@ class CongestionEventRepositoryTest {
         );
         ArgumentCaptor<QueryEnhancedRequest> captor = ArgumentCaptor.forClass(QueryEnhancedRequest.class);
 
-        List<CongestionEventItem> result = repository.findAllBySessionId("session-1", 10);
+        List<CongestionEventItem> result = repository.findAllBySessionId(SESSION_ID.toString(), 10);
 
         verify(gsi1).query(captor.capture());
         assertThat(captor.getValue().scanIndexForward()).isTrue();
@@ -99,7 +99,7 @@ class CongestionEventRepositoryTest {
                 .expression(TableSchema.fromBean(CongestionEventItem.class), CongestionEventItem.GSI1_NAME)
                 .expressionValues().values())
                 .extracting(value -> value.s())
-                .contains("SESSION#session-1");
+                .contains("SESSION#" + SESSION_ID);
         assertThat(result).containsExactly(first, second);
     }
 

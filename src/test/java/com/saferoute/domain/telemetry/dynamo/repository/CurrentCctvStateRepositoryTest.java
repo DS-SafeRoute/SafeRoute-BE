@@ -77,14 +77,14 @@ class CurrentCctvStateRepositoryTest {
         );
         ArgumentCaptor<QueryEnhancedRequest> captor = ArgumentCaptor.forClass(QueryEnhancedRequest.class);
 
-        List<CurrentCctvStateItem> result = repository.findAllBySessionId("session-1");
+        List<CurrentCctvStateItem> result = repository.findAllBySessionId(SESSION_ID.toString());
 
         verify(table).query(captor.capture());
         assertThat(captor.getValue().queryConditional()
                 .expression(TableSchema.fromBean(CurrentCctvStateItem.class), TableMetadata.primaryIndexName())
                 .expressionValues().values())
                 .extracting(value -> value.s())
-                .contains("CURRENT_STATE#session-1");
+                .contains("CURRENT_STATE#" + SESSION_ID);
         assertThat(result).containsExactly(first, second);
     }
 

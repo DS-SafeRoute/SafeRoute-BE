@@ -88,10 +88,22 @@ class CongestionControllerTest {
     }
 
     @Test
-    @DisplayName("trainingSessionId가 없거나 UUID 문자열이 아니면 400을 반환한다")
+    @DisplayName("trainingSessionId가 UUID 문자열이 아니면 400을 반환한다")
     void reportCongestion_returnsBadRequestWhenTrainingSessionIdIsInvalid() throws Exception {
         ObjectNode body = objectMapper.valueToTree(validRequest());
         body.put("trainingSessionId", "123");
+
+        mockMvc.perform(post("/api/v1/congestion-events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("trainingSessionId가 없으면 400을 반환한다")
+    void reportCongestion_returnsBadRequestWhenTrainingSessionIdIsMissing() throws Exception {
+        ObjectNode body = objectMapper.valueToTree(validRequest());
+        body.remove("trainingSessionId");
 
         mockMvc.perform(post("/api/v1/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)

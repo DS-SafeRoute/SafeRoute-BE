@@ -90,7 +90,7 @@ class ObservationRepositoryTest {
         ArgumentCaptor<QueryEnhancedRequest> captor = ArgumentCaptor.forClass(QueryEnhancedRequest.class);
 
         List<ObservationItem> result =
-                repository.findAllBySessionIdAndCctvCode("session-1", "CCTV_001", 10);
+                repository.findAllBySessionIdAndCctvCode(SESSION_ID.toString(), "CCTV_001", 10);
 
         verify(gsi1).query(captor.capture());
         assertThat(captor.getValue().scanIndexForward()).isTrue();
@@ -99,13 +99,15 @@ class ObservationRepositoryTest {
                 .expression(TableSchema.fromBean(ObservationItem.class), ObservationItem.GSI1_NAME)
                 .expressionValues().values())
                 .extracting(value -> value.s())
-                .contains("SESSION#session-1#CCTV#CCTV_001");
+                .contains("SESSION#" + SESSION_ID + "#CCTV#CCTV_001");
         assertThat(result).containsExactly(first, second);
     }
 
     @Test
     void 조회_limit은_양수여야_한다() {
-        assertThatThrownBy(() -> repository.findAllBySessionIdAndCctvCode("session-1", "CCTV_001", 0))
+        assertThatThrownBy(() -> repository.findAllBySessionIdAndCctvCode(
+                SESSION_ID.toString(), "CCTV_001", 0
+        ))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
