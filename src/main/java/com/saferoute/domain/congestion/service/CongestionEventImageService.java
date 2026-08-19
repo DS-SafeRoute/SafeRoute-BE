@@ -38,8 +38,14 @@ public class CongestionEventImageService {
     ) {
         ObservationItem item = findEvent(eventId);
         deviceAuthorizationService.validateCctv(principal, item.getCctvCode());
-        validateState(item, request);
+        validateEventProcessed(item);
         validateObjectKey(item, eventId, request.eventImageKey());
+
+        if (isSameCompletedImage(item, request)) {
+            publishImageUpdated(item);
+            return;
+        }
+        validateImageState(item);
 
         if (!s3Service.objectExists(request.eventImageKey())) {
             throw new ApiException(CongestionErrorCode.EVENT_IMAGE_OBJECT_NOT_FOUND);
@@ -67,14 +73,15 @@ public class CongestionEventImageService {
                 .orElseThrow(() -> new ApiException(CongestionErrorCode.EVENT_NOT_FOUND));
     }
 
-    private void validateState(ObservationItem item, ConnectEventImageRequest request) {
+    private void validateEventProcessed(ObservationItem item) {
         if (item.getEventStatus() != EventProcessingStatus.PROCESSED) {
             throw new ApiException(CongestionErrorCode.EVENT_NOT_PROCESSED);
         }
-        if (isSameCompletedImage(item, request)) {
-            return;
-        }
-        if (item.getImageUploadStatus() != ImageUploadStatus.PENDING
+    }
+
+    private void validateImageState(ObservationItem item) {
+        if (item.getImageUploadStatus() != null
+                && item.getImageUploadStatus() != ImageUploadStatus.PENDING
                 && item.getImageUploadStatus() != ImageUploadStatus.FAILED) {
             throw new ApiException(CongestionErrorCode.EVENT_IMAGE_STATE_CONFLICT);
         }
@@ -116,9 +123,14 @@ public class CongestionEventImageService {
             ObservationItem item,
             ConnectEventImageRequest request
     ) {
-        return item.getImageUploadStatus() == ImageUploadStatus.COMPLETED
+        return isCompletedStatus(item.getImageUploadStatus())
                 && Objects.equals(item.getEventImageKey(), request.eventImageKey())
                 && Objects.equals(item.getImageUploadedAt(), request.uploadedAt());
+    }
+
+    @SuppressWarnings("deprecation")
+    private boolean isCompletedStatus(ImageUploadStatus status) {
+        return status == ImageUploadStatus.COMPLETED || status == ImageUploadStatus.UPLOADED;
     }
 
     private void publishImageUpdated(ObservationItem item) {

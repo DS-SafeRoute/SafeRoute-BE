@@ -123,7 +123,8 @@ public class ObservationRepository {
 
         Expression condition = Expression.builder()
                 .expression("attribute_exists(#pk) AND #eventStatus = :processed"
-                        + " AND (#imageStatus = :pending OR #imageStatus = :failed)")
+                        + " AND (attribute_not_exists(#imageStatus)"
+                        + " OR #imageStatus = :pending OR #imageStatus = :failed)")
                 .putExpressionName("#pk", "pk")
                 .putExpressionName("#eventStatus", "eventStatus")
                 .putExpressionName("#imageStatus", "imageUploadStatus")
