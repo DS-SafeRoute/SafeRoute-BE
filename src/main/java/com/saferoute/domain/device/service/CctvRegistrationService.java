@@ -35,8 +35,8 @@ public class CctvRegistrationService {
     private final MapNodeJpaRepository mapNodeJpaRepository;
     private final FloorRepository floorRepository;
 
-    // 코드 유니크 충돌이 발생하면 MapNode/Cctv/매핑 저장을 모두 롤백한 뒤,
-    // 호출자인 CctvService가 새 코드로 별도 트랜잭션을 다시 시작한다.
+    // MapNode/Cctv/매핑 저장은 하나의 트랜잭션으로 처리한다.
+    // CCTV 코드는 호출 전에 독립 트랜잭션의 DB sequence로 이미 발급된다.
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CctvResponse register(CreateCctvRequest request, String code) {
         Floor floor = floorRepository.findById(request.floorId())

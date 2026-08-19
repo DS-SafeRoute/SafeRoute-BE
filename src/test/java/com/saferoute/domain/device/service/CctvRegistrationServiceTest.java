@@ -72,9 +72,9 @@ class CctvRegistrationServiceTest {
         given(mapNodeJpaRepository.save(any())).willAnswer(invocation -> invocation.getArgument(0));
         given(cctvJpaRepository.save(any())).willAnswer(invocation -> invocation.getArgument(0));
 
-        CctvResponse response = service.register(request, "CCTV_A1B2C3D4");
+        CctvResponse response = service.register(request, "CCTV_001");
 
-        assertThat(response.code()).isEqualTo("CCTV_A1B2C3D4");
+        assertThat(response.code()).isEqualTo("CCTV_001");
         assertThat(response.monitoredGridCellCount()).isEqualTo(2);
         assertThat(response.gridCells()).extracting("id").containsExactly(firstId, secondId);
         ArgumentCaptor<List<CctvGridCell>> mappings = ArgumentCaptor.forClass(List.class);
@@ -89,7 +89,7 @@ class CctvRegistrationServiceTest {
         CreateCctvRequest request = request(List.of(cellId, cellId));
         given(floorRepository.findById(floorId)).willReturn(Optional.of(floor));
 
-        assertThatThrownBy(() -> service.register(request, "CCTV_A1B2C3D4"))
+        assertThatThrownBy(() -> service.register(request, "CCTV_001"))
                 .isInstanceOf(ApiException.class)
                 .extracting("errorCode")
                 .isEqualTo(CctvErrorCode.DUPLICATE_GRID_CELL);
@@ -108,7 +108,7 @@ class CctvRegistrationServiceTest {
         given(floorRepository.findById(floorId)).willReturn(Optional.of(floor));
         given(floorGridCellRepository.findAllById(request.gridCellIds())).willReturn(List.of(cell));
 
-        assertThatThrownBy(() -> service.register(request, "CCTV_A1B2C3D4"))
+        assertThatThrownBy(() -> service.register(request, "CCTV_001"))
                 .isInstanceOf(ApiException.class)
                 .extracting("errorCode")
                 .isEqualTo(CctvErrorCode.GRID_CELL_FLOOR_MISMATCH);
@@ -123,7 +123,7 @@ class CctvRegistrationServiceTest {
         given(floorRepository.findById(floorId)).willReturn(Optional.of(floor));
         given(floorGridCellRepository.findAllById(request.gridCellIds())).willReturn(List.of(cell));
 
-        assertThatThrownBy(() -> service.register(request, "CCTV_A1B2C3D4"))
+        assertThatThrownBy(() -> service.register(request, "CCTV_001"))
                 .isInstanceOf(ApiException.class)
                 .extracting("errorCode")
                 .isEqualTo(CctvErrorCode.NON_WALKABLE_GRID_CELL);

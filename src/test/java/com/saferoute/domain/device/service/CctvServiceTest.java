@@ -1,12 +1,10 @@
 package com.saferoute.domain.device.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import com.saferoute.domain.device.dto.request.ConfigureCctvGridCellsRequest;
@@ -20,8 +18,6 @@ import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.evacuation.grid.entity.FloorGridCell;
 import com.saferoute.domain.evacuation.grid.repository.FloorGridCellRepository;
 import com.saferoute.domain.floor.entity.Floor;
-import com.saferoute.global.api.error.CctvErrorCode;
-import com.saferoute.global.api.exception.ApiException;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -31,7 +27,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.dao.DataIntegrityViolationException;
 
 @ExtendWith(MockitoExtension.class)
 class CctvServiceTest {
@@ -39,6 +34,7 @@ class CctvServiceTest {
     @Mock CctvJpaRepository cctvJpaRepository;
     @Mock CctvGridCellRepository cctvGridCellRepository;
     @Mock FloorGridCellRepository floorGridCellRepository;
+    @Mock CctvCodeAllocator cctvCodeAllocator;
     @Mock CctvRegistrationService cctvRegistrationService;
 
     private CctvService cctvService;
@@ -49,6 +45,7 @@ class CctvServiceTest {
                 cctvJpaRepository,
                 cctvGridCellRepository,
                 floorGridCellRepository,
+                cctvCodeAllocator,
                 cctvRegistrationService
         );
     }
@@ -58,6 +55,7 @@ class CctvServiceTest {
     void createCctv_success() {
         CreateCctvRequest request = request();
         CctvResponse expected = org.mockito.Mockito.mock(CctvResponse.class);
+        given(cctvCodeAllocator.allocate()).willReturn("CCTV_001");
         given(cctvRegistrationService.register(any(), any())).willReturn(expected);
 
         CctvResponse response = cctvService.createCctv(request);
@@ -65,35 +63,8 @@ class CctvServiceTest {
         assertThat(response).isSameAs(expected);
         verify(cctvRegistrationService).register(
                 org.mockito.ArgumentMatchers.eq(request),
-                org.mockito.ArgumentMatchers.matches("CCTV_[0-9A-F]{8}")
+                org.mockito.ArgumentMatchers.eq("CCTV_001")
         );
-    }
-
-    @Test
-    @DisplayName("CCTV 코드 유니크 충돌 시 새 코드로 최대 세 번 재시도한다")
-    void createCctv_retriesUniqueConflict() {
-        CreateCctvRequest request = request();
-        CctvResponse expected = org.mockito.Mockito.mock(CctvResponse.class);
-        given(cctvRegistrationService.register(any(), any()))
-                .willThrow(new DataIntegrityViolationException("duplicate code"))
-                .willThrow(new DataIntegrityViolationException("duplicate code"))
-                .willReturn(expected);
-
-        assertThat(cctvService.createCctv(request)).isSameAs(expected);
-        verify(cctvRegistrationService, times(3)).register(any(), any());
-    }
-
-    @Test
-    @DisplayName("CCTV 코드 충돌이 세 번 계속되면 명시적인 실패 응답을 반환한다")
-    void createCctv_failsAfterRetryLimit() {
-        given(cctvRegistrationService.register(any(), any()))
-                .willThrow(new DataIntegrityViolationException("duplicate code"));
-
-        assertThatThrownBy(() -> cctvService.createCctv(request()))
-                .isInstanceOf(ApiException.class)
-                .extracting("errorCode")
-                .isEqualTo(CctvErrorCode.CCTV_CODE_GENERATION_FAILED);
-        verify(cctvRegistrationService, times(3)).register(any(), any());
     }
 
     @Test
