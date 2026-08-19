@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import com.saferoute.domain.congestion.entity.CongestionLevel;
 import com.saferoute.domain.telemetry.dynamo.entity.CurrentCctvStateItem;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,6 +29,8 @@ import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedExce
 
 @ExtendWith(MockitoExtension.class)
 class CurrentCctvStateRepositoryTest {
+
+    private static final UUID SESSION_ID = UUID.fromString("00000000-0000-0000-0000-000000000003");
 
     @Mock
     private DynamoDbEnhancedClient enhancedClient;
@@ -74,14 +77,14 @@ class CurrentCctvStateRepositoryTest {
         );
         ArgumentCaptor<QueryEnhancedRequest> captor = ArgumentCaptor.forClass(QueryEnhancedRequest.class);
 
-        List<CurrentCctvStateItem> result = repository.findAllBySessionId("session-1");
+        List<CurrentCctvStateItem> result = repository.findAllBySessionId(SESSION_ID.toString());
 
         verify(table).query(captor.capture());
         assertThat(captor.getValue().queryConditional()
                 .expression(TableSchema.fromBean(CurrentCctvStateItem.class), TableMetadata.primaryIndexName())
                 .expressionValues().values())
                 .extracting(value -> value.s())
-                .contains("CURRENT_STATE#session-1");
+                .contains("CURRENT_STATE#" + SESSION_ID);
         assertThat(result).containsExactly(first, second);
     }
 
@@ -92,7 +95,7 @@ class CurrentCctvStateRepositoryTest {
 
     private CurrentCctvStateItem item(String cctvCode, long timestamp) {
         return CurrentCctvStateItem.create(
-                "session-1", cctvCode, 9, 4.5, CongestionLevel.CROWDED, timestamp, 1L
+                SESSION_ID, cctvCode, 9, 4.5, CongestionLevel.CROWDED, timestamp, 1L
         );
     }
 }

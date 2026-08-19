@@ -13,6 +13,8 @@ import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventType;
 import com.saferoute.domain.telemetry.dynamo.entity.EventProcessingStatus;
 import com.saferoute.domain.telemetry.dynamo.entity.ImageUploadStatus;
 import java.util.List;
+import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,6 +34,8 @@ import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedExce
 
 @ExtendWith(MockitoExtension.class)
 class CongestionEventRepositoryTest {
+
+    private static final UUID SESSION_ID = UUID.fromString("00000000-0000-0000-0000-000000000003");
 
     @Mock
     private DynamoDbEnhancedClient enhancedClient;
@@ -87,7 +91,7 @@ class CongestionEventRepositoryTest {
         );
         ArgumentCaptor<QueryEnhancedRequest> captor = ArgumentCaptor.forClass(QueryEnhancedRequest.class);
 
-        List<CongestionEventItem> result = repository.findAllBySessionId("session-1", 10);
+        List<CongestionEventItem> result = repository.findAllBySessionId(SESSION_ID.toString(), 10);
 
         verify(gsi1).query(captor.capture());
         assertThat(captor.getValue().scanIndexForward()).isTrue();
@@ -95,7 +99,7 @@ class CongestionEventRepositoryTest {
                 .expression(TableSchema.fromBean(CongestionEventItem.class), CongestionEventItem.GSI1_NAME)
                 .expressionValues().values())
                 .extracting(value -> value.s())
-                .contains("SESSION#session-1");
+                .contains("SESSION#" + SESSION_ID);
         assertThat(result).containsExactly(first, second);
     }
 
@@ -165,7 +169,8 @@ class CongestionEventRepositoryTest {
 
     private CongestionEventItem item(String eventId, long detectedAt) {
         return CongestionEventItem.received(
-                eventId, "session-1", "CCTV_001", CongestionEventType.CONGESTION_STARTED,
+                UUID.nameUUIDFromBytes(eventId.getBytes(StandardCharsets.UTF_8)), SESSION_ID,
+                "CCTV_001", CongestionEventType.CONGESTION_STARTED,
                 detectedAt, 9, 4.5, CongestionLevel.CROWDED, 4.5,
                 CongestionLevel.CROWDED, 1L, null
         );

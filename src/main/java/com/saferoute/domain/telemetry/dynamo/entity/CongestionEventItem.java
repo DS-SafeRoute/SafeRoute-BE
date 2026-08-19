@@ -1,6 +1,7 @@
 package com.saferoute.domain.telemetry.dynamo.entity;
 
 import com.saferoute.domain.congestion.entity.CongestionLevel;
+import java.util.UUID;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbAttribute;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbPartitionKey;
@@ -36,8 +37,8 @@ public class CongestionEventItem {
     }
 
     public static CongestionEventItem received(
-            String eventId,
-            String trainingSessionId,
+            UUID eventId,
+            UUID trainingSessionId,
             String cctvCode,
             CongestionEventType eventType,
             long detectedAt,
@@ -50,8 +51,8 @@ public class CongestionEventItem {
             String eventImageKey
     ) {
         CongestionEventItem item = new CongestionEventItem();
-        item.eventId = eventId;
-        item.trainingSessionId = trainingSessionId;
+        item.eventId = eventId.toString();
+        item.trainingSessionId = trainingSessionId.toString();
         item.cctvCode = cctvCode;
         item.eventType = eventType;
         item.detectedAt = detectedAt;
@@ -64,10 +65,10 @@ public class CongestionEventItem {
         item.eventImageKey = eventImageKey;
         item.eventStatus = EventProcessingStatus.RECEIVED;
         item.imageUploadStatus = ImageUploadStatus.PENDING;
-        item.pk = buildPk(eventId);
+        item.pk = buildPk(item.eventId);
         item.sk = "META";
-        item.gsi1Pk = buildGsi1Pk(trainingSessionId);
-        item.gsi1Sk = buildGsi1Sk(detectedAt, eventId);
+        item.gsi1Pk = buildGsi1Pk(item.trainingSessionId);
+        item.gsi1Sk = buildGsi1Sk(detectedAt, item.eventId);
         return item;
     }
 

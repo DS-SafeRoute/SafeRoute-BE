@@ -1,6 +1,7 @@
 package com.saferoute.domain.telemetry.dynamo.entity;
 
 import com.saferoute.domain.congestion.entity.CongestionLevel;
+import java.util.UUID;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbAttribute;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbPartitionKey;
@@ -37,8 +38,8 @@ public class ObservationItem {
     }
 
     public static ObservationItem create(
-            String eventId,
-            String trainingSessionId,
+            UUID eventId,
+            UUID trainingSessionId,
             String cctvCode,
             Double avgHeadcount,
             Integer peakHeadcount,
@@ -52,8 +53,8 @@ public class ObservationItem {
             long configVersion
     ) {
         ObservationItem item = new ObservationItem();
-        item.eventId = eventId;
-        item.trainingSessionId = trainingSessionId;
+        item.eventId = eventId.toString();
+        item.trainingSessionId = trainingSessionId.toString();
         item.cctvCode = cctvCode;
         item.avgHeadcount = avgHeadcount;
         item.peakHeadcount = peakHeadcount;
@@ -66,9 +67,9 @@ public class ObservationItem {
         item.monitoringImageKey = monitoringImageKey;
         item.configVersion = configVersion;
         item.expiresAt = Math.floorDiv(capturedAt, 1_000L) + TTL_SECONDS;
-        item.pk = buildPk(eventId);
+        item.pk = buildPk(item.eventId);
         item.sk = "META";
-        item.gsi1Pk = buildGsi1Pk(trainingSessionId, cctvCode);
+        item.gsi1Pk = buildGsi1Pk(item.trainingSessionId, cctvCode);
         item.gsi1Sk = buildGsi1Sk(capturedAt);
         return item;
     }

@@ -59,6 +59,7 @@ class CongestionEventServiceTest {
 
     private final UUID edgeId = UUID.randomUUID();
     private final UUID buildingId = UUID.randomUUID();
+    private final UUID sessionId = UUID.randomUUID();
     private MapEdge edge;
 
     @BeforeEach
@@ -76,7 +77,7 @@ class CongestionEventServiceTest {
 
     private ReportCongestionRequest request(CongestionLevel level) {
         return new ReportCongestionRequest(
-                UUID.randomUUID(), edgeId, "CCTV_001", 5.0, 8, 25, 2.5,
+                UUID.randomUUID(), sessionId, edgeId, "CCTV_001", 5.0, 8, 25, 2.5,
                 level, 1_000L, 2_000L, 2_000L, 1L, null
         );
     }
@@ -95,8 +96,9 @@ class CongestionEventServiceTest {
     @DisplayName("대상 건물에 RUNNING 세션이 없으면 전용 에러를 반환한다")
     void reportCongestion_throwsWhenNoRunningSession() {
         given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
-        given(trainingSessionRepository.findFirstByStatusAndScenario_Building_IdOrderByStartedAtAsc(TrainingStatus.RUNNING, buildingId))
-                .willReturn(Optional.empty());
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId
+        )).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> congestionEventService.reportCongestion(request(CongestionLevel.CROWDED)))
                 .isInstanceOf(ApiException.class)
@@ -114,11 +116,12 @@ class CongestionEventServiceTest {
     @DisplayName("NORMAL/CAUTION은 저장·발행만 하고 재탐색은 트리거하지 않는다")
     void reportCongestion_doesNotTriggerRecalculationForLowLevel() {
         TrainingSession session = mock(TrainingSession.class);
-        given(session.getId()).willReturn(UUID.randomUUID());
+        given(session.getId()).willReturn(sessionId);
 
         given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
-        given(trainingSessionRepository.findFirstByStatusAndScenario_Building_IdOrderByStartedAtAsc(TrainingStatus.RUNNING, buildingId))
-                .willReturn(Optional.of(session));
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId
+        )).willReturn(Optional.of(session));
         given(observationRepository.saveIfAbsent(any())).willAnswer(invocation ->
                 IdempotentSaveResult.created(invocation.getArgument(0, ObservationItem.class)));
 
@@ -138,11 +141,12 @@ class CongestionEventServiceTest {
     @DisplayName("CROWDED이면 저장·발행 후 재탐색을 트리거한다")
     void reportCongestion_triggersRecalculationForHighLevel() {
         TrainingSession session = mock(TrainingSession.class);
-        given(session.getId()).willReturn(UUID.randomUUID());
+        given(session.getId()).willReturn(sessionId);
 
         given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
-        given(trainingSessionRepository.findFirstByStatusAndScenario_Building_IdOrderByStartedAtAsc(TrainingStatus.RUNNING, buildingId))
-                .willReturn(Optional.of(session));
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId
+        )).willReturn(Optional.of(session));
         given(observationRepository.saveIfAbsent(any())).willAnswer(invocation ->
                 IdempotentSaveResult.created(invocation.getArgument(0, ObservationItem.class)));
 
@@ -153,13 +157,30 @@ class CongestionEventServiceTest {
     }
 
     @Test
+    @DisplayName("VERY_CROWDED이면 저장·발행 후 재탐색을 트리거한다")
+    void reportCongestion_triggersRecalculationForVeryCrowdedLevel() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId
+        )).willReturn(Optional.of(session));
+        given(observationRepository.saveIfAbsent(any())).willAnswer(invocation ->
+                IdempotentSaveResult.created(invocation.getArgument(0, ObservationItem.class)));
+
+        congestionEventService.reportCongestion(request(CongestionLevel.VERY_CROWDED));
+
+        verify(routeRecalculationService).trigger(session, edge, CongestionLevel.VERY_CROWDED);
+    }
+
+    @Test
     @DisplayName("중복 eventId이면 발행과 재탐색을 다시 수행하지 않는다")
     void reportCongestion_doesNotRepeatSideEffectsForDuplicateEvent() {
         TrainingSession session = mock(TrainingSession.class);
-        given(session.getId()).willReturn(UUID.randomUUID());
+        given(session.getId()).willReturn(sessionId);
         given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
-        given(trainingSessionRepository.findFirstByStatusAndScenario_Building_IdOrderByStartedAtAsc(
-                TrainingStatus.RUNNING, buildingId
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId
         )).willReturn(Optional.of(session));
         given(observationRepository.saveIfAbsent(any())).willAnswer(invocation ->
                 IdempotentSaveResult.existing(invocation.getArgument(0, ObservationItem.class)));

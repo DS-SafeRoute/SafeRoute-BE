@@ -9,6 +9,7 @@ import java.util.UUID;
 
 public record ReportCongestionRequest(
         @NotNull UUID eventId,
+        @NotNull UUID trainingSessionId,
         @NotNull UUID edgeId,
         @NotBlank String cctvCode,
         @NotNull @PositiveOrZero Double avgHeadcount,

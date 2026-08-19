@@ -41,12 +41,16 @@ public class CongestionEventService {
 
         var buildingId = edge.getFloor().getBuilding().getId();
         TrainingSession session = trainingSessionRepository
-                .findFirstByStatusAndScenario_Building_IdOrderByStartedAtAsc(TrainingStatus.RUNNING, buildingId)
+                .findByIdAndStatusAndScenario_Building_Id(
+                        request.trainingSessionId(),
+                        TrainingStatus.RUNNING,
+                        buildingId
+                )
                 .orElseThrow(() -> new ApiException(TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND));
 
         ObservationItem item = ObservationItem.create(
-                request.eventId().toString(),
-                session.getId().toString(),
+                request.eventId(),
+                session.getId(),
                 request.cctvCode(),
                 request.avgHeadcount(),
                 request.peakHeadcount(),
@@ -67,7 +71,7 @@ public class CongestionEventService {
         trainingEventPublisher.publishCongestionUpdated(session.getId(), edge.getId(), saveResult.item());
 
         CongestionLevel level = request.congestionLevel();
-        if (level == CongestionLevel.CROWDED) {
+        if (level.requiresRouteRecalculation()) {
             routeRecalculationService.trigger(session, edge, level);
         }
         return saveResult;

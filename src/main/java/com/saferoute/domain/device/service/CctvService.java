@@ -19,7 +19,6 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,24 +27,14 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class CctvService {
 
-    private static final String CCTV_CODE_PREFIX = "CCTV_";
-    private static final int CODE_GENERATION_MAX_ATTEMPTS = 3;
-
     private final CctvJpaRepository cctvJpaRepository;
     private final CctvGridCellRepository cctvGridCellRepository;
     private final FloorGridCellRepository floorGridCellRepository;
+    private final CctvCodeAllocator cctvCodeAllocator;
     private final CctvRegistrationService cctvRegistrationService;
 
     public CctvResponse createCctv(CreateCctvRequest request) {
-        DataIntegrityViolationException lastConflict = null;
-        for (int attempt = 0; attempt < CODE_GENERATION_MAX_ATTEMPTS; attempt++) {
-            try {
-                return cctvRegistrationService.register(request, generateCctvCode());
-            } catch (DataIntegrityViolationException exception) {
-                lastConflict = exception;
-            }
-        }
-        throw new ApiException(CctvErrorCode.CCTV_CODE_GENERATION_FAILED, lastConflict);
+        return cctvRegistrationService.register(request, cctvCodeAllocator.allocate());
     }
 
     public List<CctvResponse> getCctvs(UUID floorId) {
@@ -164,8 +153,4 @@ public class CctvService {
                 .orElseThrow(() -> new ApiException(CctvErrorCode.CCTV_NOT_FOUND));
     }
 
-    private String generateCctvCode() {
-        return CCTV_CODE_PREFIX
-                + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
-    }
 }

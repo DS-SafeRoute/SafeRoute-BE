@@ -119,7 +119,7 @@ class CctvControllerTest {
     private CctvResponse response(boolean enabled) {
         return new CctvResponse(
                 cctvId,
-                "CCTV_A1B2C3D4",
+                "CCTV_001",
                 "3층 복도 CCTV",
                 floorId,
                 UUID.randomUUID(),
