@@ -36,10 +36,6 @@ aws:
   dynamodb:
     table-name: test-saferoute-telemetry
 
-  credentials:
-    access-key: test
-    secret-key: test
-
 springdoc:
   api-docs:
     path: /v3/api-docs
