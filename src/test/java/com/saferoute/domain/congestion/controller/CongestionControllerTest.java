@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.saferoute.domain.congestion.dto.request.ReportCongestionRequest;
 import com.saferoute.domain.congestion.entity.CongestionLevel;
 import com.saferoute.domain.congestion.service.CongestionEventService;
+import com.saferoute.domain.device.service.DeviceAuthorizationService;
 import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import com.saferoute.domain.telemetry.dynamo.repository.IdempotentSaveResult;
 import com.saferoute.global.api.error.EvacuationErrorCode;
@@ -18,6 +19,7 @@ import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.global.config.SecurityConfig;
 import com.saferoute.global.security.JwtAuthenticationFilter;
+import com.saferoute.global.security.DeviceAuthenticationFilter;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -34,7 +36,11 @@ import org.springframework.test.web.servlet.MockMvc;
         controllers = CongestionController.class,
         excludeFilters = @ComponentScan.Filter(
                 type = FilterType.ASSIGNABLE_TYPE,
-                classes = {JwtAuthenticationFilter.class, SecurityConfig.class}
+                classes = {
+                        JwtAuthenticationFilter.class,
+                        DeviceAuthenticationFilter.class,
+                        SecurityConfig.class
+                }
         )
 )
 @AutoConfigureMockMvc(addFilters = false)
@@ -52,6 +58,9 @@ class CongestionControllerTest {
     @MockitoBean
     private CongestionEventService congestionEventService;
 
+    @MockitoBean
+    private DeviceAuthorizationService deviceAuthorizationService;
+
     private ReportCongestionRequest validRequest() {
         return new ReportCongestionRequest(
                 UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
@@ -66,7 +75,7 @@ class CongestionControllerTest {
         given(congestionEventService.reportCongestion(any()))
                 .willReturn(IdempotentSaveResult.created(observation()));
 
-        mockMvc.perform(post("/api/v1/congestion-events")
+        mockMvc.perform(post("/api/v1/device/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(validRequest())))
                 .andExpect(status().isCreated())
@@ -80,7 +89,7 @@ class CongestionControllerTest {
         given(congestionEventService.reportCongestion(any()))
                 .willReturn(IdempotentSaveResult.existing(observation()));
 
-        mockMvc.perform(post("/api/v1/congestion-events")
+        mockMvc.perform(post("/api/v1/device/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(validRequest())))
                 .andExpect(status().isOk())
@@ -93,7 +102,7 @@ class CongestionControllerTest {
         ObjectNode body = objectMapper.valueToTree(validRequest());
         body.put("trainingSessionId", "123");
 
-        mockMvc.perform(post("/api/v1/congestion-events")
+        mockMvc.perform(post("/api/v1/device/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isBadRequest());
@@ -105,7 +114,7 @@ class CongestionControllerTest {
         ObjectNode body = objectMapper.valueToTree(validRequest());
         body.remove("trainingSessionId");
 
-        mockMvc.perform(post("/api/v1/congestion-events")
+        mockMvc.perform(post("/api/v1/device/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isBadRequest());
@@ -120,7 +129,7 @@ class CongestionControllerTest {
                 CongestionLevel.CROWDED, 1_000L, 2_000L, 2_000L, 1L, null
         );
 
-        mockMvc.perform(post("/api/v1/congestion-events")
+        mockMvc.perform(post("/api/v1/device/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(invalid)))
                 .andExpect(status().isBadRequest());
@@ -135,7 +144,7 @@ class CongestionControllerTest {
                 CongestionLevel.CROWDED, 1_000L, 2_000L, 2_000L, 1L, null
         );
 
-        mockMvc.perform(post("/api/v1/congestion-events")
+        mockMvc.perform(post("/api/v1/device/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(invalid)))
                 .andExpect(status().isBadRequest());
@@ -150,7 +159,7 @@ class CongestionControllerTest {
                 CongestionLevel.CROWDED, 1_000L, 2_000L, 2_000L, 1L, null
         );
 
-        mockMvc.perform(post("/api/v1/congestion-events")
+        mockMvc.perform(post("/api/v1/device/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(invalid)))
                 .andExpect(status().isBadRequest());
@@ -165,7 +174,7 @@ class CongestionControllerTest {
                 CongestionLevel.CROWDED, 1_000L, 2_000L, 2_000L, 1L, null
         );
 
-        mockMvc.perform(post("/api/v1/congestion-events")
+        mockMvc.perform(post("/api/v1/device/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(invalid)))
                 .andExpect(status().isBadRequest());
@@ -180,7 +189,7 @@ class CongestionControllerTest {
                 CongestionLevel.CROWDED, 2_000L, 1_000L, 2_000L, 1L, null
         );
 
-        mockMvc.perform(post("/api/v1/congestion-events")
+        mockMvc.perform(post("/api/v1/device/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(invalid)))
                 .andExpect(status().isBadRequest());
@@ -192,22 +201,22 @@ class CongestionControllerTest {
         given(congestionEventService.reportCongestion(any()))
                 .willThrow(new ApiException(EvacuationErrorCode.MAP_EDGE_NOT_FOUND));
 
-        mockMvc.perform(post("/api/v1/congestion-events")
+        mockMvc.perform(post("/api/v1/device/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(validRequest())))
                 .andExpect(status().isNotFound());
     }
 
     @Test
-    @DisplayName("진행 중인 훈련 세션이 없으면 공통 에러 코드와 404를 반환한다")
-    void reportCongestion_returnsNotFoundWhenRunningSessionMissing() throws Exception {
+    @DisplayName("진행 중인 훈련 세션이 없으면 공통 에러 코드와 409를 반환한다")
+    void reportCongestion_returnsConflictWhenRunningSessionMissing() throws Exception {
         given(congestionEventService.reportCongestion(any()))
                 .willThrow(new ApiException(TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND));
 
-        mockMvc.perform(post("/api/v1/congestion-events")
+        mockMvc.perform(post("/api/v1/device/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(validRequest())))
-                .andExpect(status().isNotFound())
+                .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.isSuccess").value(false))
                 .andExpect(jsonPath("$.code").value("TRAINING006"));
     }
