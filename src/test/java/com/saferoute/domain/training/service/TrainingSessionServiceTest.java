@@ -88,7 +88,7 @@ class TrainingSessionServiceTest {
     // === start ===
 
     @Test
-    @DisplayName("SCHEDULED 상태의 세션을 시작하면 RUNNING으로 전이하고 이벤트를 발행한다")
+    @DisplayName("SCHEDULED 상태의 세션을 시작하면 RUNNING으로 전이하고 이벤트를 발행하며 시나리오도 IN_PROGRESS로 바뀐다")
     void start_fromScheduled_transitionsToRunningAndPublishesEvent() {
         TrainingSession session = sessionWithStatus(TrainingStatus.SCHEDULED);
         given(trainingSessionRepository.findById(sessionId)).willReturn(Optional.of(session));
@@ -97,6 +97,7 @@ class TrainingSessionServiceTest {
 
         assertThat(session.getStatus()).isEqualTo(TrainingStatus.RUNNING);
         verify(trainingEventPublisher, times(1)).publishTrainingStatusUpdatedAfterCommit(session);
+        verify(session.getScenario(), times(1)).markInProgress();
     }
 
     @Test
@@ -126,7 +127,7 @@ class TrainingSessionServiceTest {
     // === end ===
 
     @Test
-    @DisplayName("RUNNING 상태의 세션을 정상 종료하면 COMPLETED로 전이하고 이벤트를 발행한다")
+    @DisplayName("RUNNING 상태의 세션을 정상 종료하면 COMPLETED로 전이하고 이벤트를 발행하며 시나리오도 COMPLETED로 바뀐다")
     void end_fromRunning_transitionsToCompletedAndPublishesEvent() {
         TrainingSession session = sessionWithStatus(TrainingStatus.RUNNING);
         given(trainingSessionRepository.findById(sessionId)).willReturn(Optional.of(session));
@@ -136,6 +137,7 @@ class TrainingSessionServiceTest {
         assertThat(session.getStatus()).isEqualTo(TrainingStatus.COMPLETED);
         assertThat(session.getEndedAt()).isNotNull();
         verify(trainingEventPublisher, times(1)).publishTrainingStatusUpdatedAfterCommit(session);
+        verify(session.getScenario(), times(1)).markCompleted();
     }
 
     @Test
@@ -166,7 +168,7 @@ class TrainingSessionServiceTest {
     // === forceEnd ===
 
     @Test
-    @DisplayName("RUNNING 상태의 세션을 강제 종료하면 STOPPED로 전이하고 이벤트를 발행한다")
+    @DisplayName("RUNNING 상태의 세션을 강제 종료하면 STOPPED로 전이하고 이벤트를 발행하며 시나리오는 ERROR로 바뀐다")
     void forceEnd_fromRunning_transitionsToStoppedAndPublishesEvent() {
         TrainingSession session = sessionWithStatus(TrainingStatus.RUNNING);
         given(trainingSessionRepository.findById(sessionId)).willReturn(Optional.of(session));
@@ -175,6 +177,7 @@ class TrainingSessionServiceTest {
 
         assertThat(session.getStatus()).isEqualTo(TrainingStatus.STOPPED);
         verify(trainingEventPublisher, times(1)).publishTrainingStatusUpdatedAfterCommit(session);
+        verify(session.getScenario(), times(1)).markError();
     }
 
     @Test
@@ -205,7 +208,7 @@ class TrainingSessionServiceTest {
     // === failTimedOutSessions ===
 
     @Test
-    @DisplayName("10분 타임아웃을 넘긴 RUNNING 세션을 FAILED로 처리하고 이벤트를 발행한다")
+    @DisplayName("10분 타임아웃을 넘긴 RUNNING 세션을 FAILED로 처리하고 이벤트를 발행하며 시나리오는 ERROR로 바뀐다")
     void failTimedOutSessions_marksExpiredSessionsAsFailed() {
         TrainingSession timedOut = TrainingSession.create(
                 TrainingStatus.RUNNING,
@@ -221,6 +224,7 @@ class TrainingSessionServiceTest {
 
         assertThat(timedOut.getStatus()).isEqualTo(TrainingStatus.FAILED);
         verify(trainingEventPublisher, times(1)).publishTrainingStatusUpdatedAfterCommit(timedOut);
+        verify(timedOut.getScenario(), times(1)).markError();
     }
 
     @Test
