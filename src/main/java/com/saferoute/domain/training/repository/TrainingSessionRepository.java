@@ -3,10 +3,14 @@ package com.saferoute.domain.training.repository;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface TrainingSessionRepository extends JpaRepository<TrainingSession, UUID> {
 
@@ -15,4 +19,10 @@ public interface TrainingSessionRepository extends JpaRepository<TrainingSession
   // Pi가 보낸 UUID 세션이 실행 중이고, 혼잡 엣지와 같은 건물에 속하는지 한 번에 검증한다.
   Optional<TrainingSession> findByIdAndStatusAndScenario_Building_Id(
       UUID id, TrainingStatus status, UUID buildingId);
+
+  boolean existsByScenario_Id(UUID scenarioId);
+
+  // 목록 조회에서 시나리오별로 deletable을 N+1 없이 계산하기 위해, 세션이 하나라도 있는 시나리오 id만 모아서 가져온다.
+  @Query("select distinct s.scenario.id from TrainingSession s where s.scenario.id in :scenarioIds")
+  Set<UUID> findScenarioIdsWithAnySession(@Param("scenarioIds") Collection<UUID> scenarioIds);
 }
