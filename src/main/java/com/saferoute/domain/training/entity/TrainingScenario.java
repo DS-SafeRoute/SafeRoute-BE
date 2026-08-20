@@ -55,6 +55,12 @@ public class TrainingScenario {
     @Column(name = "is_template", nullable = false)
     private Boolean isTemplate = false;
 
+    // 연결된 세션의 생명주기에 따라 갱신되는 진행 상태 (상태 전이 가드는 TrainingSessionService가 담당).
+    @NotNull
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
+    private ScenarioStatus status;
+
     // 화재 확산 속도. 발화점(FireZone)마다가 아니라 시나리오 전체에 하나로 적용된다.
     // 확산 시뮬레이션의 tick 간격을 결정한다. (FAST < MEDIUM < SLOW 순으로 주기가 짧음)
     @NotNull
@@ -99,6 +105,9 @@ public class TrainingScenario {
         scenario.fireSpreadSpeed = fireSpreadSpeed != null ? fireSpreadSpeed : FireSpreadSpeed.MEDIUM;
         scenario.building = building;
         scenario.admin = admin;
+        // 생성 시점엔 필수 필드가 모두 채워져 있어 바로 실행 가능한 상태로 시작한다.
+        // 초안 저장(DRAFT) 플로우는 별도 엔드포인트가 생기면 그때 지정한다.
+        scenario.status = ScenarioStatus.READY;
         return scenario;
     }
 
@@ -112,6 +121,20 @@ public class TrainingScenario {
         if (scheduledAt != null) this.scheduledAt = scheduledAt;
         if (isTemplate != null) this.isTemplate = isTemplate;
         if (fireSpreadSpeed != null) this.fireSpreadSpeed = fireSpreadSpeed;
+    }
+
+    // 상태 전이 가드는 이 엔티티가 아니라 TrainingSessionService가 담당한다
+    // (RouteRecalculation, IoTLight와 동일한 컨벤션 - 엔티티는 단순 세터).
+    public void markInProgress() {
+        this.status = ScenarioStatus.IN_PROGRESS;
+    }
+
+    public void markCompleted() {
+        this.status = ScenarioStatus.COMPLETED;
+    }
+
+    public void markError() {
+        this.status = ScenarioStatus.ERROR;
     }
 
     // 응답용 getter
