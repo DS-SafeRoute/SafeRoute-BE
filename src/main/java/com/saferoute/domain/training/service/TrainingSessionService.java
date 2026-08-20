@@ -100,6 +100,7 @@ public class TrainingSessionService {
     }
 
     session.start(Instant.now());
+    session.getScenario().markInProgress();
     trainingEventPublisher.publishTrainingStatusUpdatedAfterCommit(session);
 
     return TrainingSessionResponse.from(session);
@@ -114,11 +115,13 @@ public class TrainingSessionService {
     }
 
     session.complete(Instant.now());
+    session.getScenario().markCompleted();
     trainingEventPublisher.publishTrainingStatusUpdatedAfterCommit(session);
 
     return TrainingSessionResponse.from(session);
   }
 
+  // 관리자가 훈련을 중간에 강제로 끊는 경우로, 정상 종료(COMPLETED)와 구분해 시나리오도 ERROR로 표시한다.
   @Transactional
   public TrainingSessionResponse forceEnd(UUID sessionId) {
     TrainingSession session = findSession(sessionId);
@@ -128,6 +131,7 @@ public class TrainingSessionService {
     }
 
     session.stop(Instant.now());
+    session.getScenario().markError();
     trainingEventPublisher.publishTrainingStatusUpdatedAfterCommit(session);
 
     return TrainingSessionResponse.from(session);
@@ -142,6 +146,7 @@ public class TrainingSessionService {
 
     for (TrainingSession session : timedOutSessions) {
       session.fail(Instant.now());
+      session.getScenario().markError();
       trainingEventPublisher.publishTrainingStatusUpdatedAfterCommit(session);
       log.info("훈련 세션 타임아웃 처리: sessionId={}", session.getId());
     }
