@@ -16,6 +16,7 @@ import com.saferoute.domain.device.entity.Cctv;
 import com.saferoute.domain.device.entity.CctvGridCell;
 import com.saferoute.domain.device.repository.CctvGridCellRepository;
 import com.saferoute.domain.device.repository.CctvJpaRepository;
+import com.saferoute.domain.congestion.service.CongestionConfigService;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.evacuation.grid.entity.FloorGridCell;
 import com.saferoute.domain.evacuation.grid.repository.FloorGridCellRepository;
@@ -42,6 +43,7 @@ class CctvServiceTest {
     @Mock CctvCodeAllocator cctvCodeAllocator;
     @Mock CctvRegistrationService cctvRegistrationService;
     @Mock DeviceTokenService deviceTokenService;
+    @Mock CongestionConfigService congestionConfigService;
 
     private CctvService cctvService;
 
@@ -53,7 +55,8 @@ class CctvServiceTest {
                 floorGridCellRepository,
                 cctvCodeAllocator,
                 cctvRegistrationService,
-                deviceTokenService
+                deviceTokenService,
+                congestionConfigService
         );
     }
 
@@ -159,6 +162,7 @@ class CctvServiceTest {
 
         verify(cctvGridCellRepository).deleteAllByCctvId(cctvId);
         verify(cctvGridCellRepository).saveAll(any());
+        verify(congestionConfigService).incrementVersionForGridChange();
     }
 
     private CreateCctvRequest request() {

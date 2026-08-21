@@ -12,6 +12,7 @@ import com.saferoute.domain.device.dto.response.CctvRegistrationResponse;
 import com.saferoute.domain.device.entity.CctvGridCell;
 import com.saferoute.domain.device.repository.CctvGridCellRepository;
 import com.saferoute.domain.device.repository.CctvJpaRepository;
+import com.saferoute.domain.congestion.service.CongestionConfigService;
 import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
 import com.saferoute.domain.evacuation.grid.entity.FloorGridCell;
 import com.saferoute.domain.evacuation.grid.repository.FloorGridCellRepository;
@@ -40,6 +41,7 @@ class CctvRegistrationServiceTest {
     @Mock MapNodeJpaRepository mapNodeJpaRepository;
     @Mock FloorRepository floorRepository;
     @Mock DeviceTokenService deviceTokenService;
+    @Mock CongestionConfigService congestionConfigService;
 
     private CctvRegistrationService service;
     private Floor floor;
@@ -53,7 +55,8 @@ class CctvRegistrationServiceTest {
                 floorGridCellRepository,
                 mapNodeJpaRepository,
                 floorRepository,
-                deviceTokenService
+                deviceTokenService,
+                congestionConfigService
         );
         floor = org.mockito.Mockito.mock(Floor.class);
         floorId = UUID.randomUUID();
@@ -87,6 +90,7 @@ class CctvRegistrationServiceTest {
         ArgumentCaptor<List<CctvGridCell>> mappings = ArgumentCaptor.forClass(List.class);
         verify(cctvGridCellRepository).saveAll(mappings.capture());
         assertThat(mappings.getValue()).hasSize(2);
+        verify(congestionConfigService).incrementVersionForGridChange();
     }
 
     @Test
