@@ -1,6 +1,7 @@
 package com.saferoute.domain.training.dto;
 
 import com.saferoute.domain.training.entity.FireSpreadSpeed;
+import com.saferoute.domain.training.entity.ScenarioStatus;
 import com.saferoute.domain.training.entity.TrainingScenario;
 import java.time.Instant;
 import java.util.UUID;
@@ -19,10 +20,17 @@ public class ScenarioResponse {
     private Instant scheduledAt;
     private Boolean isTemplate;
     private FireSpreadSpeed fireSpreadSpeed;
+    private ScenarioStatus status;
+    // 훈련 세션이 하나도 없는 시나리오만 삭제 가능. 단건 조회에선 항상 null (목록 조회 전용 필드).
+    private Boolean deletable;
     private Instant createdAt;
     private Instant updatedAt;
 
     public static ScenarioResponse from(TrainingScenario scenario) {
+        return from(scenario, null);
+    }
+
+    public static ScenarioResponse from(TrainingScenario scenario, Boolean deletable) {
         return ScenarioResponse.builder()
                 .id(scenario.getId())
                 .name(scenario.getName())
@@ -32,6 +40,8 @@ public class ScenarioResponse {
                 .scheduledAt(scenario.getScheduledAt())
                 .isTemplate(scenario.getIsTemplate())
                 .fireSpreadSpeed(scenario.getFireSpreadSpeed())
+                .status(scenario.getStatus())
+                .deletable(deletable)
                 .createdAt(scenario.getCreatedAt())
                 .updatedAt(scenario.getUpdatedAt())
                 .build();
