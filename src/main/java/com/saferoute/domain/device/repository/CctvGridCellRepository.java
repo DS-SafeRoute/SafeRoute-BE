@@ -12,6 +12,9 @@ public interface CctvGridCellRepository extends JpaRepository<CctvGridCell, UUID
 
     List<CctvGridCell> findAllByCctv_IdOrderByGridCell_RowIndexAscGridCell_ColumnIndexAsc(UUID cctvId);
 
+    // 감시 면적 계산엔 셀 목록 전체가 아니라 개수만 필요하다 (Pi 설정 조회 API).
+    int countByCctv_Id(UUID cctvId);
+
     @Query("""
             select mapping
             from CctvGridCell mapping

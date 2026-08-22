@@ -20,6 +20,12 @@ public interface TrainingSessionRepository extends JpaRepository<TrainingSession
   Optional<TrainingSession> findByIdAndStatusAndScenario_Building_Id(
       UUID id, TrainingStatus status, UUID buildingId);
 
+  // Pi의 설정 조회 요청엔 세션 id가 없어 건물만으로 현재 RUNNING 세션을 찾는다.
+  // 건물당 동시 RUNNING 세션은 1개라고 가정하되(TrainingSession에 세션-층 직접 연결이 없어 건물 단위로 조회),
+  // 이 가정이 DB 제약으로 강제되진 않으므로 예외적으로 여러 개가 있어도 결과가 흔들리지 않도록 시작 시각 기준으로 정렬한다.
+  Optional<TrainingSession> findFirstByStatusAndScenario_Building_IdOrderByStartedAtAsc(
+      TrainingStatus status, UUID buildingId);
+
   boolean existsByScenario_Id(UUID scenarioId);
 
   // 목록 조회에서 시나리오별로 deletable을 N+1 없이 계산하기 위해, 세션이 하나라도 있는 시나리오 id만 모아서 가져온다.
