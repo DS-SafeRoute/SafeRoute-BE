@@ -7,6 +7,7 @@ import com.saferoute.domain.device.entity.Cctv;
 import com.saferoute.domain.device.entity.CctvGridCell;
 import com.saferoute.domain.device.repository.CctvGridCellRepository;
 import com.saferoute.domain.device.repository.CctvJpaRepository;
+import com.saferoute.domain.congestion.service.CongestionConfigService;
 import com.saferoute.domain.evacuation.graph.entity.CustomDeviceType;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
@@ -37,6 +38,7 @@ public class CctvRegistrationService {
     private final MapNodeJpaRepository mapNodeJpaRepository;
     private final FloorRepository floorRepository;
     private final DeviceTokenService deviceTokenService;
+    private final CongestionConfigService congestionConfigService;
 
     // MapNode/Cctv/매핑 저장은 하나의 트랜잭션으로 처리한다.
     // CCTV 코드는 호출 전에 독립 트랜잭션의 DB sequence로 이미 발급된다.
@@ -67,6 +69,7 @@ public class CctvRegistrationService {
                         .map(cell -> CctvGridCell.create(savedCctv, cell))
                         .toList()
         );
+        congestionConfigService.incrementVersionForGridChange();
 
         return new CctvRegistrationResponse(
                 CctvResponse.of(savedCctv, gridCells),

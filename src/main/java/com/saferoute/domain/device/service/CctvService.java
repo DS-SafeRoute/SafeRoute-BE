@@ -9,6 +9,7 @@ import com.saferoute.domain.device.entity.Cctv;
 import com.saferoute.domain.device.entity.CctvGridCell;
 import com.saferoute.domain.device.repository.CctvGridCellRepository;
 import com.saferoute.domain.device.repository.CctvJpaRepository;
+import com.saferoute.domain.congestion.service.CongestionConfigService;
 import com.saferoute.domain.evacuation.grid.entity.FloorGridCell;
 import com.saferoute.domain.evacuation.grid.repository.FloorGridCellRepository;
 import com.saferoute.domain.floor.entity.Floor;
@@ -37,6 +38,7 @@ public class CctvService {
     private final CctvCodeAllocator cctvCodeAllocator;
     private final CctvRegistrationService cctvRegistrationService;
     private final DeviceTokenService deviceTokenService;
+    private final CongestionConfigService congestionConfigService;
 
     public CctvRegistrationResponse createCctv(CreateCctvRequest request) {
         return cctvRegistrationService.register(request, cctvCodeAllocator.allocate());
@@ -100,6 +102,7 @@ public class CctvService {
 
         cctvGridCellRepository.deleteAllByCctvId(cctvId);
         saveMappings(cctv, gridCells);
+        congestionConfigService.incrementVersionForGridChange();
         return CctvResponse.of(cctv, gridCells);
     }
 

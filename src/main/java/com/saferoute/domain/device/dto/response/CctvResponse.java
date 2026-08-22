@@ -1,6 +1,7 @@
 package com.saferoute.domain.device.dto.response;
 
 import com.saferoute.domain.device.entity.Cctv;
+import com.saferoute.domain.device.util.MonitoredAreaCalculator;
 import com.saferoute.domain.evacuation.grid.entity.FloorGridCell;
 import java.util.List;
 import java.util.UUID;
@@ -21,10 +22,7 @@ public record CctvResponse(
 ) {
     public static CctvResponse of(Cctv cctv, List<FloorGridCell> gridCells) {
         Double cellSizeMeter = cctv.getCustomNode().getFloor().getGridCellSizeMeter();
-        boolean validCellSizeMeter = cellSizeMeter != null && cellSizeMeter > 0;
-        Double monitoredAreaM2 = !validCellSizeMeter
-                ? null
-                : gridCells.size() * cellSizeMeter * cellSizeMeter;
+        Double monitoredAreaM2 = MonitoredAreaCalculator.calculate(gridCells.size(), cellSizeMeter);
         return new CctvResponse(
                 cctv.getId(),
                 cctv.getCode(),
