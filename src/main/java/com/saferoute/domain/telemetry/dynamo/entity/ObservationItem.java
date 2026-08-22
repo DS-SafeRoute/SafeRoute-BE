@@ -64,7 +64,9 @@ public class ObservationItem {
         ObservationItem item = new ObservationItem();
         item.eventId = eventId.toString();
         item.trainingSessionId = trainingSessionId.toString();
-        item.edgeId = edgeId.toString();
+        // 관측값 하나가 여러 MapEdge에 걸칠 수 있어(CCTV 1개가 여러 Edge를 감시) 특정 Edge로 고정할 수 없다.
+        // 영향받는 Edge 목록은 저장 시점이 아니라 조회 시점에 CCTV -> GridCell -> MapEdge로 다시 계산한다.
+        item.edgeId = edgeId != null ? edgeId.toString() : null;
         item.cctvCode = cctvCode;
         item.avgHeadcount = avgHeadcount;
         item.peakHeadcount = peakHeadcount;
