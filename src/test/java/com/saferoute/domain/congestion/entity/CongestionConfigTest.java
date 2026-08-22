@@ -57,4 +57,18 @@ class CongestionConfigTest {
         assertThat(config.getVersion()).isEqualTo(1L);
         assertThat(config.getCautionFrom()).isEqualTo(2.0);
     }
+
+    @Test
+    @DisplayName("기본 임계값(2.0/3.0/5.0) 경계에서 혼잡 단계를 판정한다")
+    void classify_usesDefaultThresholdBoundaries() {
+        CongestionConfig config = CongestionConfig.createDefault();
+
+        assertThat(config.classify(1.99)).isEqualTo(CongestionLevel.NORMAL);
+        assertThat(config.classify(2.0)).isEqualTo(CongestionLevel.CAUTION);
+        assertThat(config.classify(2.99)).isEqualTo(CongestionLevel.CAUTION);
+        assertThat(config.classify(3.0)).isEqualTo(CongestionLevel.CROWDED);
+        assertThat(config.classify(4.99)).isEqualTo(CongestionLevel.CROWDED);
+        assertThat(config.classify(5.0)).isEqualTo(CongestionLevel.VERY_CROWDED);
+        assertThat(config.classify(100.0)).isEqualTo(CongestionLevel.VERY_CROWDED);
+    }
 }
