@@ -13,7 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-// Pi가 주기적으로 호출하는 혼잡 설정 조회(이슈 6)를 처리한다.
+// Pi가 주기적으로 호출하는 혼잡 설정 조회를 처리한다.
 // CCTV 인증/활성화 검증은 컨트롤러에서 DeviceAuthorizationService로 먼저 끝낸 뒤 이 서비스를 호출한다.
 @Service
 @RequiredArgsConstructor
