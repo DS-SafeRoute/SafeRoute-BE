@@ -168,7 +168,7 @@ public class TrainingEventPublisher {
         );
     }
 
-    // 즉시 혼잡 이벤트(이슈 9) 수신/처리 시 발행한다. CongestionEventService가 발행 성공 여부에 따라
+    // 즉시 혼잡 이벤트 수신/처리 시 발행한다. CongestionEventService가 발행 성공 여부에 따라
     // DynamoDB 처리 상태(PROCESSED/FAILED)를 직접 갱신해야 해서, 다른 AfterCommit 헬퍼처럼 실패를
     // 로그로 삼키지 않고 그대로 던진다 - 호출자가 afterCommit 트랜잭션 동기화를 직접 관리한다.
     public void publishCongestionEventReceived(UUID sessionId, UUID edgeId, CongestionEventItem item) {
