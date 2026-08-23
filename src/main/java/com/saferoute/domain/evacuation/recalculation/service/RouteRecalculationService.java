@@ -36,7 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class RouteRecalculationService {
 
-    // "경로 혼잡 비용" 표: CAUTION은 1.5배, CROWDED는 3배 페널티만 주고 여전히 후보에 남긴다.
+    // CAUTION은 1.5배, CROWDED는 3배 페널티만 주고 여전히 후보에 남긴다.
     // VERY_CROWDED는 배율이 아니라 완전 제외(excludedEdgeIds)로 처리한다 - trigger()의
     // requiresRouteRecalculation() 게이트 상 CAUTION은 현재 이 메서드까지 도달하지 않지만,
     // 표 전체를 그대로 반영해둔다.
@@ -76,7 +76,7 @@ public class RouteRecalculationService {
 
         UUID floorId = triggerEdge.getFloor().getId();
         // TODO: 양방향 엣지에서는 실제로 반대편(toNode) 기준 우회도 필요할 수 있다 - 지금은
-        // fromNode 기준으로 고정한다 (BE-06 선행 위험으로 문서에 명시된 채 아직 미해결).
+        // fromNode 기준으로 고정한다
         UUID startNodeId = triggerEdge.getFromNode().getId();
 
         RouteSnapshot previous = resolveActiveRoute(session, triggerEdge, floorId, startNodeId);
