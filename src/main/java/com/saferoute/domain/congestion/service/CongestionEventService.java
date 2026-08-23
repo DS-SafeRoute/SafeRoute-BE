@@ -9,9 +9,11 @@ import com.saferoute.domain.device.util.MonitoredAreaCalculator;
 import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.evacuation.grid.entity.MapEdgeGridCell;
 import com.saferoute.domain.evacuation.grid.repository.MapEdgeGridCellRepository;
+import com.saferoute.domain.evacuation.recalculation.entity.RecalculationTriggerType;
 import com.saferoute.domain.evacuation.recalculation.service.RouteRecalculationService;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventItem;
+import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventType;
 import com.saferoute.domain.telemetry.dynamo.entity.CurrentCctvStateItem;
 import com.saferoute.domain.telemetry.dynamo.entity.EventProcessingStatus;
 import com.saferoute.domain.telemetry.dynamo.repository.CongestionEventRepository;
@@ -107,9 +109,13 @@ public class CongestionEventService {
             updateCurrentState(session.getId(), cctv.getCode(), request, saveResult.item());
 
             CongestionLevel savedLevel = saveResult.item().getCongestionLevel();
-            if (savedLevel.requiresRouteRecalculation()) {
+            RecalculationTriggerType triggerType = mapTriggerType(saveResult.item().getEventType());
+            // ENDED는 레벨이 NORMAL이라 requiresRouteRecalculation()이 false지만, 정상 경로로의
+            // 복구 후보를 제시해야 하므로(RouteRecalculationService.trigger 참고) 별도로 포함한다.
+            if (savedLevel.requiresRouteRecalculation() || triggerType == RecalculationTriggerType.ENDED) {
                 for (MapEdge edge : affectedEdges) {
-                    routeRecalculationService.trigger(session, edge, savedLevel);
+                    routeRecalculationService.trigger(
+                            session, edge, savedLevel, triggerType, cctv.getCode(), density);
                 }
             }
             publishAndCompleteAfterCommit(session.getId(), affectedEdges, saveResult.item());
@@ -138,6 +144,14 @@ public class CongestionEventService {
                 .map(MapEdgeGridCell::getMapEdge)
                 .distinct()
                 .toList();
+    }
+
+    private RecalculationTriggerType mapTriggerType(CongestionEventType eventType) {
+        return switch (eventType) {
+            case CONGESTION_STARTED -> RecalculationTriggerType.STARTED;
+            case CONGESTION_LEVEL_UP -> RecalculationTriggerType.LEVEL_UP;
+            case CONGESTION_ENDED -> RecalculationTriggerType.ENDED;
+        };
     }
 
     private boolean claimProcessing(CongestionEventItem item) {

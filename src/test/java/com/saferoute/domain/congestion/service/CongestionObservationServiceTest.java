@@ -3,6 +3,7 @@ package com.saferoute.domain.congestion.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -26,6 +27,7 @@ import com.saferoute.domain.evacuation.grid.entity.MapEdgeGridCell;
 import com.saferoute.domain.evacuation.grid.repository.MapEdgeGridCellRepository;
 import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
+import com.saferoute.domain.evacuation.recalculation.entity.RecalculationTriggerType;
 import com.saferoute.domain.evacuation.recalculation.service.RouteRecalculationService;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
@@ -203,7 +205,7 @@ class CongestionObservationServiceTest {
         // avgHeadcount=5 -> density=1.25 -> NORMAL
         service.reportObservation(cctv, request(5.0));
 
-        verify(routeRecalculationService, never()).trigger(any(), any(), any());
+        verify(routeRecalculationService, never()).trigger(any(), any(), any(), any(), any(), anyDouble());
         verify(currentCctvStateRepository).updateIfLatest(any());
     }
 
@@ -222,8 +224,10 @@ class CongestionObservationServiceTest {
         // avgHeadcount=13 -> density=3.25 -> CROWDED
         service.reportObservation(cctv, request(13.0));
 
-        verify(routeRecalculationService).trigger(eq(session), eq(edgeA), eq(CongestionLevel.CROWDED));
-        verify(routeRecalculationService).trigger(eq(session), eq(edgeB), eq(CongestionLevel.CROWDED));
+        verify(routeRecalculationService).trigger(eq(session), eq(edgeA), eq(CongestionLevel.CROWDED),
+                eq(RecalculationTriggerType.LEVEL_UP), eq("CCTV_001"), anyDouble());
+        verify(routeRecalculationService).trigger(eq(session), eq(edgeB), eq(CongestionLevel.CROWDED),
+                eq(RecalculationTriggerType.LEVEL_UP), eq("CCTV_001"), anyDouble());
         verify(trainingEventPublisher, times(2)).publishCongestionUpdated(eq(sessionId), any(), any());
     }
 
@@ -241,7 +245,7 @@ class CongestionObservationServiceTest {
         // avgHeadcount=13 -> density=3.25 -> CROWDED, 그래도 Edge가 없으니 트리거는 없음
         service.reportObservation(cctv, request(13.0));
 
-        verify(routeRecalculationService, never()).trigger(any(), any(), any());
+        verify(routeRecalculationService, never()).trigger(any(), any(), any(), any(), any(), anyDouble());
         verify(trainingEventPublisher).publishCongestionUpdated(eq(sessionId), isNull(), any());
     }
 
@@ -259,7 +263,7 @@ class CongestionObservationServiceTest {
 
         assertThat(result.created()).isFalse();
         verify(trainingEventPublisher, never()).publishCongestionUpdated(any(), any(), any());
-        verify(routeRecalculationService, never()).trigger(any(), any(), any());
+        verify(routeRecalculationService, never()).trigger(any(), any(), any(), any(), any(), anyDouble());
     }
 
     @Test

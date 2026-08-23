@@ -10,6 +10,7 @@ import com.saferoute.domain.device.util.MonitoredAreaCalculator;
 import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.evacuation.grid.entity.MapEdgeGridCell;
 import com.saferoute.domain.evacuation.grid.repository.MapEdgeGridCellRepository;
+import com.saferoute.domain.evacuation.recalculation.entity.RecalculationTriggerType;
 import com.saferoute.domain.evacuation.recalculation.service.RouteRecalculationService;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.telemetry.dynamo.entity.CurrentCctvStateItem;
@@ -112,9 +113,12 @@ public class CongestionObservationService {
             updateCurrentState(session.getId(), cctv.getCode(), request, saveResult.item());
 
             CongestionLevel savedLevel = saveResult.item().getCongestionLevel();
+            // 관측값은 5초 단위 스냅샷이라 STARTED/ENDED 같은 이벤트 구분이 없다 - 항상 LEVEL_UP으로 취급한다
+            // (즉시 이벤트의 CONGESTION_ENDED 기반 복구 트리거는 CongestionEventService가 전담한다).
             if (savedLevel.requiresRouteRecalculation()) {
                 for (MapEdge edge : affectedEdges) {
-                    routeRecalculationService.trigger(session, edge, savedLevel);
+                    routeRecalculationService.trigger(
+                            session, edge, savedLevel, RecalculationTriggerType.LEVEL_UP, cctv.getCode(), density);
                 }
             }
             publishAndCompleteAfterCommit(session.getId(), affectedEdges, saveResult.item(), processingOwner);
