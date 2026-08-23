@@ -48,6 +48,11 @@ public enum CongestionErrorCode implements BaseErrorCode {
             HttpStatus.CONFLICT,
             "CONGESTION008",
             "업로드가 완료된 이벤트 이미지 객체를 찾을 수 없습니다."
+    ),
+    MONITORED_AREA_NOT_AVAILABLE(
+            HttpStatus.CONFLICT,
+            "CONGESTION009",
+            "CCTV의 감시 면적을 계산할 수 없습니다. 감시 영역이 설정되지 않았습니다."
     );
 
     private final HttpStatus httpStatus;

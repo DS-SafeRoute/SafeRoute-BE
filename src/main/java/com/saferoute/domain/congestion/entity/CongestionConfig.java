@@ -97,6 +97,21 @@ public class CongestionConfig {
         this.version++;
     }
 
+    // Pi가 보고한 값을 신뢰하지 않고 BE가 직접 밀도로 혼잡 단계를 판정한다.
+    // Pi 쪽 CongestionThresholds.classify()와 동일한 경계값 판정(>=)을 사용해야 한다.
+    public CongestionLevel classify(double density) {
+        if (density >= veryCrowdedFrom) {
+            return CongestionLevel.VERY_CROWDED;
+        }
+        if (density >= crowdedFrom) {
+            return CongestionLevel.CROWDED;
+        }
+        if (density >= cautionFrom) {
+            return CongestionLevel.CAUTION;
+        }
+        return CongestionLevel.NORMAL;
+    }
+
     // 값이 실제로 바뀐 필드가 하나라도 있을 때만 version을 올린다 (no-op 갱신 요청으로 버전이 튀는 것 방지).
     public void updateSettings(Integer snapshotIntervalSec, Integer targetInferenceFps,
             Double cautionFrom, Double crowdedFrom, Double veryCrowdedFrom,
