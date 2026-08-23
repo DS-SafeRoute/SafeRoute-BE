@@ -3,33 +3,46 @@ package com.saferoute.domain.congestion.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.BDDMockito.given;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import com.saferoute.domain.building.entity.Building;
-import com.saferoute.domain.congestion.dto.request.ReportCongestionRequest;
+import com.saferoute.domain.congestion.dto.request.ReportCongestionEventRequest;
+import com.saferoute.domain.congestion.entity.CongestionConfig;
 import com.saferoute.domain.congestion.entity.CongestionLevel;
+import com.saferoute.domain.device.entity.Cctv;
+import com.saferoute.domain.device.entity.CctvGridCell;
+import com.saferoute.domain.device.repository.CctvGridCellRepository;
 import com.saferoute.domain.evacuation.graph.entity.MapEdge;
-import com.saferoute.domain.evacuation.graph.repository.MapEdgeJpaRepository;
+import com.saferoute.domain.evacuation.graph.entity.MapNode;
+import com.saferoute.domain.evacuation.grid.entity.FloorGridCell;
+import com.saferoute.domain.evacuation.grid.entity.MapEdgeGridCell;
+import com.saferoute.domain.evacuation.grid.repository.MapEdgeGridCellRepository;
 import com.saferoute.domain.evacuation.recalculation.service.RouteRecalculationService;
 import com.saferoute.domain.floor.entity.Floor;
-import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
+import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventItem;
+import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventType;
+import com.saferoute.domain.telemetry.dynamo.entity.EventProcessingStatus;
+import com.saferoute.domain.telemetry.dynamo.repository.CongestionEventRepository;
+import com.saferoute.domain.telemetry.dynamo.repository.CurrentCctvStateRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.IdempotentSaveResult;
-import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
-import com.saferoute.global.api.error.EvacuationErrorCode;
 import com.saferoute.global.api.error.CongestionErrorCode;
 import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,265 +59,340 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 class CongestionEventServiceTest {
 
     @InjectMocks
-    private CongestionEventService congestionEventService;
+    private CongestionEventService service;
 
     @Mock
-    private MapEdgeJpaRepository mapEdgeJpaRepository;
+    private CongestionEventRepository congestionEventRepository;
+
+    @Mock
+    private CurrentCctvStateRepository currentCctvStateRepository;
 
     @Mock
     private TrainingSessionRepository trainingSessionRepository;
 
     @Mock
-    private ObservationRepository observationRepository;
+    private CctvGridCellRepository cctvGridCellRepository;
 
     @Mock
-    private TrainingEventPublisher trainingEventPublisher;
+    private MapEdgeGridCellRepository mapEdgeGridCellRepository;
+
+    @Mock
+    private CongestionConfigService congestionConfigService;
 
     @Mock
     private RouteRecalculationService routeRecalculationService;
 
-    private final UUID edgeId = UUID.randomUUID();
+    @Mock
+    private TrainingEventPublisher trainingEventPublisher;
+
+    private final UUID cctvId = UUID.randomUUID();
     private final UUID buildingId = UUID.randomUUID();
     private final UUID sessionId = UUID.randomUUID();
-    private MapEdge edge;
+    private Cctv cctv;
 
     @BeforeEach
     void setUp() {
         Building building = mock(Building.class);
         org.mockito.Mockito.lenient().when(building.getId()).thenReturn(buildingId);
-
         Floor floor = mock(Floor.class);
         org.mockito.Mockito.lenient().when(floor.getBuilding()).thenReturn(building);
+        org.mockito.Mockito.lenient().when(floor.getGridCellSizeMeter()).thenReturn(1.0);
+        MapNode node = mock(MapNode.class);
+        org.mockito.Mockito.lenient().when(node.getFloor()).thenReturn(floor);
+        cctv = mock(Cctv.class);
+        org.mockito.Mockito.lenient().when(cctv.getId()).thenReturn(cctvId);
+        org.mockito.Mockito.lenient().when(cctv.getCode()).thenReturn("CCTV_001");
+        org.mockito.Mockito.lenient().when(cctv.getCustomNode()).thenReturn(node);
 
-        edge = mock(MapEdge.class);
-        org.mockito.Mockito.lenient().when(edge.getId()).thenReturn(edgeId);
-        org.mockito.Mockito.lenient().when(edge.getFloor()).thenReturn(floor);
+        org.mockito.Mockito.lenient().when(congestionConfigService.getConfig())
+                .thenReturn(CongestionConfig.createDefault());
+        // 기본은 GridCell 4개(면적 4.0m2)로, headcount=5 -> density=1.25 (NORMAL)
+        org.mockito.Mockito.lenient().when(cctvGridCellRepository.countByCctv_Id(cctvId)).thenReturn(4);
     }
 
-    private ReportCongestionRequest request(CongestionLevel level) {
-        return new ReportCongestionRequest(
-                UUID.randomUUID(), sessionId, edgeId, "CCTV_001", 5.0, 8, 25, 2.5,
-                level, 1_000L, 2_000L, 2_000L, 1L, null
+    private ReportCongestionEventRequest request(int headcount) {
+        return new ReportCongestionEventRequest(
+                UUID.randomUUID(), sessionId, "CCTV_001", CongestionEventType.CONGESTION_STARTED,
+                2_000L, headcount, 4.5, CongestionLevel.CROWDED, 1L
         );
     }
 
-    @Test
-    @DisplayName("엣지를 찾을 수 없으면 MAP_EDGE_NOT_FOUND를 던진다")
-    void reportCongestion_throwsWhenEdgeNotFound() {
-        given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.empty());
+    private void givenSaveCreatesItem() {
+        given(congestionEventRepository.saveReceivedIfAbsent(any())).willAnswer(invocation ->
+                IdempotentSaveResult.created(invocation.getArgument(0, CongestionEventItem.class)));
+    }
 
-        assertThatThrownBy(() -> congestionEventService.reportCongestion(request(CongestionLevel.NORMAL)))
+    private void givenProcessingClaimed() {
+        given(congestionEventRepository.updateEventStatus(
+                anyString(), eq(EventProcessingStatus.RECEIVED), eq(EventProcessingStatus.PROCESSING)))
+                .willReturn(true);
+        given(congestionEventRepository.updateEventStatus(
+                anyString(), eq(EventProcessingStatus.PROCESSING), eq(EventProcessingStatus.PROCESSED)))
+                .willReturn(true);
+    }
+
+    private MapEdge edge(UUID id) {
+        MapEdge edge = mock(MapEdge.class);
+        org.mockito.Mockito.lenient().when(edge.getId()).thenReturn(id);
+        return edge;
+    }
+
+    private void givenAffectedEdges(MapEdge... edges) {
+        UUID gridCellId = UUID.randomUUID();
+        FloorGridCell gridCell = mock(FloorGridCell.class);
+        given(gridCell.getId()).willReturn(gridCellId);
+        CctvGridCell mapping = mock(CctvGridCell.class);
+        given(mapping.getGridCell()).willReturn(gridCell);
+        given(cctvGridCellRepository.findAllByCctv_IdOrderByGridCell_RowIndexAscGridCell_ColumnIndexAsc(cctvId))
+                .willReturn(List.of(mapping));
+
+        List<MapEdgeGridCell> edgeMappings = Arrays.stream(edges)
+                .map(e -> {
+                    MapEdgeGridCell edgeGridCell = mock(MapEdgeGridCell.class);
+                    given(edgeGridCell.getMapEdge()).willReturn(e);
+                    return edgeGridCell;
+                })
+                .toList();
+        given(mapEdgeGridCellRepository.findAllByGridCell_IdIn(List.of(gridCellId))).willReturn(edgeMappings);
+    }
+
+    @Test
+    @DisplayName("대상 건물에 RUNNING 세션이 없으면 전용 에러를 반환하고 아무것도 저장하지 않는다")
+    void reportCongestionEvent_throwsWhenNoRunningSession() {
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.reportCongestionEvent(cctv, request(9)))
                 .isInstanceOf(ApiException.class)
-                .hasFieldOrPropertyWithValue("errorCode", EvacuationErrorCode.MAP_EDGE_NOT_FOUND);
+                .hasFieldOrPropertyWithValue("errorCode", TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND);
+
+        verify(congestionEventRepository, never()).saveReceivedIfAbsent(any());
     }
 
     @Test
-    @DisplayName("대상 건물에 RUNNING 세션이 없으면 전용 에러를 반환한다")
-    void reportCongestion_throwsWhenNoRunningSession() {
-        given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
+    @DisplayName("감시 면적을 계산할 수 없으면 전용 에러를 반환한다")
+    void reportCongestionEvent_throwsWhenMonitoredAreaUnavailable() {
+        TrainingSession session = mock(TrainingSession.class);
         given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
-                sessionId, TrainingStatus.RUNNING, buildingId
-        )).willReturn(Optional.empty());
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        given(cctvGridCellRepository.countByCctv_Id(cctvId)).willReturn(0);
 
-        assertThatThrownBy(() -> congestionEventService.reportCongestion(request(CongestionLevel.CROWDED)))
+        assertThatThrownBy(() -> service.reportCongestionEvent(cctv, request(9)))
                 .isInstanceOf(ApiException.class)
-                .hasFieldOrPropertyWithValue(
-                        "errorCode",
-                        TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND
-                );
+                .hasFieldOrPropertyWithValue("errorCode", CongestionErrorCode.MONITORED_AREA_NOT_AVAILABLE);
 
-        verify(observationRepository, never()).saveIfAbsent(any());
-        verify(trainingEventPublisher, never()).publishCongestionUpdated(any(), any(), any());
-        verify(routeRecalculationService, never()).trigger(any(), any(), any());
+        verify(congestionEventRepository, never()).saveReceivedIfAbsent(any());
     }
 
     @Test
-    @DisplayName("NORMAL/CAUTION은 저장·발행만 하고 재탐색은 트리거하지 않는다")
-    void reportCongestion_doesNotTriggerRecalculationForLowLevel() {
+    @DisplayName("BE가 직접 density와 congestionLevel을 계산해서 저장한다 (Pi의 local 값을 신뢰하지 않음)")
+    void reportCongestionEvent_computesDensityAndLevelItself() {
         TrainingSession session = mock(TrainingSession.class);
         given(session.getId()).willReturn(sessionId);
-
-        given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
         given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
-                sessionId, TrainingStatus.RUNNING, buildingId
-        )).willReturn(Optional.of(session));
-        given(observationRepository.saveIfAbsent(any())).willAnswer(invocation ->
-                IdempotentSaveResult.created(invocation.getArgument(0, ObservationItem.class)));
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        givenSaveCreatesItem();
         givenProcessingClaimed();
+        givenAffectedEdges();
 
-        congestionEventService.reportCongestion(request(CongestionLevel.CAUTION));
+        // headcount=9, 면적=4.0 -> density=2.25 -> CAUTION (기본 임계값: CAUTION>=2.0, CROWDED>=3.0)
+        service.reportCongestionEvent(cctv, request(9));
 
-        verify(observationRepository).saveIfAbsent(argThat(item ->
-                item.getAvgHeadcount().equals(5.0)
-                        && item.getSampleCount().equals(25)
-                        && item.getDensity().equals(2.5)
-                        && item.getExpiresAt() == 2_592_002L
-        ));
-        verify(trainingEventPublisher, org.mockito.Mockito.times(1)).publishCongestionUpdated(any(), any(), any());
-        verify(routeRecalculationService, never()).trigger(any(), any(), any());
+        verify(congestionEventRepository).saveReceivedIfAbsent(argThat(item ->
+                item.getDensity().equals(2.25) && item.getCongestionLevel() == CongestionLevel.CAUTION));
     }
 
     @Test
-    @DisplayName("CROWDED이면 저장·발행 후 재탐색을 트리거한다")
-    void reportCongestion_triggersRecalculationForHighLevel() {
+    @DisplayName("NORMAL/CAUTION 수준이면 재탐색을 트리거하지 않는다")
+    void reportCongestionEvent_doesNotTriggerRecalculationForLowLevel() {
         TrainingSession session = mock(TrainingSession.class);
         given(session.getId()).willReturn(sessionId);
-
-        given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
         given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
-                sessionId, TrainingStatus.RUNNING, buildingId
-        )).willReturn(Optional.of(session));
-        given(observationRepository.saveIfAbsent(any())).willAnswer(invocation ->
-                IdempotentSaveResult.created(invocation.getArgument(0, ObservationItem.class)));
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        givenSaveCreatesItem();
         givenProcessingClaimed();
+        givenAffectedEdges(edge(UUID.randomUUID()));
 
-        congestionEventService.reportCongestion(request(CongestionLevel.CROWDED));
+        // headcount=5 -> density=1.25 -> NORMAL
+        service.reportCongestionEvent(cctv, request(5));
 
-        verify(routeRecalculationService, org.mockito.Mockito.times(1))
-                .trigger(session, edge, CongestionLevel.CROWDED);
-    }
-
-    @Test
-    @DisplayName("VERY_CROWDED이면 저장·발행 후 재탐색을 트리거한다")
-    void reportCongestion_triggersRecalculationForVeryCrowdedLevel() {
-        TrainingSession session = mock(TrainingSession.class);
-        given(session.getId()).willReturn(sessionId);
-        given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
-        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
-                sessionId, TrainingStatus.RUNNING, buildingId
-        )).willReturn(Optional.of(session));
-        given(observationRepository.saveIfAbsent(any())).willAnswer(invocation ->
-                IdempotentSaveResult.created(invocation.getArgument(0, ObservationItem.class)));
-        givenProcessingClaimed();
-
-        congestionEventService.reportCongestion(request(CongestionLevel.VERY_CROWDED));
-
-        verify(routeRecalculationService).trigger(session, edge, CongestionLevel.VERY_CROWDED);
-    }
-
-    @Test
-    @DisplayName("중복 eventId이면 발행과 재탐색을 다시 수행하지 않는다")
-    void reportCongestion_doesNotRepeatSideEffectsForDuplicateEvent() {
-        TrainingSession session = mock(TrainingSession.class);
-        given(session.getId()).willReturn(sessionId);
-        given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
-        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
-                sessionId, TrainingStatus.RUNNING, buildingId
-        )).willReturn(Optional.of(session));
-        given(observationRepository.saveIfAbsent(any())).willAnswer(invocation ->
-                IdempotentSaveResult.existing(invocation.getArgument(0, ObservationItem.class)));
-
-        var result = congestionEventService.reportCongestion(request(CongestionLevel.CROWDED));
-
-        assertThat(result.created()).isFalse();
-        verify(trainingEventPublisher, never()).publishCongestionUpdated(any(), any(), any());
         verify(routeRecalculationService, never()).trigger(any(), any(), any());
+        verify(currentCctvStateRepository).updateIfLatest(any());
     }
 
     @Test
-    @DisplayName("동일한 eventId가 다른 edge를 가리키면 CONGESTION002를 반환한다")
-    void reportCongestion_rejectsMismatchedEventIdentity() {
+    @DisplayName("CCTV가 여러 Edge를 감시하면 CROWDED 이상일 때 Edge마다 재탐색을 트리거하고 각각 발행한다")
+    void reportCongestionEvent_triggersRecalculationForEachAffectedEdge() {
         TrainingSession session = mock(TrainingSession.class);
         given(session.getId()).willReturn(sessionId);
-        given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
         given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
-                sessionId, TrainingStatus.RUNNING, buildingId
-        )).willReturn(Optional.of(session));
-        given(observationRepository.saveIfAbsent(any())).willAnswer(invocation -> {
-            ObservationItem existing = invocation.getArgument(0, ObservationItem.class);
-            existing.setEdgeId(UUID.randomUUID().toString());
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        givenSaveCreatesItem();
+        givenProcessingClaimed();
+        MapEdge edgeA = edge(UUID.randomUUID());
+        MapEdge edgeB = edge(UUID.randomUUID());
+        givenAffectedEdges(edgeA, edgeB);
+
+        // headcount=13 -> density=3.25 -> CROWDED
+        service.reportCongestionEvent(cctv, request(13));
+
+        verify(routeRecalculationService).trigger(eq(session), eq(edgeA), eq(CongestionLevel.CROWDED));
+        verify(routeRecalculationService).trigger(eq(session), eq(edgeB), eq(CongestionLevel.CROWDED));
+        verify(trainingEventPublisher, times(2))
+                .publishCongestionEventReceived(eq(sessionId), any(), any());
+    }
+
+    @Test
+    @DisplayName("매핑된 Edge가 없으면 edgeId 없이 한 번만 발행하고 재탐색은 트리거하지 않는다")
+    void reportCongestionEvent_noMappedEdges_publishesOnceWithoutEdgeId() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        givenSaveCreatesItem();
+        givenProcessingClaimed();
+        given(cctvGridCellRepository.findAllByCctv_IdOrderByGridCell_RowIndexAscGridCell_ColumnIndexAsc(cctvId))
+                .willReturn(List.of());
+
+        // headcount=13 -> density=3.25 -> CROWDED, 그래도 Edge가 없으니 트리거는 없음
+        service.reportCongestionEvent(cctv, request(13));
+
+        verify(routeRecalculationService, never()).trigger(any(), any(), any());
+        verify(trainingEventPublisher).publishCongestionEventReceived(eq(sessionId), isNull(), any());
+    }
+
+    @Test
+    @DisplayName("중복 eventId가 PROCESSED이면 다시 처리하지 않고 그대로 반환한다")
+    void reportCongestionEvent_doesNotReprocessAlreadyProcessedDuplicate() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        given(congestionEventRepository.saveReceivedIfAbsent(any())).willAnswer(invocation -> {
+            CongestionEventItem existing = invocation.getArgument(0, CongestionEventItem.class);
+            existing.setEventStatus(EventProcessingStatus.PROCESSED);
             return IdempotentSaveResult.existing(existing);
         });
 
-        assertThatThrownBy(() -> congestionEventService.reportCongestion(request(CongestionLevel.CROWDED)))
-                .isInstanceOf(ApiException.class)
-                .hasFieldOrPropertyWithValue(
-                        "errorCode",
-                        CongestionErrorCode.EVENT_IDENTITY_MISMATCH
-                );
+        var result = service.reportCongestionEvent(cctv, request(13));
 
-        verify(observationRepository, never())
-                .claimProcessing(anyString(), anyString(), anyLong(), anyLong());
-        verify(trainingEventPublisher, never()).publishCongestionUpdated(any(), any(), any());
+        assertThat(result.created()).isFalse();
+        verify(trainingEventPublisher, never()).publishCongestionEventReceived(any(), any(), any());
         verify(routeRecalculationService, never()).trigger(any(), any(), any());
+        verify(congestionEventRepository, never()).updateEventStatus(anyString(), any(), any());
+    }
+
+    @Test
+    @DisplayName("동일한 eventId가 다른 세션·CCTV를 가리키면 CONGESTION002를 반환한다")
+    void reportCongestionEvent_rejectsMismatchedEventIdentity() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        given(congestionEventRepository.saveReceivedIfAbsent(any())).willAnswer(invocation -> {
+            CongestionEventItem existing = invocation.getArgument(0, CongestionEventItem.class);
+            existing.setCctvCode("CCTV_999");
+            return IdempotentSaveResult.existing(existing);
+        });
+
+        assertThatThrownBy(() -> service.reportCongestionEvent(cctv, request(5)))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", CongestionErrorCode.EVENT_IDENTITY_MISMATCH);
+
+        verify(congestionEventRepository, never()).updateEventStatus(anyString(), any(), any());
     }
 
     @Test
     @DisplayName("중복 eventId가 RECEIVED이면 후속 처리를 재개한다")
-    void reportCongestion_resumesReceivedDuplicate() {
+    void reportCongestionEvent_resumesReceivedDuplicate() {
         TrainingSession session = mock(TrainingSession.class);
         given(session.getId()).willReturn(sessionId);
-        given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
         given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
-                sessionId, TrainingStatus.RUNNING, buildingId
-        )).willReturn(Optional.of(session));
-        given(observationRepository.saveIfAbsent(any())).willAnswer(invocation ->
-                IdempotentSaveResult.existing(invocation.getArgument(0, ObservationItem.class)));
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        given(congestionEventRepository.saveReceivedIfAbsent(any())).willAnswer(invocation ->
+                IdempotentSaveResult.existing(invocation.getArgument(0, CongestionEventItem.class)));
         givenProcessingClaimed();
+        givenAffectedEdges(edge(UUID.randomUUID()));
 
-        var result = congestionEventService.reportCongestion(request(CongestionLevel.CROWDED));
+        var result = service.reportCongestionEvent(cctv, request(13));
 
         assertThat(result.created()).isFalse();
-        verify(trainingEventPublisher).publishCongestionUpdated(any(), any(), any());
-        verify(routeRecalculationService).trigger(session, edge, CongestionLevel.CROWDED);
+        verify(trainingEventPublisher).publishCongestionEventReceived(any(), any(), any());
+        verify(routeRecalculationService).trigger(eq(session), any(), eq(CongestionLevel.CROWDED));
+    }
+
+    @Test
+    @DisplayName("중복 eventId가 PROCESSING이면 재처리하지 않고 그대로 반환한다")
+    void reportCongestionEvent_doesNotReprocessInFlightDuplicate() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        given(congestionEventRepository.saveReceivedIfAbsent(any())).willAnswer(invocation -> {
+            CongestionEventItem existing = invocation.getArgument(0, CongestionEventItem.class);
+            existing.setEventStatus(EventProcessingStatus.PROCESSING);
+            return IdempotentSaveResult.existing(existing);
+        });
+
+        var result = service.reportCongestionEvent(cctv, request(13));
+
+        assertThat(result.created()).isFalse();
+        verify(trainingEventPublisher, never()).publishCongestionEventReceived(any(), any(), any());
+        verify(routeRecalculationService, never()).trigger(any(), any(), any());
     }
 
     @Test
     @DisplayName("후속 처리 실패를 FAILED로 기록하고 공통 혼잡 에러를 반환한다")
-    void reportCongestion_marksFailedWhenSideEffectFails() {
+    void reportCongestionEvent_marksFailedWhenSideEffectFails() {
         TrainingSession session = mock(TrainingSession.class);
         given(session.getId()).willReturn(sessionId);
-        given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
         given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
-                sessionId, TrainingStatus.RUNNING, buildingId
-        )).willReturn(Optional.of(session));
-        given(observationRepository.saveIfAbsent(any())).willAnswer(invocation ->
-                IdempotentSaveResult.created(invocation.getArgument(0, ObservationItem.class)));
-        given(observationRepository.claimProcessing(anyString(), anyString(), anyLong(), anyLong()))
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        givenSaveCreatesItem();
+        given(congestionEventRepository.updateEventStatus(
+                anyString(), eq(EventProcessingStatus.RECEIVED), eq(EventProcessingStatus.PROCESSING)))
                 .willReturn(true);
-        given(observationRepository.failProcessing(anyString(), anyString())).willReturn(true);
+        given(congestionEventRepository.updateEventStatus(
+                anyString(), eq(EventProcessingStatus.PROCESSING), eq(EventProcessingStatus.FAILED)))
+                .willReturn(true);
         doThrow(new IllegalStateException("websocket unavailable"))
-                .when(trainingEventPublisher).publishCongestionUpdated(any(), any(), any());
+                .when(trainingEventPublisher).publishCongestionEventReceived(any(), any(), any());
 
-        assertThatThrownBy(() -> congestionEventService.reportCongestion(request(CongestionLevel.CROWDED)))
+        assertThatThrownBy(() -> service.reportCongestionEvent(cctv, request(13)))
                 .isInstanceOf(ApiException.class)
-                .hasFieldOrPropertyWithValue(
-                        "errorCode",
-                        CongestionErrorCode.EVENT_PROCESSING_FAILED
-                );
+                .hasFieldOrPropertyWithValue("errorCode", CongestionErrorCode.EVENT_PROCESSING_FAILED);
 
-        verify(observationRepository).failProcessing(anyString(), anyString());
-        verify(routeRecalculationService).trigger(session, edge, CongestionLevel.CROWDED);
+        verify(congestionEventRepository).updateEventStatus(
+                anyString(), eq(EventProcessingStatus.PROCESSING), eq(EventProcessingStatus.FAILED));
     }
 
     @Test
     @DisplayName("후속 처리 성공 상태는 PostgreSQL 커밋 이후에 기록한다")
-    void reportCongestion_marksProcessedAfterCommit() {
+    void reportCongestionEvent_marksProcessedAfterCommit() {
         TrainingSession session = mock(TrainingSession.class);
         given(session.getId()).willReturn(sessionId);
-        given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
         given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
-                sessionId, TrainingStatus.RUNNING, buildingId
-        )).willReturn(Optional.of(session));
-        given(observationRepository.saveIfAbsent(any())).willAnswer(invocation ->
-                IdempotentSaveResult.created(invocation.getArgument(0, ObservationItem.class)));
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        givenSaveCreatesItem();
         givenProcessingClaimed();
 
         TransactionSynchronizationManager.initSynchronization();
         try {
-            congestionEventService.reportCongestion(request(CongestionLevel.CROWDED));
+            service.reportCongestionEvent(cctv, request(5));
 
-            verify(observationRepository, never()).completeProcessing(anyString(), anyString());
-            verify(trainingEventPublisher, never()).publishCongestionUpdated(any(), any(), any());
+            verify(congestionEventRepository, never()).updateEventStatus(
+                    anyString(), eq(EventProcessingStatus.PROCESSING), eq(EventProcessingStatus.PROCESSED));
+            verify(trainingEventPublisher, never())
+                    .publishCongestionEventReceived(any(), any(), any());
+
             TransactionSynchronization synchronization = TransactionSynchronizationManager
-                    .getSynchronizations()
-                    .get(0);
+                    .getSynchronizations().get(0);
             synchronization.afterCommit();
             synchronization.afterCompletion(TransactionSynchronization.STATUS_COMMITTED);
 
-            verify(observationRepository).completeProcessing(anyString(), anyString());
-            verify(observationRepository, never()).failProcessing(anyString(), anyString());
-            verify(trainingEventPublisher).publishCongestionUpdated(any(), any(), any());
+            verify(congestionEventRepository).updateEventStatus(
+                    anyString(), eq(EventProcessingStatus.PROCESSING), eq(EventProcessingStatus.PROCESSED));
+            verify(trainingEventPublisher).publishCongestionEventReceived(any(), any(), any());
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }
@@ -312,79 +400,35 @@ class CongestionEventServiceTest {
 
     @Test
     @DisplayName("PostgreSQL 트랜잭션이 롤백되면 처리 상태를 FAILED로 기록한다")
-    void reportCongestion_marksFailedAfterRollback() {
+    void reportCongestionEvent_marksFailedAfterRollback() {
         TrainingSession session = mock(TrainingSession.class);
         given(session.getId()).willReturn(sessionId);
-        given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
         given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
-                sessionId, TrainingStatus.RUNNING, buildingId
-        )).willReturn(Optional.of(session));
-        given(observationRepository.saveIfAbsent(any())).willAnswer(invocation ->
-                IdempotentSaveResult.created(invocation.getArgument(0, ObservationItem.class)));
-        given(observationRepository.claimProcessing(anyString(), anyString(), anyLong(), anyLong()))
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        givenSaveCreatesItem();
+        given(congestionEventRepository.updateEventStatus(
+                anyString(), eq(EventProcessingStatus.RECEIVED), eq(EventProcessingStatus.PROCESSING)))
                 .willReturn(true);
-        given(observationRepository.failProcessing(anyString(), anyString())).willReturn(true);
+        given(congestionEventRepository.updateEventStatus(
+                anyString(), eq(EventProcessingStatus.PROCESSING), eq(EventProcessingStatus.FAILED)))
+                .willReturn(true);
 
         TransactionSynchronizationManager.initSynchronization();
         try {
-            congestionEventService.reportCongestion(request(CongestionLevel.CAUTION));
+            service.reportCongestionEvent(cctv, request(5));
 
-            verify(trainingEventPublisher, never()).publishCongestionUpdated(any(), any(), any());
+            verify(trainingEventPublisher, never())
+                    .publishCongestionEventReceived(any(), any(), any());
             TransactionSynchronization synchronization = TransactionSynchronizationManager
-                    .getSynchronizations()
-                    .get(0);
+                    .getSynchronizations().get(0);
             synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
 
-            verify(observationRepository).failProcessing(anyString(), anyString());
-            verify(observationRepository, never()).completeProcessing(anyString(), anyString());
-            verify(trainingEventPublisher, never()).publishCongestionUpdated(any(), any(), any());
+            verify(congestionEventRepository).updateEventStatus(
+                    anyString(), eq(EventProcessingStatus.PROCESSING), eq(EventProcessingStatus.FAILED));
+            verify(congestionEventRepository, never()).updateEventStatus(
+                    anyString(), eq(EventProcessingStatus.PROCESSING), eq(EventProcessingStatus.PROCESSED));
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }
-    }
-
-    @Test
-    @DisplayName("커밋 후 WebSocket 발행 실패를 FAILED로 기록한다")
-    void reportCongestion_marksFailedWhenAfterCommitPublishFails() {
-        TrainingSession session = mock(TrainingSession.class);
-        given(session.getId()).willReturn(sessionId);
-        given(mapEdgeJpaRepository.findById(edgeId)).willReturn(Optional.of(edge));
-        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
-                sessionId, TrainingStatus.RUNNING, buildingId
-        )).willReturn(Optional.of(session));
-        given(observationRepository.saveIfAbsent(any())).willAnswer(invocation ->
-                IdempotentSaveResult.created(invocation.getArgument(0, ObservationItem.class)));
-        given(observationRepository.claimProcessing(anyString(), anyString(), anyLong(), anyLong()))
-                .willReturn(true);
-        given(observationRepository.failProcessing(anyString(), anyString())).willReturn(true);
-        doThrow(new IllegalStateException("websocket unavailable"))
-                .when(trainingEventPublisher).publishCongestionUpdated(any(), any(), any());
-
-        TransactionSynchronizationManager.initSynchronization();
-        try {
-            congestionEventService.reportCongestion(request(CongestionLevel.CAUTION));
-            TransactionSynchronization synchronization = TransactionSynchronizationManager
-                    .getSynchronizations()
-                    .get(0);
-
-            assertThatThrownBy(synchronization::afterCommit)
-                    .isInstanceOf(ApiException.class)
-                    .hasFieldOrPropertyWithValue(
-                            "errorCode",
-                            CongestionErrorCode.EVENT_PROCESSING_FAILED
-                    );
-            synchronization.afterCompletion(TransactionSynchronization.STATUS_COMMITTED);
-
-            verify(observationRepository).failProcessing(anyString(), anyString());
-            verify(observationRepository, never()).completeProcessing(anyString(), anyString());
-        } finally {
-            TransactionSynchronizationManager.clearSynchronization();
-        }
-    }
-
-    private void givenProcessingClaimed() {
-        given(observationRepository.claimProcessing(anyString(), anyString(), anyLong(), anyLong()))
-                .willReturn(true);
-        given(observationRepository.completeProcessing(anyString(), anyString())).willReturn(true);
     }
 }
