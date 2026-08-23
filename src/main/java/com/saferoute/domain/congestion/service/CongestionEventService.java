@@ -34,9 +34,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-// Pi가 혼잡 진입/상승/종료를 감지한 즉시 보내는 이벤트(이슈 9)를 받아 BE가 직접 밀도·혼잡 단계를
+// Pi가 혼잡 진입/상승/종료를 감지한 즉시 보내는 이벤트를 받아 BE가 직접 밀도·혼잡 단계를
 // 계산하고 저장한다. 멱등 저장/처리 상태 전이/after-commit 발행 구조는 CongestionObservationService
-// (이슈 8, 5초 관측값)와 동일한 패턴을 쓰되, CongestionEventRepository는 처리 소유자(lease) 없이
+// (5초 관측값)와 동일한 패턴을 쓰되, CongestionEventRepository는 처리 소유자(lease) 없이
 // RECEIVED/PROCESSING/PROCESSED/FAILED 상태만으로 동시 처리를 막는다.
 @Slf4j
 @Service

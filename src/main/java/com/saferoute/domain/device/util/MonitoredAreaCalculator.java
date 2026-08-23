@@ -1,7 +1,7 @@
 package com.saferoute.domain.device.util;
 
 // CCTV의 감시 면적(monitoredAreaM2) 계산. CctvResponse(관리자 응답)와
-// 향후 Pi 설정 조회 API(이슈 6)가 동일한 계산을 공유하기 위해 분리했다.
+// Pi 설정 조회 API가 동일한 계산을 공유하기 위해 분리했다.
 public final class MonitoredAreaCalculator {
 
     private MonitoredAreaCalculator() {
