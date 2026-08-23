@@ -119,6 +119,13 @@ public class SecurityConfig {
                                 "/api/v1/route-recalculations/*"
                         ).hasRole("MANAGER")
 
+                        // 혼잡 이미지 조회 URL도 관리자 화면 전용이다.
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/congestion-events/*/image-url",
+                                "/api/v1/congestion-observations/*/image-url"
+                        ).hasRole("MANAGER")
+
                         .requestMatchers(
                                 HttpMethod.GET,
                                 "/api/**"
