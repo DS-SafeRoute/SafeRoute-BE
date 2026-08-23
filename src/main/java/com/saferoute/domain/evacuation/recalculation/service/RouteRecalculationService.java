@@ -21,6 +21,7 @@ import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -34,6 +35,13 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class RouteRecalculationService {
+
+    // "경로 혼잡 비용" 표: CAUTION은 1.5배, CROWDED는 3배 페널티만 주고 여전히 후보에 남긴다.
+    // VERY_CROWDED는 배율이 아니라 완전 제외(excludedEdgeIds)로 처리한다 - trigger()의
+    // requiresRouteRecalculation() 게이트 상 CAUTION은 현재 이 메서드까지 도달하지 않지만,
+    // 표 전체를 그대로 반영해둔다.
+    private static final double CAUTION_WEIGHT_MULTIPLIER = 1.5;
+    private static final double CROWDED_WEIGHT_MULTIPLIER = 3.0;
 
     private final RouteRecalculationRepository routeRecalculationRepository;
     private final EvacuationRouteService evacuationRouteService;
@@ -67,13 +75,16 @@ public class RouteRecalculationService {
         }
 
         UUID floorId = triggerEdge.getFloor().getId();
+        // TODO: 양방향 엣지에서는 실제로 반대편(toNode) 기준 우회도 필요할 수 있다 - 지금은
+        // fromNode 기준으로 고정한다 (BE-06 선행 위험으로 문서에 명시된 채 아직 미해결).
         UUID startNodeId = triggerEdge.getFromNode().getId();
 
         RouteSnapshot previous = resolveActiveRoute(session, triggerEdge, floorId, startNodeId);
 
         EvacuationRoute candidate;
         try {
-            candidate = evacuationRouteService.findShortestRoute(floorId, startNodeId, Set.of(triggerEdge.getId()));
+            candidate = evacuationRouteService.findShortestRoute(
+                    floorId, startNodeId, excludedEdgesFor(triggerEdge, level), weightMultipliersFor(triggerEdge, level));
         } catch (ApiException exception) {
             if (exception.getErrorCode() == EvacuationErrorCode.EVACUATION_ROUTE_NOT_FOUND) {
                 log.warn("우회 경로를 찾을 수 없어 재탐색 승인 대기 항목을 생성하지 않음: sessionId={}, edgeId={}",
@@ -84,6 +95,20 @@ public class RouteRecalculationService {
         }
 
         savePending(session, triggerEdge, cctvCode, triggerType, level, density, previous, candidate);
+    }
+
+    // VERY_CROWDED만 완전 제외한다 - 배율만으로는 다른 대안이 훨씬 나쁠 때 여전히 그 엣지를
+    // 통과하는 경로가 선택될 수 있어, "사실상 통행 불가"를 표현하려면 그래프에서 아예 빼야 한다.
+    private Set<UUID> excludedEdgesFor(MapEdge triggerEdge, CongestionLevel level) {
+        return level == CongestionLevel.VERY_CROWDED ? Set.of(triggerEdge.getId()) : Set.of();
+    }
+
+    private Map<UUID, Double> weightMultipliersFor(MapEdge triggerEdge, CongestionLevel level) {
+        return switch (level) {
+            case CAUTION -> Map.of(triggerEdge.getId(), CAUTION_WEIGHT_MULTIPLIER);
+            case CROWDED -> Map.of(triggerEdge.getId(), CROWDED_WEIGHT_MULTIPLIER);
+            case NORMAL, VERY_CROWDED -> Map.of();
+        };
     }
 
     // 혼잡 종료 시 정상(트리거 엣지를 포함한 직행) 경로로의 복구 후보를 계산한다.

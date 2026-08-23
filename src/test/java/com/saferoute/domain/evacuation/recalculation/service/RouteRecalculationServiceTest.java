@@ -32,6 +32,7 @@ import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -130,7 +131,7 @@ class RouteRecalculationServiceTest {
                 .willReturn(Optional.of(existing));
         givenNoApprovedHistory();
         givenNoDirectRoute();
-        given(evacuationRouteService.findShortestRoute(any(), any(), anySet()))
+        given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any()))
                 .willThrow(new ApiException(EvacuationErrorCode.EVACUATION_ROUTE_NOT_FOUND));
 
         routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.VERY_CROWDED,
@@ -146,7 +147,7 @@ class RouteRecalculationServiceTest {
         givenNoExistingPending();
         givenNoApprovedHistory();
         givenNoDirectRoute();
-        given(evacuationRouteService.findShortestRoute(any(), any(), anySet()))
+        given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any()))
                 .willThrow(new ApiException(EvacuationErrorCode.EVACUATION_ROUTE_NOT_FOUND));
 
         routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.CROWDED,
@@ -157,8 +158,8 @@ class RouteRecalculationServiceTest {
     }
 
     @Test
-    @DisplayName("우회 경로를 찾으면 PENDING 저장 + WS 발행을 한다")
-    void trigger_createsPendingRecalculationAndPublishesEvent() {
+    @DisplayName("VERY_CROWDED면 트리거 엣지를 완전히 제외하고 우회 경로를 계산한다")
+    void trigger_veryCrowded_excludesTriggerEdgeEntirely() {
         givenNoExistingPending();
         givenNoApprovedHistory();
         givenNoDirectRoute();
@@ -166,7 +167,36 @@ class RouteRecalculationServiceTest {
         MapNode exitNode = MapNode.create(mock(Floor.class), "STAIR1", NodeType.STAIR, "STAIR1", 0, 0, true);
         ReflectionTestUtils.setField(exitNode, "id", UUID.randomUUID());
         EvacuationRoute route = new EvacuationRoute(List.of(exitNode), 12.5);
-        given(evacuationRouteService.findShortestRoute(any(), any(), anySet())).willReturn(route);
+        given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any())).willReturn(route);
+
+        RouteRecalculation saved = pendingRecalculation(CongestionLevel.VERY_CROWDED);
+        given(routeRecalculationRepository.save(any())).willReturn(saved);
+
+        routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.VERY_CROWDED,
+                RecalculationTriggerType.STARTED, "CCTV_001", 5.5);
+
+        ArgumentCaptor<Set<UUID>> excludedEdgesCaptor = ArgumentCaptor.forClass(Set.class);
+        ArgumentCaptor<Map<UUID, Double>> multipliersCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(evacuationRouteService).findShortestRoute(
+                any(), any(), excludedEdgesCaptor.capture(), multipliersCaptor.capture());
+        assertThat(excludedEdgesCaptor.getValue()).containsExactly(triggerEdge.getId());
+        assertThat(multipliersCaptor.getValue()).isEmpty();
+
+        verify(routeRecalculationRepository, times(1)).save(any());
+        verify(trainingEventPublisher, times(1)).publishRouteRecalculationRequestedAfterCommit(saved);
+    }
+
+    @Test
+    @DisplayName("CROWDED면 트리거 엣지를 제외하지 않고 3배 가중치만 줘서 후보에 남긴다")
+    void trigger_crowded_appliesWeightMultiplierInsteadOfExcluding() {
+        givenNoExistingPending();
+        givenNoApprovedHistory();
+        givenNoDirectRoute();
+
+        MapNode exitNode = MapNode.create(mock(Floor.class), "STAIR1", NodeType.STAIR, "STAIR1", 0, 0, true);
+        ReflectionTestUtils.setField(exitNode, "id", UUID.randomUUID());
+        EvacuationRoute route = new EvacuationRoute(List.of(exitNode), 12.5);
+        given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any())).willReturn(route);
 
         RouteRecalculation saved = pendingRecalculation(CongestionLevel.CROWDED);
         given(routeRecalculationRepository.save(any())).willReturn(saved);
@@ -175,8 +205,11 @@ class RouteRecalculationServiceTest {
                 RecalculationTriggerType.STARTED, "CCTV_001", 3.5);
 
         ArgumentCaptor<Set<UUID>> excludedEdgesCaptor = ArgumentCaptor.forClass(Set.class);
-        verify(evacuationRouteService).findShortestRoute(any(), any(), excludedEdgesCaptor.capture());
-        assertThat(excludedEdgesCaptor.getValue()).containsExactly(triggerEdge.getId());
+        ArgumentCaptor<Map<UUID, Double>> multipliersCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(evacuationRouteService).findShortestRoute(
+                any(), any(), excludedEdgesCaptor.capture(), multipliersCaptor.capture());
+        assertThat(excludedEdgesCaptor.getValue()).isEmpty();
+        assertThat(multipliersCaptor.getValue()).containsEntry(triggerEdge.getId(), 3.0);
 
         verify(routeRecalculationRepository, times(1)).save(any());
         verify(trainingEventPublisher, times(1)).publishRouteRecalculationRequestedAfterCommit(saved);
