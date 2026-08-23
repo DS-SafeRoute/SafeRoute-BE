@@ -16,7 +16,9 @@ public record RouteRecalculationResponse(
         double totalWeight,
         RecalculationStatus status,
         Instant requestedAt,
-        Instant resolvedAt
+        Instant resolvedAt,
+        String resolvedBy,
+        String rejectReason
 ) {
 
     public static RouteRecalculationResponse from(RouteRecalculation recalculation) {
@@ -32,7 +34,9 @@ public record RouteRecalculationResponse(
                 recalculation.getTotalWeight(),
                 recalculation.getStatus(),
                 recalculation.getRequestedAt(),
-                recalculation.getResolvedAt()
+                recalculation.getResolvedAt(),
+                recalculation.getResolvedBy() != null ? recalculation.getResolvedBy().getUsername() : null,
+                recalculation.getRejectReason()
         );
     }
 }
