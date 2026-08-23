@@ -3,9 +3,12 @@ package com.saferoute.infrastructure.websocket.service;
 import com.saferoute.domain.device.entity.IoTLight;
 import com.saferoute.domain.device.entity.IoTLightDirection;
 import com.saferoute.domain.evacuation.recalculation.entity.RouteRecalculation;
+import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventItem;
 import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.infrastructure.websocket.dto.CongestionEventData;
+import com.saferoute.infrastructure.websocket.dto.CongestionEventImageUpdatedData;
+import com.saferoute.infrastructure.websocket.dto.CongestionEventReceivedData;
 import com.saferoute.infrastructure.websocket.dto.CongestionImageUpdatedData;
 import com.saferoute.infrastructure.websocket.dto.IoTLightEventMessage;
 import com.saferoute.infrastructure.websocket.dto.IoTLightStatusEventData;
@@ -160,6 +163,42 @@ public class TrainingEventPublisher {
         messagingTemplate.convertAndSend(SESSION_TOPIC_PREFIX + sessionId, message);
         log.debug(
                 "혼잡 이벤트 이미지 갱신 발행: sessionId={}, eventId={}",
+                sessionId,
+                item.getEventId()
+        );
+    }
+
+    // 즉시 혼잡 이벤트(이슈 9) 수신/처리 시 발행한다. CongestionEventService가 발행 성공 여부에 따라
+    // DynamoDB 처리 상태(PROCESSED/FAILED)를 직접 갱신해야 해서, 다른 AfterCommit 헬퍼처럼 실패를
+    // 로그로 삼키지 않고 그대로 던진다 - 호출자가 afterCommit 트랜잭션 동기화를 직접 관리한다.
+    public void publishCongestionEventReceived(UUID sessionId, UUID edgeId, CongestionEventItem item) {
+        TrainingEventMessage<CongestionEventReceivedData> message = TrainingEventMessage.of(
+                TrainingEventType.CONGESTION_EVENT_RECEIVED,
+                sessionId,
+                CongestionEventReceivedData.from(edgeId, item)
+        );
+
+        messagingTemplate.convertAndSend(SESSION_TOPIC_PREFIX + sessionId, message);
+
+        log.debug(
+                "즉시 혼잡 이벤트 발행: sessionId={}, edgeId={}, eventId={}, level={}",
+                sessionId,
+                edgeId,
+                item.getEventId(),
+                item.getCongestionLevel()
+        );
+    }
+
+    public void publishCongestionEventImageUpdated(UUID sessionId, CongestionEventItem item) {
+        TrainingEventMessage<CongestionEventImageUpdatedData> message = TrainingEventMessage.of(
+                TrainingEventType.CONGESTION_EVENT_IMAGE_UPDATED,
+                sessionId,
+                CongestionEventImageUpdatedData.from(item)
+        );
+
+        messagingTemplate.convertAndSend(SESSION_TOPIC_PREFIX + sessionId, message);
+        log.debug(
+                "즉시 혼잡 이벤트 이미지 갱신 발행: sessionId={}, eventId={}",
                 sessionId,
                 item.getEventId()
         );
