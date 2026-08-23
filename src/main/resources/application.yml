@@ -40,6 +40,8 @@ aws:
   s3:
     bucket: ${S3_BUCKET}
     presigned-url-expiration: 1m
+    # 관리자 화면이 이미지를 불러오는 동안 만료되지 않도록 업로드용(1분)보다 넉넉하게 잡는다.
+    presigned-get-url-expiration: 5m
 
   dynamodb:
     table-name: ${DYNAMODB_TABLE:saferoute-telemetry}

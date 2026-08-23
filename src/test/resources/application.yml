@@ -32,6 +32,7 @@ aws:
   s3:
     bucket: test-bucket
     presigned-url-expiration: 10m
+    presigned-get-url-expiration: 10m
 
   dynamodb:
     table-name: test-saferoute-telemetry
