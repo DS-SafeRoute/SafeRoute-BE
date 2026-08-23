@@ -36,9 +36,20 @@ public class EvacuationRouteService {
         return findShortestRoute(floorId, startNodeId, Set.of());
     }
 
-    // 혼잡 재탐색용 - 지정된 엣지를 그래프에서 제외하고 우회 경로를 계산한다.
-    // congestion/danger 가중치 자체(현재 0 고정)와는 별개로, "엣지 제외" 방식의 임시 조치다.
+    // 혼잡 재탐색용 - 지정된 엣지를 그래프에서 제외하고 우회 경로를 계산한다 (VERY_CROWDED처럼
+    // 완전히 막힌 경우). 레벨별로 페널티만 주고 여전히 후보에 남기고 싶다면 weightMultipliers를 쓰는
+    // 4-인자 오버로드를 사용한다.
     public EvacuationRoute findShortestRoute(UUID floorId, UUID startNodeId, Set<UUID> excludedEdgeIds) {
+        return findShortestRoute(floorId, startNodeId, excludedEdgeIds, Map.of());
+    }
+
+    // 혼잡 단계별로 특정 엣지의 가중치에 배율을 적용한다 (문서 "경로 혼잡 비용" 표: CAUTION ×1.5,
+    // CROWDED ×3.0). 배율이 없는 엣지는 1.0을 적용한 것과 같다. VERY_CROWDED처럼 아예 후보에서
+    // 빼야 하는 경우는 배율이 아니라 excludedEdgeIds로 처리한다 - 배율만으로는 그래프가 다른 대안이
+    // 없을 때 여전히 그 엣지를 통과하는 경로를 고를 수 있기 때문이다.
+    public EvacuationRoute findShortestRoute(
+            UUID floorId, UUID startNodeId, Set<UUID> excludedEdgeIds, Map<UUID, Double> weightMultipliers
+    ) {
         List<MapNode> nodes = mapGraphRepository.findNodesByFloor(floorId);
         List<MapEdge> edges = mapGraphRepository.findEdgesByFloor(floorId).stream()
                 .filter(edge -> !excludedEdgeIds.contains(edge.getId()))
@@ -85,7 +96,7 @@ public class EvacuationRouteService {
                         ? edge.getFromNode().getId()
                         : edge.getToNode().getId();
 
-                double newDistance = distance.get(current.nodeId()) + calculateWeight(edge);
+                double newDistance = distance.get(current.nodeId()) + calculateWeight(edge, weightMultipliers);
                 if (newDistance < distance.getOrDefault(neighbor, Double.MAX_VALUE)) {
                     distance.put(neighbor, newDistance);
                     previous.put(neighbor, current.nodeId());
@@ -109,12 +120,15 @@ public class EvacuationRouteService {
         return adjacency;
     }
 
-    // weight = distance + α×congestion + β×danger
-    // TODO: congestion/danger 현재 0 고정 - 혼잡도(DynamoDB)·blocked 외 danger 데이터 연동 확정 후 반영
-    private double calculateWeight(MapEdge edge) {
+    // weight = (distance + α×congestion + β×danger) × 혼잡 재탐색용 배율
+    // TODO: congestion/danger 현재 0 고정 - 혼잡도(DynamoDB)·blocked 외 danger 데이터 연동 확정 후 반영.
+    // weightMultipliers는 그것과 별개로, RouteRecalculationService가 트리거 엣지에 "경로 혼잡 비용"
+    // 표(CAUTION ×1.5, CROWDED ×3.0)를 적용하기 위해 넘기는 값이다 - 두 메커니즘은 독립적이다.
+    private double calculateWeight(MapEdge edge, Map<UUID, Double> weightMultipliers) {
         double congestion = 0.0;
         double danger = 0.0;
-        return edge.getDistance() + CONGESTION_WEIGHT * congestion + DANGER_WEIGHT * danger;
+        double baseWeight = edge.getDistance() + CONGESTION_WEIGHT * congestion + DANGER_WEIGHT * danger;
+        return baseWeight * weightMultipliers.getOrDefault(edge.getId(), 1.0);
     }
 
     private EvacuationRoute buildRoute(Map<UUID, MapNode> nodeById, Map<UUID, UUID> previous,
