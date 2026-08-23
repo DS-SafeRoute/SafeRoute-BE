@@ -6,5 +6,9 @@ package com.saferoute.domain.evacuation.recalculation.entity;
 public enum RecalculationStatus {
     PENDING,
     APPROVED,
-    REJECTED
+    REJECTED,
+
+    // 승인 전에 혼잡 상태가 바뀌었거나(레벨 변동), 훈련이 종료되었거나, 혼잡이 먼저 끝나서
+    // 더 이상 유효하지 않게 된 후보. RouteRecalculationService가 시스템적으로만 부여한다.
+    CANCELLED
 }
