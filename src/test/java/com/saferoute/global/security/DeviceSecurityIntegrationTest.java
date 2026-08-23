@@ -11,7 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.building.entity.BuildingType;
 import com.saferoute.domain.building.repository.BuildingRepository;
-import com.saferoute.domain.congestion.dto.request.ReportCongestionRequest;
+import com.saferoute.domain.congestion.dto.request.ReportCongestionEventRequest;
 import com.saferoute.domain.congestion.entity.CongestionLevel;
 import com.saferoute.domain.congestion.service.CongestionEventService;
 import com.saferoute.domain.device.entity.Cctv;
@@ -21,7 +21,8 @@ import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.floor.repository.FloorRepository;
-import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
+import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventItem;
+import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventType;
 import com.saferoute.domain.telemetry.dynamo.repository.IdempotentSaveResult;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -58,23 +59,21 @@ class DeviceSecurityIntegrationTest {
     @BeforeEach
     void setUp() {
         authenticatedCctv = saveCctv("CCTV_001", RAW_TOKEN, true);
-        given(congestionEventService.reportCongestion(any())).willAnswer(invocation -> {
-            ReportCongestionRequest request = invocation.getArgument(0);
-            ObservationItem item = ObservationItem.create(
+        given(congestionEventService.reportCongestionEvent(any(), any())).willAnswer(invocation -> {
+            ReportCongestionEventRequest request = invocation.getArgument(1);
+            CongestionEventItem item = CongestionEventItem.received(
                     request.eventId(),
                     request.trainingSessionId(),
-                    request.edgeId(),
                     request.cctvCode(),
-                    request.avgHeadcount(),
-                    request.peakHeadcount(),
-                    request.sampleCount(),
-                    request.density(),
-                    request.congestionLevel(),
-                    request.windowStart(),
-                    request.windowEnd(),
-                    request.capturedAt(),
-                    request.monitoringImageKey(),
-                    request.configVersion()
+                    request.eventType(),
+                    request.detectedAt(),
+                    request.headcount(),
+                    request.localDensity(),
+                    request.localCongestionLevel(),
+                    request.localDensity(),
+                    request.localCongestionLevel(),
+                    request.configVersion(),
+                    null
             );
             return IdempotentSaveResult.created(item);
         });
@@ -184,21 +183,16 @@ class DeviceSecurityIntegrationTest {
     }
 
     private String request(String cctvCode) throws Exception {
-        ReportCongestionRequest request = new ReportCongestionRequest(
-                UUID.randomUUID(),
+        ReportCongestionEventRequest request = new ReportCongestionEventRequest(
                 UUID.randomUUID(),
                 UUID.randomUUID(),
                 cctvCode,
-                5.0,
-                8,
-                25,
-                2.5,
+                CongestionEventType.CONGESTION_STARTED,
+                2_000L,
+                9,
+                4.5,
                 CongestionLevel.CROWDED,
-                1_000L,
-                2_000L,
-                2_000L,
-                1L,
-                null
+                1L
         );
         return objectMapper.writeValueAsString(request);
     }

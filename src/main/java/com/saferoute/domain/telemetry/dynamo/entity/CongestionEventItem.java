@@ -30,6 +30,7 @@ public class CongestionEventItem {
     private CongestionLevel congestionLevel;
     private Long configVersion;
     private String eventImageKey;
+    private Long imageUploadedAt;
     private EventProcessingStatus eventStatus;
     private ImageUploadStatus imageUploadStatus;
 
@@ -216,6 +217,14 @@ public class CongestionEventItem {
 
     public void setEventImageKey(String eventImageKey) {
         this.eventImageKey = eventImageKey;
+    }
+
+    public Long getImageUploadedAt() {
+        return imageUploadedAt;
+    }
+
+    public void setImageUploadedAt(Long imageUploadedAt) {
+        this.imageUploadedAt = imageUploadedAt;
     }
 
     public EventProcessingStatus getEventStatus() {

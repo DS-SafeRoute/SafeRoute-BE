@@ -2,10 +2,10 @@ package com.saferoute.domain.congestion.service;
 
 import com.saferoute.domain.congestion.dto.request.ConnectEventImageRequest;
 import com.saferoute.domain.device.service.DeviceAuthorizationService;
+import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventItem;
 import com.saferoute.domain.telemetry.dynamo.entity.EventProcessingStatus;
 import com.saferoute.domain.telemetry.dynamo.entity.ImageUploadStatus;
-import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
-import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
+import com.saferoute.domain.telemetry.dynamo.repository.CongestionEventRepository;
 import com.saferoute.global.api.error.CongestionErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.global.security.DevicePrincipal;
@@ -26,7 +26,7 @@ public class CongestionEventImageService {
     private static final String EVENTS_DIRECTORY = "events";
     private static final String JPEG_SUFFIX = ".jpg";
 
-    private final ObservationRepository observationRepository;
+    private final CongestionEventRepository congestionEventRepository;
     private final DeviceAuthorizationService deviceAuthorizationService;
     private final S3Service s3Service;
     private final TrainingEventPublisher trainingEventPublisher;
@@ -36,7 +36,7 @@ public class CongestionEventImageService {
             UUID eventId,
             ConnectEventImageRequest request
     ) {
-        ObservationItem item = findEvent(eventId);
+        CongestionEventItem item = findEvent(eventId);
         deviceAuthorizationService.validateCctv(principal, item.getCctvCode());
         validateEventProcessed(item);
         validateObjectKey(item, eventId, request.eventImageKey());
@@ -51,10 +51,10 @@ public class CongestionEventImageService {
             throw new ApiException(CongestionErrorCode.EVENT_IMAGE_OBJECT_NOT_FOUND);
         }
 
-        if (!observationRepository.completeImageUpload(
+        if (!congestionEventRepository.completeImageUpload(
                 eventId.toString(), request.eventImageKey(), request.uploadedAt()
         )) {
-            ObservationItem latest = findEvent(eventId);
+            CongestionEventItem latest = findEvent(eventId);
             if (!isSameCompletedImage(latest, request)) {
                 throw new ApiException(CongestionErrorCode.EVENT_IMAGE_STATE_CONFLICT);
             }
@@ -68,18 +68,18 @@ public class CongestionEventImageService {
         publishImageUpdated(item);
     }
 
-    private ObservationItem findEvent(UUID eventId) {
-        return observationRepository.findByEventId(eventId.toString())
+    private CongestionEventItem findEvent(UUID eventId) {
+        return congestionEventRepository.findByEventId(eventId.toString())
                 .orElseThrow(() -> new ApiException(CongestionErrorCode.EVENT_NOT_FOUND));
     }
 
-    private void validateEventProcessed(ObservationItem item) {
+    private void validateEventProcessed(CongestionEventItem item) {
         if (item.getEventStatus() != EventProcessingStatus.PROCESSED) {
             throw new ApiException(CongestionErrorCode.EVENT_NOT_PROCESSED);
         }
     }
 
-    private void validateImageState(ObservationItem item) {
+    private void validateImageState(CongestionEventItem item) {
         if (item.getImageUploadStatus() != null
                 && item.getImageUploadStatus() != ImageUploadStatus.PENDING
                 && item.getImageUploadStatus() != ImageUploadStatus.FAILED) {
@@ -87,7 +87,7 @@ public class CongestionEventImageService {
         }
     }
 
-    private void validateObjectKey(ObservationItem item, UUID eventId, String objectKey) {
+    private void validateObjectKey(CongestionEventItem item, UUID eventId, String objectKey) {
         String[] segments = objectKey.split("/", -1);
         if (segments.length != 5
                 || !TRAINING_PREFIX.equals(segments[0])
@@ -120,21 +120,16 @@ public class CongestionEventImageService {
     }
 
     private boolean isSameCompletedImage(
-            ObservationItem item,
+            CongestionEventItem item,
             ConnectEventImageRequest request
     ) {
-        return isCompletedStatus(item.getImageUploadStatus())
+        return item.getImageUploadStatus() == ImageUploadStatus.COMPLETED
                 && Objects.equals(item.getEventImageKey(), request.eventImageKey())
                 && Objects.equals(item.getImageUploadedAt(), request.uploadedAt());
     }
 
-    @SuppressWarnings("deprecation")
-    private boolean isCompletedStatus(ImageUploadStatus status) {
-        return status == ImageUploadStatus.COMPLETED || status == ImageUploadStatus.UPLOADED;
-    }
-
-    private void publishImageUpdated(ObservationItem item) {
-        trainingEventPublisher.publishCongestionImageUpdated(
+    private void publishImageUpdated(CongestionEventItem item) {
+        trainingEventPublisher.publishCongestionEventImageUpdated(
                 UUID.fromString(item.getTrainingSessionId()),
                 item
         );

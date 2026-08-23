@@ -11,14 +11,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.saferoute.domain.congestion.dto.request.ReportCongestionRequest;
+import com.saferoute.domain.congestion.dto.request.ReportCongestionEventRequest;
 import com.saferoute.domain.congestion.entity.CongestionLevel;
 import com.saferoute.domain.congestion.service.CongestionEventService;
 import com.saferoute.domain.congestion.service.CongestionEventImageService;
 import com.saferoute.domain.device.service.DeviceAuthorizationService;
-import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
+import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventItem;
+import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventType;
 import com.saferoute.domain.telemetry.dynamo.repository.IdempotentSaveResult;
-import com.saferoute.global.api.error.EvacuationErrorCode;
 import com.saferoute.global.api.error.CongestionErrorCode;
 import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
@@ -51,9 +51,8 @@ import org.springframework.test.web.servlet.MockMvc;
 @AutoConfigureMockMvc(addFilters = false)
 class CongestionControllerTest {
 
-    private static final UUID OBSERVATION_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    private static final UUID EVENT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID SESSION_ID = UUID.fromString("00000000-0000-0000-0000-000000000003");
-    private static final UUID EDGE_ID = UUID.fromString("00000000-0000-0000-0000-000000000004");
 
     @Autowired
     private MockMvc mockMvc;
@@ -70,44 +69,52 @@ class CongestionControllerTest {
     @MockitoBean
     private DeviceAuthorizationService deviceAuthorizationService;
 
-    private ReportCongestionRequest validRequest() {
-        return new ReportCongestionRequest(
-                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
-                "CCTV_001", 5.0, 8, 25, 2.5,
-                CongestionLevel.CROWDED, 1_000L, 2_000L, 2_000L, 1L, null
+    private ReportCongestionEventRequest validRequest() {
+        return new ReportCongestionEventRequest(
+                UUID.randomUUID(), UUID.randomUUID(), "CCTV_001",
+                CongestionEventType.CONGESTION_STARTED, 2_000L, 9, 4.5,
+                CongestionLevel.CROWDED, 1L
+        );
+    }
+
+    private CongestionEventItem event() {
+        return CongestionEventItem.received(
+                EVENT_ID, SESSION_ID, "CCTV_001", CongestionEventType.CONGESTION_STARTED,
+                2_000L, 9, 4.5, CongestionLevel.CROWDED, 4.5, CongestionLevel.CROWDED, 1L, null
         );
     }
 
     @Test
-    @DisplayName("처음 수신한 eventId이면 관측값과 201을 반환한다")
-    void reportCongestion_returnsCreated() throws Exception {
-        given(congestionEventService.reportCongestion(any()))
-                .willReturn(IdempotentSaveResult.created(observation()));
+    @DisplayName("처음 수신한 eventId이면 이벤트와 201을 반환한다")
+    void reportCongestionEvent_returnsCreated() throws Exception {
+        given(congestionEventService.reportCongestionEvent(any(), any()))
+                .willReturn(IdempotentSaveResult.created(event()));
 
         mockMvc.perform(post("/api/v1/device/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(validRequest())))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.eventId").value(OBSERVATION_ID.toString()))
-                .andExpect(jsonPath("$.avgHeadcount").value(5.0));
+                .andExpect(jsonPath("$.eventId").value(EVENT_ID.toString()))
+                .andExpect(jsonPath("$.headcount").value(9))
+                .andExpect(jsonPath("$.congestionLevel").value("CROWDED"));
     }
 
     @Test
-    @DisplayName("중복 eventId이면 기존 관측값과 200을 반환한다")
-    void reportCongestion_returnsExistingObservation() throws Exception {
-        given(congestionEventService.reportCongestion(any()))
-                .willReturn(IdempotentSaveResult.existing(observation()));
+    @DisplayName("중복 eventId이면 기존 이벤트와 200을 반환한다")
+    void reportCongestionEvent_returnsExistingEvent() throws Exception {
+        given(congestionEventService.reportCongestionEvent(any(), any()))
+                .willReturn(IdempotentSaveResult.existing(event()));
 
         mockMvc.perform(post("/api/v1/device/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(validRequest())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.eventId").value(OBSERVATION_ID.toString()));
+                .andExpect(jsonPath("$.eventId").value(EVENT_ID.toString()));
     }
 
     @Test
     @DisplayName("trainingSessionId가 UUID 문자열이 아니면 400을 반환한다")
-    void reportCongestion_returnsBadRequestWhenTrainingSessionIdIsInvalid() throws Exception {
+    void reportCongestionEvent_returnsBadRequestWhenTrainingSessionIdIsInvalid() throws Exception {
         ObjectNode body = objectMapper.valueToTree(validRequest());
         body.put("trainingSessionId", "123");
 
@@ -119,7 +126,7 @@ class CongestionControllerTest {
 
     @Test
     @DisplayName("trainingSessionId가 없으면 400을 반환한다")
-    void reportCongestion_returnsBadRequestWhenTrainingSessionIdIsMissing() throws Exception {
+    void reportCongestionEvent_returnsBadRequestWhenTrainingSessionIdIsMissing() throws Exception {
         ObjectNode body = objectMapper.valueToTree(validRequest());
         body.remove("trainingSessionId");
 
@@ -130,96 +137,57 @@ class CongestionControllerTest {
     }
 
     @Test
-    @DisplayName("edgeId가 없으면 400을 반환한다")
-    void reportCongestion_returnsBadRequestWhenEdgeIdMissing() throws Exception {
-        ReportCongestionRequest invalid = new ReportCongestionRequest(
-                UUID.randomUUID(), UUID.randomUUID(), null,
-                "CCTV_001", 5.0, 8, 25, 2.5,
-                CongestionLevel.CROWDED, 1_000L, 2_000L, 2_000L, 1L, null
-        );
+    @DisplayName("eventType이 없으면 400을 반환한다")
+    void reportCongestionEvent_returnsBadRequestWhenEventTypeMissing() throws Exception {
+        ObjectNode body = objectMapper.valueToTree(validRequest());
+        body.remove("eventType");
 
         mockMvc.perform(post("/api/v1/device/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(invalid)))
+                        .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
-    @DisplayName("avgHeadcount가 음수면 400을 반환한다")
-    void reportCongestion_returnsBadRequestWhenAvgHeadcountNegative() throws Exception {
-        ReportCongestionRequest invalid = new ReportCongestionRequest(
-                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
-                "CCTV_001", -1.0, 8, 25, 2.5,
-                CongestionLevel.CROWDED, 1_000L, 2_000L, 2_000L, 1L, null
-        );
+    @DisplayName("headcount가 음수면 400을 반환한다")
+    void reportCongestionEvent_returnsBadRequestWhenHeadcountNegative() throws Exception {
+        ObjectNode body = objectMapper.valueToTree(validRequest());
+        body.put("headcount", -1);
 
         mockMvc.perform(post("/api/v1/device/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(invalid)))
+                        .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
-    @DisplayName("peakHeadcount가 음수면 400을 반환한다")
-    void reportCongestion_returnsBadRequestWhenPeakHeadcountNegative() throws Exception {
-        ReportCongestionRequest invalid = new ReportCongestionRequest(
-                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
-                "CCTV_001", 5.0, -1, 25, 2.5,
-                CongestionLevel.CROWDED, 1_000L, 2_000L, 2_000L, 1L, null
-        );
+    @DisplayName("localDensity가 음수면 400을 반환한다")
+    void reportCongestionEvent_returnsBadRequestWhenLocalDensityNegative() throws Exception {
+        ObjectNode body = objectMapper.valueToTree(validRequest());
+        body.put("localDensity", -1.0);
 
         mockMvc.perform(post("/api/v1/device/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(invalid)))
+                        .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
-    @DisplayName("avgHeadcount가 peakHeadcount보다 크면 400을 반환한다")
-    void reportCongestion_returnsBadRequestWhenAvgExceedsPeak() throws Exception {
-        ReportCongestionRequest invalid = new ReportCongestionRequest(
-                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
-                "CCTV_001", 9.0, 8, 25, 2.5,
-                CongestionLevel.CROWDED, 1_000L, 2_000L, 2_000L, 1L, null
-        );
+    @DisplayName("configVersion이 0 이하이면 400을 반환한다")
+    void reportCongestionEvent_returnsBadRequestWhenConfigVersionNotPositive() throws Exception {
+        ObjectNode body = objectMapper.valueToTree(validRequest());
+        body.put("configVersion", 0);
 
         mockMvc.perform(post("/api/v1/device/congestion-events")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(invalid)))
+                        .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isBadRequest());
-    }
-
-    @Test
-    @DisplayName("windowStart가 windowEnd보다 이후이면 400을 반환한다")
-    void reportCongestion_returnsBadRequestWhenWindowStartAfterWindowEnd() throws Exception {
-        ReportCongestionRequest invalid = new ReportCongestionRequest(
-                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
-                "CCTV_001", 5.0, 8, 25, 2.5,
-                CongestionLevel.CROWDED, 2_000L, 1_000L, 2_000L, 1L, null
-        );
-
-        mockMvc.perform(post("/api/v1/device/congestion-events")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(invalid)))
-                .andExpect(status().isBadRequest());
-    }
-
-    @Test
-    @DisplayName("서비스가 MAP_EDGE_NOT_FOUND를 던지면 404를 반환한다")
-    void reportCongestion_returnsNotFoundWhenEdgeMissing() throws Exception {
-        given(congestionEventService.reportCongestion(any()))
-                .willThrow(new ApiException(EvacuationErrorCode.MAP_EDGE_NOT_FOUND));
-
-        mockMvc.perform(post("/api/v1/device/congestion-events")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(validRequest())))
-                .andExpect(status().isNotFound());
     }
 
     @Test
     @DisplayName("진행 중인 훈련 세션이 없으면 공통 에러 코드와 409를 반환한다")
-    void reportCongestion_returnsConflictWhenRunningSessionMissing() throws Exception {
-        given(congestionEventService.reportCongestion(any()))
+    void reportCongestionEvent_returnsConflictWhenRunningSessionMissing() throws Exception {
+        given(congestionEventService.reportCongestionEvent(any(), any()))
                 .willThrow(new ApiException(TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND));
 
         mockMvc.perform(post("/api/v1/device/congestion-events")
@@ -231,9 +199,22 @@ class CongestionControllerTest {
     }
 
     @Test
+    @DisplayName("감시 면적을 계산할 수 없으면 CONGESTION009와 409를 반환한다")
+    void reportCongestionEvent_returnsConflictWhenMonitoredAreaUnavailable() throws Exception {
+        given(congestionEventService.reportCongestionEvent(any(), any()))
+                .willThrow(new ApiException(CongestionErrorCode.MONITORED_AREA_NOT_AVAILABLE));
+
+        mockMvc.perform(post("/api/v1/device/congestion-events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONGESTION009"));
+    }
+
+    @Test
     @DisplayName("후속 처리 실패 시 공통 형식의 CONGESTION001과 503을 반환한다")
-    void reportCongestion_returnsServiceUnavailableWhenProcessingFails() throws Exception {
-        given(congestionEventService.reportCongestion(any()))
+    void reportCongestionEvent_returnsServiceUnavailableWhenProcessingFails() throws Exception {
+        given(congestionEventService.reportCongestionEvent(any(), any()))
                 .willThrow(new ApiException(CongestionErrorCode.EVENT_PROCESSING_FAILED));
 
         mockMvc.perform(post("/api/v1/device/congestion-events")
@@ -248,8 +229,8 @@ class CongestionControllerTest {
 
     @Test
     @DisplayName("동일 eventId의 식별 정보가 다르면 CONGESTION002와 409를 반환한다")
-    void reportCongestion_returnsConflictWhenEventIdentityMismatches() throws Exception {
-        given(congestionEventService.reportCongestion(any()))
+    void reportCongestionEvent_returnsConflictWhenEventIdentityMismatches() throws Exception {
+        given(congestionEventService.reportCongestionEvent(any(), any()))
                 .willThrow(new ApiException(CongestionErrorCode.EVENT_IDENTITY_MISMATCH));
 
         mockMvc.perform(post("/api/v1/device/congestion-events")
@@ -265,10 +246,10 @@ class CongestionControllerTest {
     void connectEventImage_returnsNoContent() throws Exception {
         ObjectNode body = objectMapper.createObjectNode()
                 .put("eventImageKey", "training/" + SESSION_ID + "/events/CCTV_001/"
-                        + OBSERVATION_ID + ".jpg")
+                        + EVENT_ID + ".jpg")
                 .put("uploadedAt", 1_786_500_002_800L);
 
-        mockMvc.perform(patch("/api/v1/device/congestion-events/{eventId}/image", OBSERVATION_ID)
+        mockMvc.perform(patch("/api/v1/device/congestion-events/{eventId}/image", EVENT_ID)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isNoContent());
@@ -282,7 +263,7 @@ class CongestionControllerTest {
         ObjectNode body = objectMapper.createObjectNode()
                 .put("uploadedAt", 1_786_500_002_800L);
 
-        mockMvc.perform(patch("/api/v1/device/congestion-events/{eventId}/image", OBSERVATION_ID)
+        mockMvc.perform(patch("/api/v1/device/congestion-events/{eventId}/image", EVENT_ID)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isBadRequest());
@@ -294,7 +275,7 @@ class CongestionControllerTest {
         doThrow(new ApiException(CongestionErrorCode.EVENT_NOT_FOUND))
                 .when(congestionEventImageService).connectImage(any(), any(), any());
 
-        mockMvc.perform(patch("/api/v1/device/congestion-events/{eventId}/image", OBSERVATION_ID)
+        mockMvc.perform(patch("/api/v1/device/congestion-events/{eventId}/image", EVENT_ID)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(validImageRequest())))
                 .andExpect(status().isNotFound())
@@ -308,7 +289,7 @@ class CongestionControllerTest {
         doThrow(new ApiException(CongestionErrorCode.EVENT_IMAGE_STATE_CONFLICT))
                 .when(congestionEventImageService).connectImage(any(), any(), any());
 
-        mockMvc.perform(patch("/api/v1/device/congestion-events/{eventId}/image", OBSERVATION_ID)
+        mockMvc.perform(patch("/api/v1/device/congestion-events/{eventId}/image", EVENT_ID)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(validImageRequest())))
                 .andExpect(status().isConflict())
@@ -319,15 +300,7 @@ class CongestionControllerTest {
     private ObjectNode validImageRequest() {
         return objectMapper.createObjectNode()
                 .put("eventImageKey", "training/" + SESSION_ID + "/events/CCTV_001/"
-                        + OBSERVATION_ID + ".jpg")
+                        + EVENT_ID + ".jpg")
                 .put("uploadedAt", 1_786_500_002_800L);
-    }
-
-    private ObservationItem observation() {
-        return ObservationItem.create(
-                OBSERVATION_ID, SESSION_ID, EDGE_ID, "CCTV_001", 5.0, 8, 25,
-                2.5, CongestionLevel.CROWDED, 1_000L, 2_000L,
-                2_000L, null, 1L
-        );
     }
 }
