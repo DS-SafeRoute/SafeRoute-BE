@@ -112,6 +112,13 @@ public class SecurityConfig {
                                 "/api/v1/floors/*/grid/cells"
                         ).hasRole("MANAGER")
 
+                        // 재탐색 승인 대기 목록/상세는 관리자 화면 전용이라 일반 GET 허용 규칙보다 먼저 좁혀둔다.
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/route-recalculations",
+                                "/api/v1/route-recalculations/*"
+                        ).hasRole("MANAGER")
+
                         .requestMatchers(
                                 HttpMethod.GET,
                                 "/api/**"

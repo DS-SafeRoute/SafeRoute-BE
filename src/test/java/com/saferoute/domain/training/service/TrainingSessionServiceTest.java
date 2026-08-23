@@ -9,6 +9,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import com.saferoute.domain.evacuation.recalculation.service.RouteRecalculationService;
 import com.saferoute.domain.training.dto.CreateSessionRequest;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
@@ -50,6 +51,9 @@ class TrainingSessionServiceTest {
 
     @Mock
     private TrainingScenarioRepository trainingScenarioRepository;
+
+    @Mock
+    private RouteRecalculationService routeRecalculationService;
 
     @Mock
     private TrainingEventPublisher trainingEventPublisher;

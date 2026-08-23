@@ -12,17 +12,22 @@ public record RouteRecalculationEventData(
         CongestionLevel congestionLevel,
         List<UUID> recalculatedNodeIds,
         double totalWeight,
-        RecalculationStatus status
+        RecalculationStatus status,
+        String reason
 ) {
 
     public static RouteRecalculationEventData from(RouteRecalculation recalculation) {
+        String reason = recalculation.getStatus() == RecalculationStatus.REJECTED
+                ? recalculation.getRejectReason()
+                : recalculation.getCancelReason();
         return new RouteRecalculationEventData(
                 recalculation.getId(),
                 recalculation.getTriggerEdge().getId(),
                 recalculation.getCongestionLevel(),
                 recalculation.getRecalculatedNodeIds(),
                 recalculation.getTotalWeight(),
-                recalculation.getStatus()
+                recalculation.getStatus(),
+                reason
         );
     }
 }

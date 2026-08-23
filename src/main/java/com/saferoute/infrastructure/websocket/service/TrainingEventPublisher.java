@@ -254,6 +254,56 @@ public class TrainingEventPublisher {
         );
     }
 
+    // DB 트랜잭션이 실제로 커밋된 이후에만 발행한다 (publishTrainingStatusUpdatedAfterCommit 참고).
+    public void publishRouteRecalculationRejectedAfterCommit(RouteRecalculation recalculation) {
+        publishAfterCommit(
+                () -> publishRouteRecalculationRejected(recalculation),
+                "커밋 후 재탐색 거절 이벤트 발행 실패: recalculationId=" + recalculation.getId()
+        );
+    }
+
+    public void publishRouteRecalculationRejected(RouteRecalculation recalculation) {
+        UUID sessionId = recalculation.getTrainingSession().getId();
+        TrainingEventMessage<RouteRecalculationEventData> message = TrainingEventMessage.of(
+                TrainingEventType.ROUTE_RECALCULATION_REJECTED,
+                sessionId,
+                RouteRecalculationEventData.from(recalculation)
+        );
+
+        messagingTemplate.convertAndSend(SESSION_TOPIC_PREFIX + sessionId, message);
+
+        log.debug(
+                "재탐색 거절 이벤트 발행: sessionId={}, recalculationId={}",
+                sessionId,
+                recalculation.getId()
+        );
+    }
+
+    // DB 트랜잭션이 실제로 커밋된 이후에만 발행한다 (publishTrainingStatusUpdatedAfterCommit 참고).
+    public void publishRouteRecalculationCancelledAfterCommit(RouteRecalculation recalculation) {
+        publishAfterCommit(
+                () -> publishRouteRecalculationCancelled(recalculation),
+                "커밋 후 재탐색 취소 이벤트 발행 실패: recalculationId=" + recalculation.getId()
+        );
+    }
+
+    public void publishRouteRecalculationCancelled(RouteRecalculation recalculation) {
+        UUID sessionId = recalculation.getTrainingSession().getId();
+        TrainingEventMessage<RouteRecalculationEventData> message = TrainingEventMessage.of(
+                TrainingEventType.ROUTE_RECALCULATION_CANCELLED,
+                sessionId,
+                RouteRecalculationEventData.from(recalculation)
+        );
+
+        messagingTemplate.convertAndSend(SESSION_TOPIC_PREFIX + sessionId, message);
+
+        log.debug(
+                "재탐색 취소 이벤트 발행: sessionId={}, recalculationId={}",
+                sessionId,
+                recalculation.getId()
+        );
+    }
+
     private void publishAfterCommit(Runnable publish, String failureLogMessage) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
             publish.run();

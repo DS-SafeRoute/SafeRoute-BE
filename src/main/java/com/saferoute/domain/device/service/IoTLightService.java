@@ -25,9 +25,11 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -154,6 +156,46 @@ public class IoTLightService {
         trainingEventPublisher.publishIoTLightStatusUpdatedAfterCommit(light, direction);
 
         return new LightDirectionResponse(light.getId(), direction, Instant.now());
+    }
+
+    // RouteRecalculation 승인 시 호출한다. 승인된 경로가 지나가는 분기점마다 그 경로를 안내하는
+    // 방향으로 유도등을 전환한다. 개별 유도등이 비활성/미설정/기기 unreachable이어도 다른 유도등
+    // 전환을 막지 않도록 여기서 흡수한다 - 유도등 반영은 승인 자체의 성공 여부에 영향을 주지 않는다.
+    public void applyRouteGuidance(List<UUID> routeNodeIds) {
+        for (int i = 0; i < routeNodeIds.size() - 1; i++) {
+            UUID decisionNodeId = routeNodeIds.get(i);
+            UUID nextNodeId = routeNodeIds.get(i + 1);
+            for (IoTLight light : iotLightJpaRepository.findAllByDecisionNode_Id(decisionNodeId)) {
+                IoTLightDirection direction = resolveDirection(light, decisionNodeId, nextNodeId);
+                if (direction == null) {
+                    continue;
+                }
+                try {
+                    changeDirection(light.getId(), new ChangeLightDirectionRequest(direction));
+                } catch (ApiException exception) {
+                    log.warn("경로 승인에 따른 유도등 자동 전환 실패: lightId={}, direction={}",
+                            light.getId(), direction, exception);
+                }
+            }
+        }
+    }
+
+    // leftEdge/rightEdge 중 다음 노드로 이어지는 쪽을 찾는다. 둘 다 아니면(이 유도등은 이 경로와 무관) null.
+    private IoTLightDirection resolveDirection(IoTLight light, UUID decisionNodeId, UUID nextNodeId) {
+        if (!light.isGuidanceConfigured()) {
+            return null;
+        }
+        if (otherEndpoint(light.getLeftEdge(), decisionNodeId).equals(nextNodeId)) {
+            return IoTLightDirection.LEFT;
+        }
+        if (otherEndpoint(light.getRightEdge(), decisionNodeId).equals(nextNodeId)) {
+            return IoTLightDirection.RIGHT;
+        }
+        return null;
+    }
+
+    private UUID otherEndpoint(MapEdge edge, UUID nodeId) {
+        return edge.getFromNode().getId().equals(nodeId) ? edge.getToNode().getId() : edge.getFromNode().getId();
     }
 
     private IoTLight findLightOrThrow(UUID lightId) {

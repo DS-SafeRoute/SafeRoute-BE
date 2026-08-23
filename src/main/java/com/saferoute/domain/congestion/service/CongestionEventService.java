@@ -9,9 +9,11 @@ import com.saferoute.domain.device.util.MonitoredAreaCalculator;
 import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.evacuation.grid.entity.MapEdgeGridCell;
 import com.saferoute.domain.evacuation.grid.repository.MapEdgeGridCellRepository;
+import com.saferoute.domain.evacuation.recalculation.entity.RecalculationTriggerType;
 import com.saferoute.domain.evacuation.recalculation.service.RouteRecalculationService;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventItem;
+import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventType;
 import com.saferoute.domain.telemetry.dynamo.entity.CurrentCctvStateItem;
 import com.saferoute.domain.telemetry.dynamo.entity.EventProcessingStatus;
 import com.saferoute.domain.telemetry.dynamo.repository.CongestionEventRepository;
@@ -34,9 +36,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-// Pi가 혼잡 진입/상승/종료를 감지한 즉시 보내는 이벤트(이슈 9)를 받아 BE가 직접 밀도·혼잡 단계를
+// Pi가 혼잡 진입/상승/종료를 감지한 즉시 보내는 이벤트를 받아 BE가 직접 밀도·혼잡 단계를
 // 계산하고 저장한다. 멱등 저장/처리 상태 전이/after-commit 발행 구조는 CongestionObservationService
-// (이슈 8, 5초 관측값)와 동일한 패턴을 쓰되, CongestionEventRepository는 처리 소유자(lease) 없이
+// (5초 관측값)와 동일한 패턴을 쓰되, CongestionEventRepository는 처리 소유자(lease) 없이
 // RECEIVED/PROCESSING/PROCESSED/FAILED 상태만으로 동시 처리를 막는다.
 @Slf4j
 @Service
@@ -107,9 +109,13 @@ public class CongestionEventService {
             updateCurrentState(session.getId(), cctv.getCode(), request, saveResult.item());
 
             CongestionLevel savedLevel = saveResult.item().getCongestionLevel();
-            if (savedLevel.requiresRouteRecalculation()) {
+            RecalculationTriggerType triggerType = mapTriggerType(saveResult.item().getEventType());
+            // ENDED는 레벨이 NORMAL이라 requiresRouteRecalculation()이 false지만, 정상 경로로의
+            // 복구 후보를 제시해야 하므로(RouteRecalculationService.trigger 참고) 별도로 포함한다.
+            if (savedLevel.requiresRouteRecalculation() || triggerType == RecalculationTriggerType.ENDED) {
                 for (MapEdge edge : affectedEdges) {
-                    routeRecalculationService.trigger(session, edge, savedLevel);
+                    routeRecalculationService.trigger(
+                            session, edge, savedLevel, triggerType, cctv.getCode(), density);
                 }
             }
             publishAndCompleteAfterCommit(session.getId(), affectedEdges, saveResult.item());
@@ -138,6 +144,14 @@ public class CongestionEventService {
                 .map(MapEdgeGridCell::getMapEdge)
                 .distinct()
                 .toList();
+    }
+
+    private RecalculationTriggerType mapTriggerType(CongestionEventType eventType) {
+        return switch (eventType) {
+            case CONGESTION_STARTED -> RecalculationTriggerType.STARTED;
+            case CONGESTION_LEVEL_UP -> RecalculationTriggerType.LEVEL_UP;
+            case CONGESTION_ENDED -> RecalculationTriggerType.ENDED;
+        };
     }
 
     private boolean claimProcessing(CongestionEventItem item) {
