@@ -21,8 +21,15 @@ public enum TrainingEventType {
     // RouteRecalculationService.trigger()가 재탐색 결과를 PENDING으로 저장했을 때 발행된다. (이슈 #48)
     ROUTE_RECALCULATION_REQUESTED,
 
-    // RouteRecalculationService.approve()가 재탐색 결과를 승인했을 때 발행된다. (이슈 #49에서 구현 예정)
+    // RouteRecalculationService.approve()가 재탐색 결과를 승인했을 때 발행된다.
     EVACUATION_ROUTE_UPDATED,
+
+    // RouteRecalculationService.reject()가 재탐색 결과를 거절했을 때 발행된다.
+    ROUTE_RECALCULATION_REJECTED,
+
+    // RouteRecalculationService가 PENDING 후보를 시스템적으로 무효화했을 때
+    // (혼잡 레벨 변경, 훈련 종료, 혼잡 종료) 발행된다.
+    ROUTE_RECALCULATION_CANCELLED,
 
     // IoTLightService.changeDirection() 호출 시 TrainingEventPublisher.publishIoTLightStatusUpdated()가 발행한다.
     IOT_LIGHT_STATUS_UPDATED
