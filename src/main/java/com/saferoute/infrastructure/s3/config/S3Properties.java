@@ -10,6 +10,7 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties(prefix = "aws.s3")
 public record S3Properties(
         @NotBlank String bucket,
-        @NotNull Duration presignedUrlExpiration
+        @NotNull Duration presignedUrlExpiration,
+        @NotNull Duration presignedGetUrlExpiration
 ) {
 }

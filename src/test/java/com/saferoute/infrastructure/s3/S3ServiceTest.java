@@ -42,7 +42,8 @@ class S3ServiceTest {
     void setUp() {
         S3Properties properties = new S3Properties(
                 "test-bucket",
-                Duration.ofMinutes(1)
+                Duration.ofMinutes(1),
+                Duration.ofMinutes(5)
         );
         s3Service = new S3Service(s3Client, properties);
     }
