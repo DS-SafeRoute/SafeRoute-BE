@@ -8,10 +8,11 @@ import static org.mockito.Mockito.verify;
 import com.saferoute.domain.congestion.dto.request.ConnectEventImageRequest;
 import com.saferoute.domain.congestion.entity.CongestionLevel;
 import com.saferoute.domain.device.service.DeviceAuthorizationService;
+import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventItem;
+import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventType;
 import com.saferoute.domain.telemetry.dynamo.entity.EventProcessingStatus;
 import com.saferoute.domain.telemetry.dynamo.entity.ImageUploadStatus;
-import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
-import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
+import com.saferoute.domain.telemetry.dynamo.repository.CongestionEventRepository;
 import com.saferoute.global.api.error.CongestionErrorCode;
 import com.saferoute.global.api.error.DeviceErrorCode;
 import com.saferoute.global.api.exception.ApiException;
@@ -34,7 +35,6 @@ class CongestionEventImageServiceTest {
 
     private static final UUID EVENT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID SESSION_ID = UUID.fromString("00000000-0000-0000-0000-000000000002");
-    private static final UUID EDGE_ID = UUID.fromString("00000000-0000-0000-0000-000000000003");
     private static final String CCTV_CODE = "CCTV_001";
     private static final String IMAGE_KEY = "training/" + SESSION_ID + "/events/"
             + CCTV_CODE + "/" + EVENT_ID + ".jpg";
@@ -42,7 +42,7 @@ class CongestionEventImageServiceTest {
     @InjectMocks
     private CongestionEventImageService service;
     @Mock
-    private ObservationRepository observationRepository;
+    private CongestionEventRepository congestionEventRepository;
     @Mock
     private DeviceAuthorizationService deviceAuthorizationService;
     @Mock
@@ -52,37 +52,37 @@ class CongestionEventImageServiceTest {
 
     private final DevicePrincipal principal = new DevicePrincipal(UUID.randomUUID(), CCTV_CODE);
     private final ConnectEventImageRequest request = new ConnectEventImageRequest(IMAGE_KEY, 1_786_500_002_800L);
-    private ObservationItem item;
+    private CongestionEventItem item;
 
     @BeforeEach
     void setUp() {
-        item = ObservationItem.create(
-                EVENT_ID, SESSION_ID, EDGE_ID, CCTV_CODE, 5.0, 8, 25, 2.5,
-                CongestionLevel.CROWDED, 1_000L, 2_000L, 2_000L, null, 1L
+        item = CongestionEventItem.received(
+                EVENT_ID, SESSION_ID, CCTV_CODE, CongestionEventType.CONGESTION_STARTED,
+                2_000L, 9, 4.5, CongestionLevel.CROWDED, 4.5, CongestionLevel.CROWDED, 1L, null
         );
         item.setEventStatus(EventProcessingStatus.PROCESSED);
     }
 
     @Test
     void 처리된_이벤트에_S3_이미지를_연결하고_업데이트를_발행한다() {
-        given(observationRepository.findByEventId(EVENT_ID.toString())).willReturn(Optional.of(item));
+        given(congestionEventRepository.findByEventId(EVENT_ID.toString())).willReturn(Optional.of(item));
         given(s3Service.objectExists(IMAGE_KEY)).willReturn(true);
-        given(observationRepository.completeImageUpload(
+        given(congestionEventRepository.completeImageUpload(
                 EVENT_ID.toString(), IMAGE_KEY, request.uploadedAt()
         )).willReturn(true);
 
         service.connectImage(principal, EVENT_ID, request);
 
         verify(deviceAuthorizationService).validateCctv(principal, CCTV_CODE);
-        verify(observationRepository).completeImageUpload(
+        verify(congestionEventRepository).completeImageUpload(
                 EVENT_ID.toString(), IMAGE_KEY, request.uploadedAt()
         );
-        verify(trainingEventPublisher).publishCongestionImageUpdated(SESSION_ID, item);
+        verify(trainingEventPublisher).publishCongestionEventImageUpdated(SESSION_ID, item);
     }
 
     @Test
     void 이벤트_POST보다_PATCH가_먼저_도착하면_404를_반환한다() {
-        given(observationRepository.findByEventId(EVENT_ID.toString())).willReturn(Optional.empty());
+        given(congestionEventRepository.findByEventId(EVENT_ID.toString())).willReturn(Optional.empty());
 
         assertError(CongestionErrorCode.EVENT_NOT_FOUND, request);
 
@@ -92,7 +92,7 @@ class CongestionEventImageServiceTest {
     @Test
     void 이벤트가_PROCESSED가_아니면_이미지를_연결하지_않는다() {
         item.setEventStatus(EventProcessingStatus.PROCESSING);
-        given(observationRepository.findByEventId(EVENT_ID.toString())).willReturn(Optional.of(item));
+        given(congestionEventRepository.findByEventId(EVENT_ID.toString())).willReturn(Optional.of(item));
 
         assertError(CongestionErrorCode.EVENT_NOT_PROCESSED, request);
 
@@ -101,7 +101,7 @@ class CongestionEventImageServiceTest {
 
     @Test
     void 다른_세션_CCTV_eventId의_object_key를_거부한다() {
-        given(observationRepository.findByEventId(EVENT_ID.toString())).willReturn(Optional.of(item));
+        given(congestionEventRepository.findByEventId(EVENT_ID.toString())).willReturn(Optional.of(item));
         ConnectEventImageRequest wrongSession = new ConnectEventImageRequest(
                 "training/" + UUID.randomUUID() + "/events/" + CCTV_CODE + "/" + EVENT_ID + ".jpg",
                 request.uploadedAt()
@@ -124,7 +124,7 @@ class CongestionEventImageServiceTest {
 
     @Test
     void 형식이_잘못된_object_key를_거부한다() {
-        given(observationRepository.findByEventId(EVENT_ID.toString())).willReturn(Optional.of(item));
+        given(congestionEventRepository.findByEventId(EVENT_ID.toString())).willReturn(Optional.of(item));
         ConnectEventImageRequest malformed = new ConnectEventImageRequest(
                 "training/" + SESSION_ID + "/monitoring/" + CCTV_CODE + "/" + EVENT_ID + ".jpg",
                 request.uploadedAt()
@@ -135,12 +135,12 @@ class CongestionEventImageServiceTest {
 
     @Test
     void S3에_객체가_없으면_연결하지_않는다() {
-        given(observationRepository.findByEventId(EVENT_ID.toString())).willReturn(Optional.of(item));
+        given(congestionEventRepository.findByEventId(EVENT_ID.toString())).willReturn(Optional.of(item));
         given(s3Service.objectExists(IMAGE_KEY)).willReturn(false);
 
         assertError(CongestionErrorCode.EVENT_IMAGE_OBJECT_NOT_FOUND, request);
 
-        verify(observationRepository, never()).completeImageUpload(
+        verify(congestionEventRepository, never()).completeImageUpload(
                 EVENT_ID.toString(), IMAGE_KEY, request.uploadedAt()
         );
     }
@@ -150,46 +150,29 @@ class CongestionEventImageServiceTest {
         item.setEventImageKey(IMAGE_KEY);
         item.setImageUploadedAt(request.uploadedAt());
         item.setImageUploadStatus(ImageUploadStatus.COMPLETED);
-        given(observationRepository.findByEventId(EVENT_ID.toString())).willReturn(Optional.of(item));
+        given(congestionEventRepository.findByEventId(EVENT_ID.toString())).willReturn(Optional.of(item));
 
         service.connectImage(principal, EVENT_ID, request);
 
         verify(s3Service, never()).objectExists(IMAGE_KEY);
-        verify(observationRepository, never()).completeImageUpload(
+        verify(congestionEventRepository, never()).completeImageUpload(
                 EVENT_ID.toString(), IMAGE_KEY, request.uploadedAt()
         );
-        verify(trainingEventPublisher).publishCongestionImageUpdated(SESSION_ID, item);
-    }
-
-    @Test
-    @SuppressWarnings("deprecation")
-    void 기존_UPLOADED_완료_항목도_멱등하게_처리한다() {
-        item.setEventImageKey(IMAGE_KEY);
-        item.setImageUploadedAt(request.uploadedAt());
-        item.setImageUploadStatus(ImageUploadStatus.UPLOADED);
-        given(observationRepository.findByEventId(EVENT_ID.toString())).willReturn(Optional.of(item));
-
-        service.connectImage(principal, EVENT_ID, request);
-
-        verify(s3Service, never()).objectExists(IMAGE_KEY);
-        verify(observationRepository, never()).completeImageUpload(
-                EVENT_ID.toString(), IMAGE_KEY, request.uploadedAt()
-        );
-        verify(trainingEventPublisher).publishCongestionImageUpdated(SESSION_ID, item);
+        verify(trainingEventPublisher).publishCongestionEventImageUpdated(SESSION_ID, item);
     }
 
     @Test
     void 기존_항목의_누락된_이미지_상태는_PENDING으로_취급한다() {
         item.setImageUploadStatus(null);
-        given(observationRepository.findByEventId(EVENT_ID.toString())).willReturn(Optional.of(item));
+        given(congestionEventRepository.findByEventId(EVENT_ID.toString())).willReturn(Optional.of(item));
         given(s3Service.objectExists(IMAGE_KEY)).willReturn(true);
-        given(observationRepository.completeImageUpload(
+        given(congestionEventRepository.completeImageUpload(
                 EVENT_ID.toString(), IMAGE_KEY, request.uploadedAt()
         )).willReturn(true);
 
         service.connectImage(principal, EVENT_ID, request);
 
-        verify(observationRepository).completeImageUpload(
+        verify(congestionEventRepository).completeImageUpload(
                 EVENT_ID.toString(), IMAGE_KEY, request.uploadedAt()
         );
     }
@@ -200,7 +183,7 @@ class CongestionEventImageServiceTest {
             names = {"CCTV_CODE_MISMATCH", "CCTV_DISABLED"}
     )
     void CCTV_권한_검증이_실패하면_후속_처리를_중단한다(DeviceErrorCode errorCode) {
-        given(observationRepository.findByEventId(EVENT_ID.toString())).willReturn(Optional.of(item));
+        given(congestionEventRepository.findByEventId(EVENT_ID.toString())).willReturn(Optional.of(item));
         given(deviceAuthorizationService.validateCctv(principal, CCTV_CODE))
                 .willThrow(new ApiException(errorCode));
 
@@ -209,27 +192,27 @@ class CongestionEventImageServiceTest {
                 .hasFieldOrPropertyWithValue("errorCode", errorCode);
 
         verify(s3Service, never()).objectExists(IMAGE_KEY);
-        verify(observationRepository, never()).completeImageUpload(
+        verify(congestionEventRepository, never()).completeImageUpload(
                 EVENT_ID.toString(), IMAGE_KEY, request.uploadedAt()
         );
-        verify(trainingEventPublisher, never()).publishCongestionImageUpdated(SESSION_ID, item);
+        verify(trainingEventPublisher, never()).publishCongestionEventImageUpdated(SESSION_ID, item);
     }
 
     @Test
     void 조건부_갱신_경쟁에서_다른_이미지가_완료되면_409를_반환한다() {
-        ObservationItem latest = item;
+        CongestionEventItem latest = item;
         latest.setEventImageKey("training/" + SESSION_ID + "/events/" + CCTV_CODE + "/other.jpg");
         latest.setImageUploadedAt(1L);
         latest.setImageUploadStatus(ImageUploadStatus.COMPLETED);
-        ObservationItem initial = ObservationItem.create(
-                EVENT_ID, SESSION_ID, EDGE_ID, CCTV_CODE, 5.0, 8, 25, 2.5,
-                CongestionLevel.CROWDED, 1_000L, 2_000L, 2_000L, null, 1L
+        CongestionEventItem initial = CongestionEventItem.received(
+                EVENT_ID, SESSION_ID, CCTV_CODE, CongestionEventType.CONGESTION_STARTED,
+                2_000L, 9, 4.5, CongestionLevel.CROWDED, 4.5, CongestionLevel.CROWDED, 1L, null
         );
         initial.setEventStatus(EventProcessingStatus.PROCESSED);
-        given(observationRepository.findByEventId(EVENT_ID.toString()))
+        given(congestionEventRepository.findByEventId(EVENT_ID.toString()))
                 .willReturn(Optional.of(initial), Optional.of(latest));
         given(s3Service.objectExists(IMAGE_KEY)).willReturn(true);
-        given(observationRepository.completeImageUpload(
+        given(congestionEventRepository.completeImageUpload(
                 EVENT_ID.toString(), IMAGE_KEY, request.uploadedAt()
         )).willReturn(false);
 
