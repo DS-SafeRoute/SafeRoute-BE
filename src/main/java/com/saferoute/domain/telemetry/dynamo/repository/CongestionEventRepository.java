@@ -115,6 +115,40 @@ public class CongestionEventRepository {
         );
     }
 
+    // 이벤트가 PROCESSED이고 이미지가 아직 PENDING/FAILED일 때만 이미지 연결을 완료 처리한다.
+    public boolean completeImageUpload(String eventId, String eventImageKey, long uploadedAt) {
+        CongestionEventItem item = new CongestionEventItem();
+        item.setPk(CongestionEventItem.buildPk(eventId));
+        item.setSk("META");
+        item.setEventImageKey(eventImageKey);
+        item.setImageUploadedAt(uploadedAt);
+        item.setImageUploadStatus(ImageUploadStatus.COMPLETED);
+
+        Expression condition = Expression.builder()
+                .expression("attribute_exists(#pk) AND #eventStatus = :processed"
+                        + " AND (attribute_not_exists(#imageStatus)"
+                        + " OR #imageStatus = :pending OR #imageStatus = :failed)")
+                .putExpressionName("#pk", "pk")
+                .putExpressionName("#eventStatus", "eventStatus")
+                .putExpressionName("#imageStatus", "imageUploadStatus")
+                .putExpressionValue(":processed", AttributeValue.fromS(EventProcessingStatus.PROCESSED.name()))
+                .putExpressionValue(":pending", AttributeValue.fromS(ImageUploadStatus.PENDING.name()))
+                .putExpressionValue(":failed", AttributeValue.fromS(ImageUploadStatus.FAILED.name()))
+                .build();
+        UpdateItemEnhancedRequest<CongestionEventItem> request =
+                UpdateItemEnhancedRequest.builder(CongestionEventItem.class)
+                        .item(item)
+                        .ignoreNullsMode(IgnoreNullsMode.SCALAR_ONLY)
+                        .conditionExpression(condition)
+                        .build();
+        try {
+            table.updateItem(request);
+            return true;
+        } catch (ConditionalCheckFailedException exception) {
+            return false;
+        }
+    }
+
     private boolean updateItem(
             String eventId,
             String statusAttribute,

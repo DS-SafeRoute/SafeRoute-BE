@@ -150,6 +150,30 @@ class CongestionEventRepositoryTest {
     }
 
     @Test
+    void PROCESSED_이벤트에_이미지를_연결하면_COMPLETED로_갱신한다() {
+        ArgumentCaptor<UpdateItemEnhancedRequest<CongestionEventItem>> captor = updateCaptor();
+
+        boolean updated = repository.completeImageUpload("event-1", "training/s/events/CCTV_001/event-1.jpg", 1_000L);
+
+        assertThat(updated).isTrue();
+        verify(table).updateItem(captor.capture());
+        CongestionEventItem item = captor.getValue().item();
+        assertThat(item.getEventImageKey()).isEqualTo("training/s/events/CCTV_001/event-1.jpg");
+        assertThat(item.getImageUploadedAt()).isEqualTo(1_000L);
+        assertThat(item.getImageUploadStatus()).isEqualTo(ImageUploadStatus.COMPLETED);
+    }
+
+    @Test
+    void 이미지_연결_조건이_맞지_않으면_false를_반환한다() {
+        doThrow(ConditionalCheckFailedException.builder().message("conflict").build())
+                .when(table).updateItem(any(UpdateItemEnhancedRequest.class));
+
+        boolean updated = repository.completeImageUpload("event-1", "training/s/events/CCTV_001/event-1.jpg", 1_000L);
+
+        assertThat(updated).isFalse();
+    }
+
+    @Test
     void 허용되지_않은_이벤트_상태_변경은_거부한다() {
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> repository.updateEventStatus(
                         "event-1", EventProcessingStatus.RECEIVED, EventProcessingStatus.PROCESSED
