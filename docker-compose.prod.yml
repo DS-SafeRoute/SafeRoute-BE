@@ -22,7 +22,7 @@ services:
       DB_URL: ${DB_URL:?DB_URL is required}
       DB_USERNAME: ${DB_USERNAME:?DB_USERNAME is required}
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
-      JPA_DDL_AUTO: ${JPA_DDL_AUTO:-update}
+      JPA_DDL_AUTO: ${JPA_DDL_AUTO:-create}
 
       AWS_REGION: ${AWS_REGION:-us-east-2}
       AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-2}
