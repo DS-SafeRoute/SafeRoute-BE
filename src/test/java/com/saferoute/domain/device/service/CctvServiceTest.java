@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 
 import com.saferoute.domain.device.dto.request.ConfigureCctvGridCellsRequest;
 import com.saferoute.domain.device.dto.request.CreateCctvRequest;
+import com.saferoute.domain.device.dto.request.UpdateCctvRequest;
 import com.saferoute.domain.device.dto.response.CctvResponse;
 import com.saferoute.domain.device.dto.response.CctvRegistrationResponse;
 import com.saferoute.domain.device.dto.response.DeviceTokenIssueResponse;
@@ -163,6 +164,23 @@ class CctvServiceTest {
         verify(cctvGridCellRepository).deleteAllByCctvId(cctvId);
         verify(cctvGridCellRepository).saveAll(any());
         verify(congestionConfigService).incrementVersionForGridChange();
+    }
+
+    @Test
+    @DisplayName("CCTV 정보 수정 시 이름과 연결 노드 위치를 함께 변경한다")
+    void updateCctv_success() {
+        UUID cctvId = UUID.randomUUID();
+        Cctv cctv = cctv(cctvId);
+        MapNode node = cctv.getCustomNode();
+        given(cctvJpaRepository.findByIdWithLocation(cctvId)).willReturn(Optional.of(cctv));
+
+        cctvService.updateCctv(
+                cctvId,
+                new UpdateCctvRequest("1층 출입구 CCTV", 0.4, 0.6)
+        );
+
+        verify(cctv).rename("1층 출입구 CCTV");
+        verify(node).moveTo(0.4, 0.6);
     }
 
     private CreateCctvRequest request() {

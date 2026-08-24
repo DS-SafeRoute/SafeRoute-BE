@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.saferoute.domain.device.dto.request.ConfigureCctvGridCellsRequest;
 import com.saferoute.domain.device.dto.request.CreateCctvRequest;
+import com.saferoute.domain.device.dto.request.UpdateCctvRequest;
 import com.saferoute.domain.device.dto.response.CctvGridCellResponse;
 import com.saferoute.domain.device.dto.response.CctvResponse;
 import com.saferoute.domain.device.dto.response.CctvRegistrationResponse;
@@ -123,6 +124,57 @@ class CctvControllerTest {
     }
 
     @Test
+    void updateCctv_returnsUpdatedNameAndPosition() throws Exception {
+        UpdateCctvRequest request = new UpdateCctvRequest("1층 출입구 CCTV", 0.4, 0.6);
+        given(cctvService.updateCctv(eq(cctvId), any()))
+                .willReturn(response(true, request.name(), request.x(), request.y()));
+
+        mockMvc.perform(patch("/api/v1/cctvs/{cctvId}", cctvId)
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("CCTV_SUCCESS_008"))
+                .andExpect(jsonPath("$.result.name").value(request.name()))
+                .andExpect(jsonPath("$.result.x").value(request.x()))
+                .andExpect(jsonPath("$.result.y").value(request.y()));
+    }
+
+    @Test
+    void updateCctv_rejectsBlankName() throws Exception {
+        UpdateCctvRequest request = new UpdateCctvRequest(" ", 0.4, 0.6);
+
+        performInvalidUpdate(request);
+    }
+
+    @Test
+    void updateCctv_rejectsNameLongerThan100Characters() throws Exception {
+        UpdateCctvRequest request = new UpdateCctvRequest("a".repeat(101), 0.4, 0.6);
+
+        performInvalidUpdate(request);
+    }
+
+    @Test
+    void updateCctv_rejectsXBelowMinimum() throws Exception {
+        UpdateCctvRequest request = new UpdateCctvRequest("1층 출입구 CCTV", -0.1, 0.6);
+
+        performInvalidUpdate(request);
+    }
+
+    @Test
+    void updateCctv_rejectsYAboveMaximum() throws Exception {
+        UpdateCctvRequest request = new UpdateCctvRequest("1층 출입구 CCTV", 0.4, 1.1);
+
+        performInvalidUpdate(request);
+    }
+
+    private void performInvalidUpdate(UpdateCctvRequest request) throws Exception {
+        mockMvc.perform(patch("/api/v1/cctvs/{cctvId}", cctvId)
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void disableCctv_returnsDisabledState() throws Exception {
         given(cctvService.disableCctv(cctvId)).willReturn(response(false));
 
@@ -132,14 +184,18 @@ class CctvControllerTest {
     }
 
     private CctvResponse response(boolean enabled) {
+        return response(enabled, "3층 복도 CCTV", 0.6, 0.4);
+    }
+
+    private CctvResponse response(boolean enabled, String name, double x, double y) {
         return new CctvResponse(
                 cctvId,
                 "CCTV_001",
-                "3층 복도 CCTV",
+                name,
                 floorId,
                 UUID.randomUUID(),
-                0.6,
-                0.4,
+                x,
+                y,
                 enabled,
                 0.5,
                 1,
