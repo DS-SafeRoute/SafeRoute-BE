@@ -2,6 +2,7 @@ package com.saferoute.domain.device.controller;
 
 import com.saferoute.domain.device.dto.request.ConfigureCctvGridCellsRequest;
 import com.saferoute.domain.device.dto.request.CreateCctvRequest;
+import com.saferoute.domain.device.dto.request.UpdateCctvRequest;
 import com.saferoute.domain.device.dto.response.CctvResponse;
 import com.saferoute.domain.device.dto.response.CctvRegistrationResponse;
 import com.saferoute.domain.device.dto.response.DeviceTokenIssueResponse;
@@ -82,6 +83,17 @@ public class CctvController {
         return ResponseEntity.ok(ApiResponse.success(
                 CctvSuccessCode.CCTV_GRID_CELLS_CONFIGURED,
                 cctvService.configureGridCells(cctvId, request)
+        ));
+    }
+
+    @PatchMapping("/{cctvId}")
+    public ResponseEntity<ApiResponse<CctvResponse>> updateCctv(
+            @PathVariable UUID cctvId,
+            @Valid @RequestBody UpdateCctvRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(
+                CctvSuccessCode.CCTV_UPDATED,
+                cctvService.updateCctv(cctvId, request)
         ));
     }
 

@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.saferoute.domain.device.dto.request.ConfigureCctvGridCellsRequest;
 import com.saferoute.domain.device.dto.request.CreateCctvRequest;
+import com.saferoute.domain.device.dto.request.UpdateCctvRequest;
 import com.saferoute.domain.device.dto.response.CctvGridCellResponse;
 import com.saferoute.domain.device.dto.response.CctvResponse;
 import com.saferoute.domain.device.dto.response.CctvRegistrationResponse;
@@ -120,6 +121,31 @@ class CctvControllerTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.monitoredGridCellCount").value(1));
+    }
+
+    @Test
+    void updateCctv_returnsUpdatedNameAndPosition() throws Exception {
+        UpdateCctvRequest request = new UpdateCctvRequest("1층 출입구 CCTV", 0.4, 0.6);
+        given(cctvService.updateCctv(eq(cctvId), any())).willReturn(response(true));
+
+        mockMvc.perform(patch("/api/v1/cctvs/{cctvId}", cctvId)
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("CCTV_SUCCESS_008"))
+                .andExpect(jsonPath("$.result.name").value("3층 복도 CCTV"))
+                .andExpect(jsonPath("$.result.x").value(0.6))
+                .andExpect(jsonPath("$.result.y").value(0.4));
+    }
+
+    @Test
+    void updateCctv_rejectsBlankNameAndOutOfRangeCoordinates() throws Exception {
+        UpdateCctvRequest request = new UpdateCctvRequest(" ", -0.1, 1.1);
+
+        mockMvc.perform(patch("/api/v1/cctvs/{cctvId}", cctvId)
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

@@ -2,6 +2,7 @@ package com.saferoute.domain.device.service;
 
 import com.saferoute.domain.device.dto.request.ConfigureCctvGridCellsRequest;
 import com.saferoute.domain.device.dto.request.CreateCctvRequest;
+import com.saferoute.domain.device.dto.request.UpdateCctvRequest;
 import com.saferoute.domain.device.dto.response.CctvResponse;
 import com.saferoute.domain.device.dto.response.CctvRegistrationResponse;
 import com.saferoute.domain.device.dto.response.DeviceTokenIssueResponse;
@@ -104,6 +105,14 @@ public class CctvService {
         saveMappings(cctv, gridCells);
         congestionConfigService.incrementVersionForGridChange();
         return CctvResponse.of(cctv, gridCells);
+    }
+
+    @Transactional
+    public CctvResponse updateCctv(UUID cctvId, UpdateCctvRequest request) {
+        Cctv cctv = findCctvOrThrow(cctvId);
+        cctv.rename(request.name());
+        cctv.getCustomNode().moveTo(request.x(), request.y());
+        return toResponse(cctv);
     }
 
     @Transactional
