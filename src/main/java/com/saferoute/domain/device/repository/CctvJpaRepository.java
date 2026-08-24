@@ -26,7 +26,9 @@ public interface CctvJpaRepository extends JpaRepository<Cctv, UUID> {
     @Query("select cctv from Cctv cctv where cctv.id = :cctvId")
     Optional<Cctv> findByIdWithLocation(@Param("cctvId") UUID cctvId);
 
+    // 인증 서비스의 트랜잭션이 끝난 뒤 혼잡 설정 조회에서 위치 정보를 사용하므로 함께 초기화한다.
     // 라즈베리파이가 보내온 code 로 기기 식별 (전역 unique)
+    @EntityGraph(attributePaths = {"customNode", "customNode.floor", "customNode.floor.building"})
     Optional<Cctv> findByCode(String code);
 
     Optional<Cctv> findByDeviceTokenHash(String deviceTokenHash);
