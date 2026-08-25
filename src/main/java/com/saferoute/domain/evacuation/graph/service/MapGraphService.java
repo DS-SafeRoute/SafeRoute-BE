@@ -46,11 +46,12 @@ public class MapGraphService {
         return MapNodeResponse.from(node);
     }
 
-    // 노드 위치 수정 (드래그 편집)
+    // 노드 위치 및 EXIT 대상 여부 수정 (드래그 편집)
     @Transactional
     public MapNodeResponse updateNodePosition(UUID nodeId, UpdateMapNodePositionRequest request) {
         MapNode node = findNodeOrThrow(nodeId);
-        MapNode updated = mapGraphRepository.updateNodePosition(node, request.x(), request.y());
+        MapNode updated = mapGraphRepository.updateNodePosition(
+                node, request.x(), request.y(), request.isExitTarget());
         return MapNodeResponse.from(updated);
     }
 

@@ -111,4 +111,9 @@ public class MapNode {
         this.x = x;
         this.y = y;
     }
+
+    // 노드 수정 API에서 EXIT 대상(경로 목적지 후보) 여부를 변경할 때
+    public void changeExitTarget(boolean isExitTarget) {
+        this.isExitTarget = isExitTarget;
+    }
 }

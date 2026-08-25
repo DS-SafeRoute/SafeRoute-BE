@@ -150,18 +150,19 @@ class MapGraphRepositoryImplTest {
     }
 
     @Test
-    @DisplayName("노드 위치를 수정하면 dirty checking으로 반영된다 (save 호출 없음)")
+    @DisplayName("노드 위치와 EXIT 대상 여부를 수정하면 dirty checking으로 반영된다 (save 호출 없음)")
     void updateNodePosition_success() {
         // given
         Floor floor = mock(Floor.class);
         MapNode node = MapNode.create(floor, "ROOM1", NodeType.ROOM, "방1", 0, 0, false);
 
         // when
-        MapNode result = mapGraphRepository.updateNodePosition(node, 10, 20);
+        MapNode result = mapGraphRepository.updateNodePosition(node, 10, 20, true);
 
         // then
         assertThat(result.getX()).isEqualTo(10);
         assertThat(result.getY()).isEqualTo(20);
+        assertThat(result.isExitTarget()).isTrue();
         verify(mapNodeJpaRepository, never()).save(any(MapNode.class));
     }
 

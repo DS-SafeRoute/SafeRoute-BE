@@ -140,16 +140,16 @@ class MapGraphServiceTest {
     void updateNodePosition_success() {
         // given
         MapNode node = createNode("ROOM1", NodeType.ROOM);
-        UpdateMapNodePositionRequest request = new UpdateMapNodePositionRequest(10.0, 20.0);
+        UpdateMapNodePositionRequest request = new UpdateMapNodePositionRequest(10.0, 20.0, true);
         given(mapGraphRepository.findNodeById(node.getId())).willReturn(Optional.of(node));
-        given(mapGraphRepository.updateNodePosition(node, 10.0, 20.0)).willReturn(node);
+        given(mapGraphRepository.updateNodePosition(node, 10.0, 20.0, true)).willReturn(node);
 
         // when
         MapNodeResponse response = mapGraphService.updateNodePosition(node.getId(), request);
 
         // then
         assertThat(response.id()).isEqualTo(node.getId());
-        verify(mapGraphRepository).updateNodePosition(node, 10.0, 20.0);
+        verify(mapGraphRepository).updateNodePosition(node, 10.0, 20.0, true);
     }
 
     @Test
@@ -157,7 +157,7 @@ class MapGraphServiceTest {
     void updateNodePosition_nodeNotFound_throws() {
         // given
         UUID unknownNodeId = UUID.randomUUID();
-        UpdateMapNodePositionRequest request = new UpdateMapNodePositionRequest(10.0, 20.0);
+        UpdateMapNodePositionRequest request = new UpdateMapNodePositionRequest(10.0, 20.0, true);
         given(mapGraphRepository.findNodeById(unknownNodeId)).willReturn(Optional.empty());
 
         // when & then
