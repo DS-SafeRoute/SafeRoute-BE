@@ -48,7 +48,10 @@ public class Building {
 
     @NotBlank
     @Size(min = 5, max = 20)
-    @Column(name = "school_name", nullable = false, length = 20)
+    // 기존 건물 행에 소속 정보가 없어 ddl-auto:update 배포가 실패하지 않도록 DB 컬럼은
+    // 우선 nullable로 추가한다. 신규 건물은 팩토리에서 항상 기관명을 받으며, null인 레거시 행은
+    // 기관별 조회에서 노출되지 않으므로 운영 데이터는 배포 전후로 명시적으로 백필해야 한다.
+    @Column(name = "school_name", length = 20)
     private String schoolName;
 
     // 지상층수/지하층수/총층수는 Floor 추가·삭제에 따라 자동 반영되며 클라이언트가 직접 수정할 수 없다.
