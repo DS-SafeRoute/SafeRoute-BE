@@ -26,7 +26,6 @@ public class BuildingService {
         Building building = Building.create(
                 request.name(),
                 request.address(),
-                request.totalFloors(),
                 request.buildingType()
         );
         return BuildingResponse.from(buildingRepository.save(building));
@@ -45,7 +44,7 @@ public class BuildingService {
     @Transactional
     public BuildingResponse updateBuilding(UUID buildingId, UpdateBuildingRequest request) {
         Building building = findBuildingById(buildingId);
-        building.update(request.name(), request.address(), request.totalFloors(), request.buildingType());
+        building.update(request.name(), request.address(), request.buildingType());
         return BuildingResponse.from(building);
     }
 

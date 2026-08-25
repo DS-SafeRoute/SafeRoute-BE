@@ -55,6 +55,7 @@ public class FloorService {
                 building,
                 request.floorNum()
         );
+        building.addFloor(request.floorNum());
 
         return FloorResponse.from(floorRepository.save(floor));
     }
@@ -84,6 +85,8 @@ public class FloorService {
 
         if (!floor.getFloorNum().equals(request.floorNum())) {
             validateDuplicateFloorNum(buildingId, request.floorNum());
+            floor.getBuilding().removeFloor(floor.getFloorNum());
+            floor.getBuilding().addFloor(request.floorNum());
         }
 
         floor.updateFloorNum(request.floorNum());
@@ -115,7 +118,9 @@ public class FloorService {
 
     @Transactional
     public void deleteFloor(UUID buildingId, UUID floorId) {
-        floorRepository.delete(findFloor(buildingId, floorId));
+        Floor floor = findFloor(buildingId, floorId);
+        floor.getBuilding().removeFloor(floor.getFloorNum());
+        floorRepository.delete(floor);
     }
 
     private void validateBuildingExists(UUID buildingId) {
