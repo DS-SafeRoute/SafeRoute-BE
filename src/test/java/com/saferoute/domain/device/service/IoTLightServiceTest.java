@@ -185,10 +185,13 @@ class IoTLightServiceTest {
     void getLight_notFound_throws() {
         // given
         UUID unknownId = UUID.randomUUID();
-        given(iotLightJpaRepository.findById(unknownId)).willReturn(Optional.empty());
+        given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
+        given(iotLightJpaRepository
+                .findByIdAndCustomNode_Floor_Building_SchoolName(unknownId, SCHOOL_NAME))
+                .willReturn(Optional.empty());
 
         // when & then
-        assertThatThrownBy(() -> iotLightService.getLight(unknownId))
+        assertThatThrownBy(() -> iotLightService.getLight(unknownId, EMAIL))
                 .isInstanceOf(ApiException.class)
                 .hasMessage(IoTLightErrorCode.IOT_LIGHT_NOT_FOUND.getMessage());
     }

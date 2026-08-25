@@ -26,10 +26,6 @@ public interface CctvJpaRepository extends JpaRepository<Cctv, UUID> {
             UUID floorId, String schoolName);
 
     @EntityGraph(attributePaths = {"customNode", "customNode.floor"})
-    @Query("select cctv from Cctv cctv")
-    List<Cctv> findAllWithLocation();
-
-    @EntityGraph(attributePaths = {"customNode", "customNode.floor"})
     @Query("select cctv from Cctv cctv where cctv.id = :cctvId")
     Optional<Cctv> findByIdWithLocation(@Param("cctvId") UUID cctvId);
 

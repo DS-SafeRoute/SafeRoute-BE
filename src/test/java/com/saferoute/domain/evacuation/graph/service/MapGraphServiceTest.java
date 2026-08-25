@@ -20,6 +20,7 @@ import com.saferoute.domain.evacuation.graph.entity.NodeType;
 import com.saferoute.domain.evacuation.graph.repository.MapGraphRepository;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.floor.repository.FloorRepository;
+import com.saferoute.domain.user.service.SchoolContextService;
 import com.saferoute.global.api.error.EvacuationErrorCode;
 import com.saferoute.global.api.error.FloorErrorCode;
 import com.saferoute.global.api.exception.ApiException;
@@ -38,6 +39,9 @@ import org.springframework.test.util.ReflectionTestUtils;
 @ExtendWith(MockitoExtension.class)
 class MapGraphServiceTest {
 
+    private static final String EMAIL = "manager@saferoute.com";
+    private static final String SCHOOL_NAME = "SafeRoute School";
+
     @InjectMocks
     private MapGraphService mapGraphService;
 
@@ -46,6 +50,9 @@ class MapGraphServiceTest {
 
     @Mock
     private FloorRepository floorRepository;
+
+    @Mock
+    private SchoolContextService schoolContextService;
 
     private final UUID floorId = UUID.randomUUID();
     private Floor floor;
@@ -67,6 +74,19 @@ class MapGraphServiceTest {
     }
 
     // === getFloorGraph ===
+
+    @Test
+    @DisplayName("다른 기관 층의 그래프는 조회할 수 없다")
+    void getFloorGraph_otherSchool_throwsNotFound() {
+        given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
+        given(floorRepository.findByIdAndBuilding_SchoolName(floorId, SCHOOL_NAME))
+                .willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> mapGraphService.getFloorGraph(floorId, EMAIL))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(FloorErrorCode.FLOOR_NOT_FOUND);
+    }
 
     @Test
     @DisplayName("층의 노드/엣지 전체를 조회한다")

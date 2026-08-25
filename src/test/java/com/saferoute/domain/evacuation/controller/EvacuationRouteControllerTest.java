@@ -35,6 +35,8 @@ import org.springframework.test.web.servlet.MockMvc;
 )
 class EvacuationRouteControllerTest {
 
+    private static final String EMAIL = "normal@test.com";
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -89,7 +91,8 @@ class EvacuationRouteControllerTest {
         given(
                 evacuationRouteService.findShortestRoute(
                         floorId,
-                        room1.getId()
+                        room1.getId(),
+                        EMAIL
                 )
         ).willReturn(route);
 
@@ -117,7 +120,8 @@ class EvacuationRouteControllerTest {
         given(
                 evacuationRouteService.findShortestRoute(
                         floorId,
-                        unknownNodeId
+                        unknownNodeId,
+                        EMAIL
                 )
         ).willThrow(
                 new ApiException(
@@ -150,7 +154,8 @@ class EvacuationRouteControllerTest {
         given(
                 evacuationRouteService.findShortestRoute(
                         floorId,
-                        room1.getId()
+                        room1.getId(),
+                        EMAIL
                 )
         ).willThrow(
                 new ApiException(
@@ -179,7 +184,7 @@ class EvacuationRouteControllerTest {
     @DisplayName("GET /routes - 층에 지정된 EXIT 노드가 없으면 404를 반환한다")
     void getShortestRoute_noExitDesignated() throws Exception {
         // given
-        given(evacuationRouteService.findShortestRoute(floorId, room1.getId()))
+        given(evacuationRouteService.findShortestRoute(floorId, room1.getId(), EMAIL))
                 .willThrow(new ApiException(EvacuationErrorCode.EXIT_NODE_NOT_DESIGNATED));
 
         // when & then

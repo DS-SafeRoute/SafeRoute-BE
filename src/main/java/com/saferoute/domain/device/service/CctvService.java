@@ -60,13 +60,6 @@ public class CctvService {
         return new DeviceTokenIssueResponse(issuedToken.rawToken());
     }
 
-    public List<CctvResponse> getCctvs(UUID floorId) {
-        List<Cctv> cctvs = floorId == null
-                ? cctvJpaRepository.findAllWithLocation()
-                : cctvJpaRepository.findAllByCustomNode_Floor_Id(floorId);
-        return toResponses(cctvs);
-    }
-
     public List<CctvResponse> getCctvs(UUID floorId, String email) {
         String schoolName = schoolContextService.getSchoolName(email);
         List<Cctv> cctvs = floorId == null
@@ -98,16 +91,8 @@ public class CctvService {
                 .toList();
     }
 
-    public CctvResponse getCctv(UUID cctvId) {
-        return toResponse(findCctvOrThrow(cctvId));
-    }
-
     public CctvResponse getCctv(UUID cctvId, String email) {
         return toResponse(findCctvForSchoolOrThrow(cctvId, email));
-    }
-
-    public CctvResponse getGridCells(UUID cctvId) {
-        return getCctv(cctvId);
     }
 
     public CctvResponse getGridCells(UUID cctvId, String email) {
