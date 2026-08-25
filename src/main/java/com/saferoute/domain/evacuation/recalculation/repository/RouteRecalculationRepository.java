@@ -21,8 +21,19 @@ public interface RouteRecalculationRepository extends JpaRepository<RouteRecalcu
 
     List<RouteRecalculation> findAllByTrainingSession_IdOrderByRequestedAtDesc(UUID trainingSessionId);
 
+    List<RouteRecalculation>
+    findAllByTrainingSession_IdAndTrainingSession_Scenario_Building_SchoolNameOrderByRequestedAtDesc(
+            UUID trainingSessionId, String schoolName);
+
     List<RouteRecalculation> findAllByTrainingSession_IdAndStatusOrderByRequestedAtDesc(
             UUID trainingSessionId, RecalculationStatus status);
+
+    List<RouteRecalculation>
+    findAllByTrainingSession_IdAndStatusAndTrainingSession_Scenario_Building_SchoolNameOrderByRequestedAtDesc(
+            UUID trainingSessionId, RecalculationStatus status, String schoolName);
+
+    Optional<RouteRecalculation> findByIdAndTrainingSession_Scenario_Building_SchoolName(
+            UUID id, String schoolName);
 
     // 훈련 종료 시 해당 세션의 남은 PENDING을 일괄 무효화하기 위한 조회
     List<RouteRecalculation> findAllByTrainingSession_IdAndStatus(UUID trainingSessionId, RecalculationStatus status);

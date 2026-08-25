@@ -26,6 +26,7 @@ import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.user.entity.User;
 import com.saferoute.domain.user.repository.UserRepository;
+import com.saferoute.domain.user.service.SchoolContextService;
 import com.saferoute.global.api.error.EvacuationErrorCode;
 import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
@@ -50,6 +51,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 class RouteRecalculationServiceTest {
 
     private static final String MANAGER_EMAIL = "manager@saferoute.com";
+    private static final String SCHOOL_NAME = "SafeRoute School";
 
     @InjectMocks
     private RouteRecalculationService routeRecalculationService;
@@ -69,6 +71,9 @@ class RouteRecalculationServiceTest {
     @Mock
     private TrainingEventPublisher trainingEventPublisher;
 
+    @Mock
+    private SchoolContextService schoolContextService;
+
     private TrainingSession session;
     private MapEdge triggerEdge;
     private UUID floorId;
@@ -78,6 +83,8 @@ class RouteRecalculationServiceTest {
     void setUp() {
         session = mock(TrainingSession.class);
         org.mockito.Mockito.lenient().when(session.getId()).thenReturn(UUID.randomUUID());
+        org.mockito.Mockito.lenient().when(schoolContextService.getSchoolName(MANAGER_EMAIL))
+                .thenReturn(SCHOOL_NAME);
 
         Floor floor = mock(Floor.class);
         floorId = UUID.randomUUID();
@@ -311,7 +318,9 @@ class RouteRecalculationServiceTest {
     @DisplayName("존재하지 않는 재탐색 ID로 승인하면 ROUTE_RECALCULATION_NOT_FOUND를 던진다")
     void approve_whenNotFound_throws() {
         UUID recalculationId = UUID.randomUUID();
-        given(routeRecalculationRepository.findById(recalculationId)).willReturn(Optional.empty());
+        given(routeRecalculationRepository
+                .findByIdAndTrainingSession_Scenario_Building_SchoolName(
+                        recalculationId, SCHOOL_NAME)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> routeRecalculationService.approve(recalculationId, MANAGER_EMAIL))
                 .isInstanceOf(ApiException.class)
@@ -323,7 +332,9 @@ class RouteRecalculationServiceTest {
     void approve_whenNotPending_throws() {
         RouteRecalculation recalculation = pendingRecalculation(CongestionLevel.CROWDED);
         recalculation.approve(Instant.now(), mock(User.class));
-        given(routeRecalculationRepository.findById(recalculation.getId())).willReturn(Optional.of(recalculation));
+        given(routeRecalculationRepository
+                .findByIdAndTrainingSession_Scenario_Building_SchoolName(
+                        recalculation.getId(), SCHOOL_NAME)).willReturn(Optional.of(recalculation));
 
         assertThatThrownBy(() -> routeRecalculationService.approve(recalculation.getId(), MANAGER_EMAIL))
                 .isInstanceOf(ApiException.class)
@@ -336,7 +347,9 @@ class RouteRecalculationServiceTest {
     @DisplayName("승인자를 찾을 수 없으면 ADMIN_NOT_FOUND를 던진다")
     void approve_whenApproverMissing_throws() {
         RouteRecalculation recalculation = pendingRecalculation(CongestionLevel.CROWDED);
-        given(routeRecalculationRepository.findById(recalculation.getId())).willReturn(Optional.of(recalculation));
+        given(routeRecalculationRepository
+                .findByIdAndTrainingSession_Scenario_Building_SchoolName(
+                        recalculation.getId(), SCHOOL_NAME)).willReturn(Optional.of(recalculation));
         given(userRepository.findByEmail(MANAGER_EMAIL)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> routeRecalculationService.approve(recalculation.getId(), MANAGER_EMAIL))
@@ -348,7 +361,9 @@ class RouteRecalculationServiceTest {
     @DisplayName("PENDING이면 승인 시 상태를 APPROVED로 바꾸고 WS 발행 및 유도등 반영을 한다")
     void approve_whenPending_succeedsAndPublishes() {
         RouteRecalculation recalculation = pendingRecalculation(CongestionLevel.CROWDED);
-        given(routeRecalculationRepository.findById(recalculation.getId())).willReturn(Optional.of(recalculation));
+        given(routeRecalculationRepository
+                .findByIdAndTrainingSession_Scenario_Building_SchoolName(
+                        recalculation.getId(), SCHOOL_NAME)).willReturn(Optional.of(recalculation));
         User manager = mock(User.class);
         org.mockito.Mockito.lenient().when(manager.getUsername()).thenReturn("manager");
         given(userRepository.findByEmail(MANAGER_EMAIL)).willReturn(Optional.of(manager));
@@ -368,7 +383,9 @@ class RouteRecalculationServiceTest {
     void reject_whenNotPending_throws() {
         RouteRecalculation recalculation = pendingRecalculation(CongestionLevel.CROWDED);
         recalculation.reject(Instant.now(), mock(User.class), null);
-        given(routeRecalculationRepository.findById(recalculation.getId())).willReturn(Optional.of(recalculation));
+        given(routeRecalculationRepository
+                .findByIdAndTrainingSession_Scenario_Building_SchoolName(
+                        recalculation.getId(), SCHOOL_NAME)).willReturn(Optional.of(recalculation));
 
         assertThatThrownBy(() -> routeRecalculationService.reject(recalculation.getId(), MANAGER_EMAIL, "사유"))
                 .isInstanceOf(ApiException.class)
@@ -379,7 +396,9 @@ class RouteRecalculationServiceTest {
     @DisplayName("PENDING이면 거절 시 상태를 REJECTED로 바꾸고 사유를 저장한다")
     void reject_whenPending_succeedsWithoutEvacuationUpdate() {
         RouteRecalculation recalculation = pendingRecalculation(CongestionLevel.CROWDED);
-        given(routeRecalculationRepository.findById(recalculation.getId())).willReturn(Optional.of(recalculation));
+        given(routeRecalculationRepository
+                .findByIdAndTrainingSession_Scenario_Building_SchoolName(
+                        recalculation.getId(), SCHOOL_NAME)).willReturn(Optional.of(recalculation));
         User manager = mock(User.class);
         given(userRepository.findByEmail(MANAGER_EMAIL)).willReturn(Optional.of(manager));
 
