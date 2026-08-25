@@ -29,6 +29,7 @@ import com.saferoute.global.api.error.FloorErrorCode;
 import com.saferoute.global.api.error.IoTLightErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
+import com.saferoute.domain.user.service.SchoolContextService;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -43,6 +44,9 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class IoTLightServiceTest {
+
+    private static final String EMAIL = "manager@saferoute.com";
+    private static final String SCHOOL_NAME = "SafeRoute School";
 
     @InjectMocks
     private IoTLightService iotLightService;
@@ -67,6 +71,9 @@ class IoTLightServiceTest {
 
     @Mock
     private TrainingEventPublisher trainingEventPublisher;
+
+    @Mock
+    private SchoolContextService schoolContextService;
 
     private final UUID floorId = UUID.randomUUID();
     private Floor floor;
@@ -161,10 +168,13 @@ class IoTLightServiceTest {
         // given
         MapNode node = createNode("LIGHT_001", NodeType.CUSTOM);
         IoTLight light = createLight("LIGHT_001", node);
-        given(iotLightJpaRepository.findAllByCustomNode_Floor_Id(floorId)).willReturn(List.of(light));
+        given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
+        given(iotLightJpaRepository
+                .findAllByCustomNode_Floor_IdAndCustomNode_Floor_Building_SchoolName(
+                        floorId, SCHOOL_NAME)).willReturn(List.of(light));
 
         // when
-        List<IoTLightResponse> responses = iotLightService.getLights(floorId);
+        List<IoTLightResponse> responses = iotLightService.getLights(floorId, EMAIL);
 
         // then
         assertThat(responses).hasSize(1);

@@ -21,6 +21,7 @@ import com.saferoute.global.api.error.FloorErrorCode;
 import com.saferoute.global.api.error.IoTLightErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
+import com.saferoute.domain.user.service.SchoolContextService;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -42,6 +43,7 @@ public class IoTLightService {
     private final IoTLightPiClient iotLightPiClient;
     private final IoTLightDirectionStore iotLightDirectionStore;
     private final TrainingEventPublisher trainingEventPublisher;
+    private final SchoolContextService schoolContextService;
 
     @Transactional
     public IoTLightResponse createLight(CreateIoTLightRequest request) {
@@ -77,9 +79,27 @@ public class IoTLightService {
         return lights.stream().map(IoTLightResponse::from).toList();
     }
 
+    public List<IoTLightResponse> getLights(UUID floorId, String email) {
+        String schoolName = schoolContextService.getSchoolName(email);
+        List<IoTLight> lights = floorId == null
+                ? iotLightJpaRepository.findAllByCustomNode_Floor_Building_SchoolName(schoolName)
+                : iotLightJpaRepository
+                        .findAllByCustomNode_Floor_IdAndCustomNode_Floor_Building_SchoolName(
+                                floorId, schoolName);
+        return lights.stream().map(IoTLightResponse::from).toList();
+    }
+
     @Transactional(readOnly = true)
     public IoTLightResponse getLight(UUID lightId) {
         return IoTLightResponse.from(findLightOrThrow(lightId));
+    }
+
+    public IoTLightResponse getLight(UUID lightId, String email) {
+        String schoolName = schoolContextService.getSchoolName(email);
+        IoTLight light = iotLightJpaRepository
+                .findByIdAndCustomNode_Floor_Building_SchoolName(lightId, schoolName)
+                .orElseThrow(() -> new ApiException(IoTLightErrorCode.IOT_LIGHT_NOT_FOUND));
+        return IoTLightResponse.from(light);
     }
 
     @Transactional

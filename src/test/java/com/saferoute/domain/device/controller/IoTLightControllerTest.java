@@ -34,6 +34,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -50,6 +51,8 @@ import org.springframework.test.web.servlet.MockMvc;
 )
 @AutoConfigureMockMvc(addFilters = false)
 class IoTLightControllerTest {
+
+    private static final String EMAIL = "manager@saferoute.com";
 
     @Autowired
     private MockMvc mockMvc;
@@ -116,9 +119,11 @@ class IoTLightControllerTest {
     @Test
     @DisplayName("GET /lights - 층별로 유도등 목록을 조회한다")
     void getLights_success() throws Exception {
-        given(iotLightService.getLights(floorId)).willReturn(List.of(sampleResponse()));
+        given(iotLightService.getLights(floorId, EMAIL)).willReturn(List.of(sampleResponse()));
 
-        mockMvc.perform(get("/api/v1/lights").param("floorId", floorId.toString()))
+        mockMvc.perform(get("/api/v1/lights")
+                        .param("floorId", floorId.toString())
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.length()").value(1));
     }
@@ -126,10 +131,11 @@ class IoTLightControllerTest {
     @Test
     @DisplayName("GET /lights/{lightId} - 유도등이 없으면 404를 반환한다")
     void getLight_notFound() throws Exception {
-        given(iotLightService.getLight(lightId))
+        given(iotLightService.getLight(lightId, EMAIL))
                 .willThrow(new ApiException(IoTLightErrorCode.IOT_LIGHT_NOT_FOUND));
 
-        mockMvc.perform(get("/api/v1/lights/{lightId}", lightId))
+        mockMvc.perform(get("/api/v1/lights/{lightId}", lightId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isNotFound());
     }
 

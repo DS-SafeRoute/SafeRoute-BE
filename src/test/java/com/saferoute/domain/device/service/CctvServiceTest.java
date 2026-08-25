@@ -25,6 +25,7 @@ import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.global.api.error.DeviceErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.global.security.DeviceTokenService;
+import com.saferoute.domain.user.service.SchoolContextService;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -38,6 +39,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class CctvServiceTest {
 
+    private static final String EMAIL = "manager@saferoute.com";
+    private static final String SCHOOL_NAME = "SafeRoute School";
+
     @Mock CctvJpaRepository cctvJpaRepository;
     @Mock CctvGridCellRepository cctvGridCellRepository;
     @Mock FloorGridCellRepository floorGridCellRepository;
@@ -45,6 +49,7 @@ class CctvServiceTest {
     @Mock CctvRegistrationService cctvRegistrationService;
     @Mock DeviceTokenService deviceTokenService;
     @Mock CongestionConfigService congestionConfigService;
+    @Mock SchoolContextService schoolContextService;
 
     private CctvService cctvService;
 
@@ -57,7 +62,8 @@ class CctvServiceTest {
                 cctvCodeAllocator,
                 cctvRegistrationService,
                 deviceTokenService,
-                congestionConfigService
+                congestionConfigService,
+                schoolContextService
         );
     }
 
@@ -124,11 +130,13 @@ class CctvServiceTest {
         Cctv secondCctv = cctv(secondId);
         CctvGridCell firstMapping = mapping(firstCctv, cell(0, 0));
         CctvGridCell secondMapping = mapping(secondCctv, cell(0, 1));
-        given(cctvJpaRepository.findAllWithLocation()).willReturn(List.of(firstCctv, secondCctv));
+        given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
+        given(cctvJpaRepository.findAllByCustomNode_Floor_Building_SchoolName(SCHOOL_NAME))
+                .willReturn(List.of(firstCctv, secondCctv));
         given(cctvGridCellRepository.findAllByCctvIdsWithGridCell(anyList()))
                 .willReturn(List.of(firstMapping, secondMapping));
 
-        List<CctvResponse> responses = cctvService.getCctvs(null);
+        List<CctvResponse> responses = cctvService.getCctvs(null, EMAIL);
 
         assertThat(responses).hasSize(2);
         verify(cctvGridCellRepository).findAllByCctvIdsWithGridCell(List.of(firstId, secondId));

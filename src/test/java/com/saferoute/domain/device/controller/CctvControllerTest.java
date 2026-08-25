@@ -29,6 +29,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -41,6 +42,8 @@ import org.springframework.test.web.servlet.MockMvc;
 )
 @AutoConfigureMockMvc(addFilters = false)
 class CctvControllerTest {
+
+    private static final String EMAIL = "manager@saferoute.com";
 
     @Autowired MockMvc mockMvc;
     @Autowired ObjectMapper objectMapper;
@@ -103,9 +106,11 @@ class CctvControllerTest {
 
     @Test
     void getCctvs_returnsList() throws Exception {
-        given(cctvService.getCctvs(floorId)).willReturn(List.of(response(true)));
+        given(cctvService.getCctvs(floorId, EMAIL)).willReturn(List.of(response(true)));
 
-        mockMvc.perform(get("/api/v1/cctvs").param("floorId", floorId.toString()))
+        mockMvc.perform(get("/api/v1/cctvs")
+                        .param("floorId", floorId.toString())
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.length()").value(1));
     }

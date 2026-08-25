@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -44,16 +45,21 @@ public class IoTLightController {
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<IoTLightResponse>>> getLights(
-            @RequestParam(required = false) UUID floorId
+            @RequestParam(required = false) UUID floorId,
+            Authentication authentication
     ) {
         return ResponseEntity.ok(
-                ApiResponse.success(IoTLightSuccessCode.IOT_LIGHT_LIST_FOUND, iotLightService.getLights(floorId)));
+                ApiResponse.success(IoTLightSuccessCode.IOT_LIGHT_LIST_FOUND,
+                        iotLightService.getLights(floorId, authentication.getName())));
     }
 
     @GetMapping("/{lightId}")
-    public ResponseEntity<ApiResponse<IoTLightResponse>> getLight(@PathVariable UUID lightId) {
+    public ResponseEntity<ApiResponse<IoTLightResponse>> getLight(
+            @PathVariable UUID lightId,
+            Authentication authentication) {
         return ResponseEntity.ok(
-                ApiResponse.success(IoTLightSuccessCode.IOT_LIGHT_DETAIL_FOUND, iotLightService.getLight(lightId)));
+                ApiResponse.success(IoTLightSuccessCode.IOT_LIGHT_DETAIL_FOUND,
+                        iotLightService.getLight(lightId, authentication.getName())));
     }
 
     @PatchMapping("/{lightId}/guidance")

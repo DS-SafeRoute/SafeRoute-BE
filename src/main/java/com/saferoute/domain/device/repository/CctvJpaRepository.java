@@ -19,12 +19,22 @@ public interface CctvJpaRepository extends JpaRepository<Cctv, UUID> {
     List<Cctv> findAllByCustomNode_Floor_Id(UUID floorId);
 
     @EntityGraph(attributePaths = {"customNode", "customNode.floor"})
+    List<Cctv> findAllByCustomNode_Floor_Building_SchoolName(String schoolName);
+
+    @EntityGraph(attributePaths = {"customNode", "customNode.floor"})
+    List<Cctv> findAllByCustomNode_Floor_IdAndCustomNode_Floor_Building_SchoolName(
+            UUID floorId, String schoolName);
+
+    @EntityGraph(attributePaths = {"customNode", "customNode.floor"})
     @Query("select cctv from Cctv cctv")
     List<Cctv> findAllWithLocation();
 
     @EntityGraph(attributePaths = {"customNode", "customNode.floor"})
     @Query("select cctv from Cctv cctv where cctv.id = :cctvId")
     Optional<Cctv> findByIdWithLocation(@Param("cctvId") UUID cctvId);
+
+    @EntityGraph(attributePaths = {"customNode", "customNode.floor"})
+    Optional<Cctv> findByIdAndCustomNode_Floor_Building_SchoolName(UUID id, String schoolName);
 
     // 인증 서비스의 트랜잭션이 끝난 뒤 혼잡 설정 조회에서 위치 정보를 사용하므로 함께 초기화한다.
     // 라즈베리파이가 보내온 code 로 기기 식별 (전역 unique)
