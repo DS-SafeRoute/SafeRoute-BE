@@ -49,7 +49,7 @@ class FloorGridServiceTest {
 
     @BeforeEach
     void setUp() {
-        Building building = Building.create("테스트 빌딩", "서울시 테스트구 테스트로 123", 5, BuildingType.CLASSROOM);
+        Building building = Building.create("테스트 빌딩", "서울시 테스트구 테스트로 123", BuildingType.CLASSROOM);
         buildingRepository.save(building);
 
         floor = Floor.create(building, 3);

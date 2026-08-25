@@ -46,6 +46,15 @@ public class Building {
     @Column(nullable = false, length = 100)
     private String address;
 
+    // 지상층수/지하층수/총층수는 Floor 추가·삭제에 따라 자동 반영되며 클라이언트가 직접 수정할 수 없다.
+    @NotNull
+    @Column(name = "ground_floor_count", nullable = false)
+    private Integer groundFloorCount;
+
+    @NotNull
+    @Column(name = "basement_floor_count", nullable = false)
+    private Integer basementFloorCount;
+
     @NotNull
     @Column(name = "total_floors", nullable = false)
     private Integer totalFloors;
@@ -77,25 +86,50 @@ public class Building {
     @OneToMany(mappedBy = "building", cascade = {CascadeType.PERSIST, CascadeType.MERGE})
     private List<Floor> floors = new ArrayList<>();
 
-    private Building(String name, String address, Integer totalFloors, BuildingType buildingType) {
+    private Building(String name, String address, BuildingType buildingType) {
         this.name = name;
         this.address = address;
-        this.totalFloors = totalFloors;
         this.buildingType = buildingType;
         this.isActive = true;
+        this.groundFloorCount = 0;
+        this.basementFloorCount = 0;
+        this.totalFloors = 0;
     }
 
-    // 건물 등록용 정적 팩토리 메서드
-    public static Building create(String name, String address, Integer totalFloors, BuildingType buildingType) {
-        return new Building(name, address, totalFloors, buildingType);
+    // 건물 등록용 정적 팩토리 메서드 (층수는 Floor 등록에 따라 채워짐)
+    public static Building create(String name, String address, BuildingType buildingType) {
+        return new Building(name, address, buildingType);
     }
 
-    // 건물 정보 수정
-    public void update(String name, String address, Integer totalFloors, BuildingType buildingType) {
+    // 건물 정보 수정 (층수는 대상에서 제외 — Floor 추가/삭제로만 변경됨)
+    public void update(String name, String address, BuildingType buildingType) {
         this.name = name;
         this.address = address;
-        this.totalFloors = totalFloors;
         this.buildingType = buildingType;
+    }
+
+    // Floor 등록 시 층수 반영
+    public void addFloor(Integer floorNum) {
+        if (isBasementFloor(floorNum)) {
+            this.basementFloorCount++;
+        } else {
+            this.groundFloorCount++;
+        }
+        this.totalFloors = this.groundFloorCount + this.basementFloorCount;
+    }
+
+    // Floor 삭제 시 층수 반영
+    public void removeFloor(Integer floorNum) {
+        if (isBasementFloor(floorNum)) {
+            this.basementFloorCount--;
+        } else {
+            this.groundFloorCount--;
+        }
+        this.totalFloors = this.groundFloorCount + this.basementFloorCount;
+    }
+
+    private boolean isBasementFloor(Integer floorNum) {
+        return floorNum < 0;
     }
 
     // 건물 비활성화
