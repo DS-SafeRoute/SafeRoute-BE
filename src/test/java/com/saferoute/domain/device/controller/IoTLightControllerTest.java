@@ -4,6 +4,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -285,5 +286,25 @@ class IoTLightControllerTest {
                         .contentType("application/json")
                         .content("{}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    // === deleteLight ===
+
+    @Test
+    @DisplayName("DELETE /lights/{lightId} - 유도등을 삭제하면 200을 반환한다")
+    void deleteLight_success() throws Exception {
+        mockMvc.perform(delete("/api/v1/lights/{lightId}", lightId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true));
+    }
+
+    @Test
+    @DisplayName("DELETE /lights/{lightId} - 유도등이 없으면 404를 반환한다")
+    void deleteLight_notFound() throws Exception {
+        org.mockito.BDDMockito.willThrow(new ApiException(IoTLightErrorCode.IOT_LIGHT_NOT_FOUND))
+                .given(iotLightService).deleteLight(lightId);
+
+        mockMvc.perform(delete("/api/v1/lights/{lightId}", lightId))
+                .andExpect(status().isNotFound());
     }
 }

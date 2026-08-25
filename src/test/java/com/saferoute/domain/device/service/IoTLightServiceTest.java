@@ -314,6 +314,38 @@ class IoTLightServiceTest {
         assertThat(response.enabled()).isFalse();
     }
 
+    // === deleteLight ===
+
+    @Test
+    @DisplayName("유도등을 삭제하면 연결된 엣지와 도면 위치 노드가 함께 삭제된다")
+    void deleteLight_success() {
+        // given
+        MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
+        IoTLight light = createLight("LIGHT_001", customNode);
+        given(iotLightJpaRepository.findById(light.getId())).willReturn(Optional.of(light));
+
+        // when
+        iotLightService.deleteLight(light.getId());
+
+        // then
+        verify(mapEdgeJpaRepository).deleteByFromNode_IdOrToNode_Id(customNode.getId(), customNode.getId());
+        verify(mapNodeJpaRepository).delete(customNode);
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 유도등을 삭제하려 하면 예외가 발생한다")
+    void deleteLight_notFound_throws() {
+        // given
+        UUID unknownId = UUID.randomUUID();
+        given(iotLightJpaRepository.findById(unknownId)).willReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> iotLightService.deleteLight(unknownId))
+                .isInstanceOf(ApiException.class)
+                .hasMessage(IoTLightErrorCode.IOT_LIGHT_NOT_FOUND.getMessage());
+        verifyNoInteractions(mapEdgeJpaRepository, mapNodeJpaRepository);
+    }
+
     // === changeDirection ===
 
     @Test
