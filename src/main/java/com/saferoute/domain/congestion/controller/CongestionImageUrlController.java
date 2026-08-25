@@ -8,6 +8,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
@@ -20,16 +21,21 @@ public class CongestionImageUrlController {
     private final CongestionImageUrlService congestionImageUrlService;
 
     @GetMapping("/api/v1/congestion-events/{eventId}/image-url")
-    public ResponseEntity<ApiResponse<CongestionImageUrlResponse>> getEventImageUrl(@PathVariable UUID eventId) {
-        CongestionImageUrlResponse response = congestionImageUrlService.getEventImageUrl(eventId);
+    public ResponseEntity<ApiResponse<CongestionImageUrlResponse>> getEventImageUrl(
+            @PathVariable UUID eventId,
+            Authentication authentication) {
+        CongestionImageUrlResponse response =
+                congestionImageUrlService.getEventImageUrl(eventId, authentication.getName());
         return ResponseEntity.ok(ApiResponse.success(CongestionSuccessCode.CONGESTION_IMAGE_URL_ISSUED, response));
     }
 
     @GetMapping("/api/v1/congestion-observations/{eventId}/image-url")
     public ResponseEntity<ApiResponse<CongestionImageUrlResponse>> getObservationImageUrl(
-            @PathVariable UUID eventId
+            @PathVariable UUID eventId,
+            Authentication authentication
     ) {
-        CongestionImageUrlResponse response = congestionImageUrlService.getObservationImageUrl(eventId);
+        CongestionImageUrlResponse response =
+                congestionImageUrlService.getObservationImageUrl(eventId, authentication.getName());
         return ResponseEntity.ok(ApiResponse.success(CongestionSuccessCode.CONGESTION_IMAGE_URL_ISSUED, response));
     }
 }

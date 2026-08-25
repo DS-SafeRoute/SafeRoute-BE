@@ -1,6 +1,7 @@
 package com.saferoute.domain.congestion.controller;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -22,6 +23,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -35,6 +37,8 @@ import org.springframework.test.web.servlet.MockMvc;
 @AutoConfigureMockMvc(addFilters = false)
 class CongestionImageUrlControllerTest {
 
+    private static final String EMAIL = "manager@saferoute.com";
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -46,10 +50,11 @@ class CongestionImageUrlControllerTest {
     @Test
     @DisplayName("이벤트 이미지 URL 조회 성공 시 200을 반환한다")
     void getEventImageUrl_returnsOk() throws Exception {
-        given(congestionImageUrlService.getEventImageUrl(eventId))
+        given(congestionImageUrlService.getEventImageUrl(eventId, EMAIL))
                 .willReturn(new CongestionImageUrlResponse("https://example.com/view", Instant.now()));
 
-        mockMvc.perform(get("/api/v1/congestion-events/{eventId}/image-url", eventId))
+        mockMvc.perform(get("/api/v1/congestion-events/{eventId}/image-url", eventId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.imageUrl").value("https://example.com/view"));
     }
@@ -58,9 +63,10 @@ class CongestionImageUrlControllerTest {
     @DisplayName("이벤트를 찾을 수 없으면 404를 반환한다")
     void getEventImageUrl_returnsNotFoundWhenMissing() throws Exception {
         willThrow(new ApiException(CongestionErrorCode.EVENT_NOT_FOUND))
-                .given(congestionImageUrlService).getEventImageUrl(any());
+                .given(congestionImageUrlService).getEventImageUrl(any(), eq(EMAIL));
 
-        mockMvc.perform(get("/api/v1/congestion-events/{eventId}/image-url", eventId))
+        mockMvc.perform(get("/api/v1/congestion-events/{eventId}/image-url", eventId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isNotFound());
     }
 
@@ -68,19 +74,21 @@ class CongestionImageUrlControllerTest {
     @DisplayName("이벤트 이미지가 아직 없으면 409를 반환한다")
     void getEventImageUrl_returnsConflictWhenImageNotReady() throws Exception {
         willThrow(new ApiException(CongestionErrorCode.EVENT_IMAGE_OBJECT_NOT_FOUND))
-                .given(congestionImageUrlService).getEventImageUrl(any());
+                .given(congestionImageUrlService).getEventImageUrl(any(), eq(EMAIL));
 
-        mockMvc.perform(get("/api/v1/congestion-events/{eventId}/image-url", eventId))
+        mockMvc.perform(get("/api/v1/congestion-events/{eventId}/image-url", eventId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isConflict());
     }
 
     @Test
     @DisplayName("관측값 이미지 URL 조회 성공 시 200을 반환한다")
     void getObservationImageUrl_returnsOk() throws Exception {
-        given(congestionImageUrlService.getObservationImageUrl(eventId))
+        given(congestionImageUrlService.getObservationImageUrl(eventId, EMAIL))
                 .willReturn(new CongestionImageUrlResponse("https://example.com/view", Instant.now()));
 
-        mockMvc.perform(get("/api/v1/congestion-observations/{eventId}/image-url", eventId))
+        mockMvc.perform(get("/api/v1/congestion-observations/{eventId}/image-url", eventId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.imageUrl").value("https://example.com/view"));
     }
