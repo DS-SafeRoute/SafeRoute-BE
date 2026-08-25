@@ -11,6 +11,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -30,38 +31,42 @@ public class TrainingScenarioController {
 
     // GET /api/v1/scenarios
     @GetMapping
-    public ResponseEntity<List<ScenarioResponse>> getScenarios() {
-        return ResponseEntity.ok(scenarioService.getScenarios());
+    public ResponseEntity<List<ScenarioResponse>> getScenarios(Authentication authentication) {
+        return ResponseEntity.ok(scenarioService.getScenarios(authentication.getName()));
     }
 
     // GET /api/v1/scenarios/{scenarioId}
     @GetMapping("/{scenarioId}")
     public ResponseEntity<ScenarioResponse> getScenario(
-            @PathVariable UUID scenarioId) {
-        return ResponseEntity.ok(scenarioService.getScenario(scenarioId));
+            @PathVariable UUID scenarioId,
+            Authentication authentication) {
+        return ResponseEntity.ok(scenarioService.getScenario(scenarioId, authentication.getName()));
     }
 
     // POST /api/v1/scenarios
     @PostMapping
     public ResponseEntity<ScenarioResponse> createScenario(
-            @Valid @RequestBody CreateScenarioRequest request) {
+            @Valid @RequestBody CreateScenarioRequest request,
+            Authentication authentication) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(scenarioService.createScenario(request));
+                .body(scenarioService.createScenario(request, authentication.getName()));
     }
 
     // PATCH /api/v1/scenarios/{scenarioId}
     @PatchMapping("/{scenarioId}")
     public ResponseEntity<ScenarioResponse> updateScenario(
             @PathVariable UUID scenarioId,
-            @RequestBody UpdateScenarioRequest request) {
-        return ResponseEntity.ok(scenarioService.updateScenario(scenarioId, request));
+            @RequestBody UpdateScenarioRequest request,
+            Authentication authentication) {
+        return ResponseEntity.ok(scenarioService.updateScenario(scenarioId, request, authentication.getName()));
     }
 
     // DELETE /api/v1/scenarios/{scenarioId}
     @DeleteMapping("/{scenarioId}")
     public ResponseEntity<Void> deleteScenario(
-            @PathVariable UUID scenarioId) {
-        scenarioService.deleteScenario(scenarioId);
+            @PathVariable UUID scenarioId,
+            Authentication authentication) {
+        scenarioService.deleteScenario(scenarioId, authentication.getName());
         return ResponseEntity.noContent().build();
     }
 }

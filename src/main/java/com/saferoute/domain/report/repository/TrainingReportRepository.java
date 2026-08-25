@@ -14,10 +14,18 @@ public interface TrainingReportRepository extends JpaRepository<TrainingReport, 
       from TrainingReport tr
       join fetch tr.trainingSession ts
       join fetch ts.scenario s
+      join s.building b
+      where b.schoolName = :schoolName
       order by tr.createdAt desc
       """)
-  List<TrainingReport> findRecentReports(Pageable pageable);
+  List<TrainingReport> findRecentReportsBySchoolName(String schoolName, Pageable pageable);
 
-  @Query("SELECT COALESCE(AVG(r.survivalRate), 0), COALESCE(AVG(r.avgEvacuationSec), 0), COALESCE(SUM(r.participantCount), 0) FROM TrainingReport r")
-  List<Object[]> getStatistics();
+  @Query("""
+      select coalesce(avg(r.survivalRate), 0),
+             coalesce(avg(r.avgEvacuationSec), 0),
+             coalesce(sum(r.participantCount), 0)
+      from TrainingReport r
+      where r.trainingSession.scenario.building.schoolName = :schoolName
+      """)
+  List<Object[]> getStatisticsBySchoolName(String schoolName);
 }

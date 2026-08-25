@@ -19,6 +19,7 @@ import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.user.entity.User;
 import com.saferoute.domain.user.entity.UserRole;
 import com.saferoute.domain.user.repository.UserRepository;
+import com.saferoute.domain.user.service.SchoolContextService;
 import com.saferoute.global.api.code.ErrorCode;
 import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
@@ -40,6 +41,9 @@ import org.springframework.test.util.ReflectionTestUtils;
 @ExtendWith(MockitoExtension.class)
 class TrainingSessionServiceTest {
 
+    private static final String EMAIL = "manager@saferoute.com";
+    private static final String SCHOOL_NAME = "SafeRoute School";
+
     @InjectMocks
     private TrainingSessionService trainingSessionService;
 
@@ -58,6 +62,9 @@ class TrainingSessionServiceTest {
     @Mock
     private TrainingEventPublisher trainingEventPublisher;
 
+    @Mock
+    private SchoolContextService schoolContextService;
+
     private final UUID sessionId = UUID.randomUUID();
 
     private TrainingSession sessionWithStatus(TrainingStatus status) {
@@ -65,6 +72,19 @@ class TrainingSessionServiceTest {
                 TrainingSession.create(status, Instant.now(), mock(User.class), mock(TrainingScenario.class));
         ReflectionTestUtils.setField(session, "id", sessionId);
         return session;
+    }
+
+    @Test
+    @DisplayName("다른 기관의 훈련 세션 상태는 조회할 수 없다")
+    void getTrainingStatus_otherSchool_throwsNotFound() {
+        given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME))
+                .willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> trainingSessionService.getTrainingStatus(sessionId, EMAIL))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND);
     }
 
     // === create ===

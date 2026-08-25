@@ -16,6 +16,7 @@ import com.saferoute.domain.training.repository.TrainingScenarioRepository;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.user.entity.User;
 import com.saferoute.domain.user.repository.UserRepository;
+import com.saferoute.domain.user.service.SchoolContextService;
 import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import java.time.Instant;
@@ -34,6 +35,9 @@ import org.springframework.test.util.ReflectionTestUtils;
 @ExtendWith(MockitoExtension.class)
 class TrainingScenarioServiceTest {
 
+    private static final String EMAIL = "manager@saferoute.com";
+    private static final String SCHOOL_NAME = "SafeRoute School";
+
     @InjectMocks
     private TrainingScenarioService trainingScenarioService;
 
@@ -48,6 +52,9 @@ class TrainingScenarioServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private SchoolContextService schoolContextService;
 
     private TrainingScenario scenarioWithId(UUID id) {
         TrainingScenario scenario = TrainingScenario.create(
@@ -69,11 +76,13 @@ class TrainingScenarioServiceTest {
     void getScenarios_scenarioWithoutSession_isDeletable() {
         UUID scenarioId = UUID.randomUUID();
         TrainingScenario scenario = scenarioWithId(scenarioId);
-        given(scenarioRepository.findAll()).willReturn(List.of(scenario));
+        given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
+        given(scenarioRepository.findAllByBuilding_SchoolNameOrderByCreatedAtDesc(SCHOOL_NAME))
+                .willReturn(List.of(scenario));
         given(trainingSessionRepository.findScenarioIdsWithAnySession(List.of(scenarioId)))
                 .willReturn(Set.of());
 
-        List<ScenarioResponse> responses = trainingScenarioService.getScenarios();
+        List<ScenarioResponse> responses = trainingScenarioService.getScenarios(EMAIL);
 
         assertThat(responses).hasSize(1);
         assertThat(responses.get(0).getDeletable()).isTrue();
@@ -84,11 +93,13 @@ class TrainingScenarioServiceTest {
     void getScenarios_scenarioWithSession_isNotDeletable() {
         UUID scenarioId = UUID.randomUUID();
         TrainingScenario scenario = scenarioWithId(scenarioId);
-        given(scenarioRepository.findAll()).willReturn(List.of(scenario));
+        given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
+        given(scenarioRepository.findAllByBuilding_SchoolNameOrderByCreatedAtDesc(SCHOOL_NAME))
+                .willReturn(List.of(scenario));
         given(trainingSessionRepository.findScenarioIdsWithAnySession(List.of(scenarioId)))
                 .willReturn(Set.of(scenarioId));
 
-        List<ScenarioResponse> responses = trainingScenarioService.getScenarios();
+        List<ScenarioResponse> responses = trainingScenarioService.getScenarios(EMAIL);
 
         assertThat(responses).hasSize(1);
         assertThat(responses.get(0).getDeletable()).isFalse();
@@ -97,9 +108,11 @@ class TrainingScenarioServiceTest {
     @Test
     @DisplayName("시나리오가 하나도 없으면 세션 조회 없이 빈 목록을 반환한다")
     void getScenarios_noScenarios_returnsEmptyListWithoutQueryingSessions() {
-        given(scenarioRepository.findAll()).willReturn(List.of());
+        given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
+        given(scenarioRepository.findAllByBuilding_SchoolNameOrderByCreatedAtDesc(SCHOOL_NAME))
+                .willReturn(List.of());
 
-        List<ScenarioResponse> responses = trainingScenarioService.getScenarios();
+        List<ScenarioResponse> responses = trainingScenarioService.getScenarios(EMAIL);
 
         assertThat(responses).isEmpty();
         verify(trainingSessionRepository, never()).findScenarioIdsWithAnySession(org.mockito.ArgumentMatchers.any());
@@ -112,10 +125,12 @@ class TrainingScenarioServiceTest {
     void deleteScenario_withoutSession_deletesScenario() {
         UUID scenarioId = UUID.randomUUID();
         TrainingScenario scenario = scenarioWithId(scenarioId);
-        given(scenarioRepository.findById(scenarioId)).willReturn(Optional.of(scenario));
+        given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
+        given(scenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
+                .willReturn(Optional.of(scenario));
         given(trainingSessionRepository.existsByScenario_Id(scenarioId)).willReturn(false);
 
-        trainingScenarioService.deleteScenario(scenarioId);
+        trainingScenarioService.deleteScenario(scenarioId, EMAIL);
 
         verify(scenarioRepository).delete(scenario);
     }
@@ -125,10 +140,12 @@ class TrainingScenarioServiceTest {
     void deleteScenario_withSession_throwsException() {
         UUID scenarioId = UUID.randomUUID();
         TrainingScenario scenario = scenarioWithId(scenarioId);
-        given(scenarioRepository.findById(scenarioId)).willReturn(Optional.of(scenario));
+        given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
+        given(scenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
+                .willReturn(Optional.of(scenario));
         given(trainingSessionRepository.existsByScenario_Id(scenarioId)).willReturn(true);
 
-        assertThatThrownBy(() -> trainingScenarioService.deleteScenario(scenarioId))
+        assertThatThrownBy(() -> trainingScenarioService.deleteScenario(scenarioId, EMAIL))
                 .isInstanceOf(ApiException.class)
                 .extracting(exception -> ((ApiException) exception).getErrorCode())
                 .isEqualTo(TrainingErrorCode.SCENARIO_DELETE_NOT_ALLOWED);

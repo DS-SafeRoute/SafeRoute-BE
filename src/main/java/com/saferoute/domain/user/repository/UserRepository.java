@@ -7,6 +7,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface UserRepository extends JpaRepository<User, UUID> {
     Optional<User> findByEmail(String email);
+
+    Optional<User> findByIdAndSchoolName(UUID id, String schoolName);
     boolean existsByEmail(String email);
     boolean existsByUsername(String username);
     boolean existsByEmailAndIdNot(String email, UUID id);

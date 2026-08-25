@@ -15,6 +15,7 @@ import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.user.entity.User;
 import com.saferoute.domain.user.entity.UserRole;
 import com.saferoute.domain.user.repository.UserRepository;
+import com.saferoute.domain.user.service.SchoolContextService;
 import com.saferoute.global.api.code.ErrorCode;
 import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
@@ -43,6 +44,7 @@ public class TrainingSessionService {
   private final TrainingScenarioRepository trainingScenarioRepository;
   private final RouteRecalculationService routeRecalculationService;
   private final TrainingEventPublisher trainingEventPublisher;
+  private final SchoolContextService schoolContextService;
 
   public TrainingSessionResponse create(CreateSessionRequest request, UUID scenarioId) {
     User user = userRepository.findById(request.getAdminId())
@@ -68,8 +70,11 @@ public class TrainingSessionService {
   }
 
   @Transactional(readOnly = true)
-  public TrainingStatusResponse getTrainingStatus(UUID sessionId) {
-    TrainingSession session = findSession(sessionId);
+  public TrainingStatusResponse getTrainingStatus(UUID sessionId, String email) {
+    String schoolName = schoolContextService.getSchoolName(email);
+    TrainingSession session = trainingSessionRepository
+        .findByIdAndScenario_Building_SchoolName(sessionId, schoolName)
+        .orElseThrow(() -> new ApiException(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND));
 
     TrainingScenario scenario = session.getScenario();
     Building building = scenario.getBuilding();
