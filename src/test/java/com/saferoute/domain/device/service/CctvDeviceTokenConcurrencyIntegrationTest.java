@@ -95,7 +95,8 @@ class CctvDeviceTokenConcurrencyIntegrationTest {
         Building building = buildingRepository.saveAndFlush(Building.create(
                 "동시성관",
                 "서울특별시 안전구 동시성로 123",
-                BuildingType.CLASSROOM
+                BuildingType.CLASSROOM,
+                "SafeRoute School"
         ));
         Floor floor = floorRepository.saveAndFlush(Floor.create(building, 1));
         MapNode node = mapNodeJpaRepository.saveAndFlush(MapNode.createCustom(

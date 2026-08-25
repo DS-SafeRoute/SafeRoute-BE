@@ -46,6 +46,11 @@ public class Building {
     @Column(nullable = false, length = 100)
     private String address;
 
+    @NotBlank
+    @Size(min = 5, max = 20)
+    @Column(name = "school_name", nullable = false, length = 20)
+    private String schoolName;
+
     // 지상층수/지하층수/총층수는 Floor 추가·삭제에 따라 자동 반영되며 클라이언트가 직접 수정할 수 없다.
     @NotNull
     @Column(name = "ground_floor_count", nullable = false)
@@ -86,10 +91,11 @@ public class Building {
     @OneToMany(mappedBy = "building", cascade = {CascadeType.PERSIST, CascadeType.MERGE})
     private List<Floor> floors = new ArrayList<>();
 
-    private Building(String name, String address, BuildingType buildingType) {
+    private Building(String name, String address, BuildingType buildingType, String schoolName) {
         this.name = name;
         this.address = address;
         this.buildingType = buildingType;
+        this.schoolName = schoolName;
         this.isActive = true;
         this.groundFloorCount = 0;
         this.basementFloorCount = 0;
@@ -97,8 +103,8 @@ public class Building {
     }
 
     // 건물 등록용 정적 팩토리 메서드 (층수는 Floor 등록에 따라 채워짐)
-    public static Building create(String name, String address, BuildingType buildingType) {
-        return new Building(name, address, buildingType);
+    public static Building create(String name, String address, BuildingType buildingType, String schoolName) {
+        return new Building(name, address, buildingType, schoolName);
     }
 
     // 건물 정보 수정 (층수는 대상에서 제외 — Floor 추가/삭제로만 변경됨)
