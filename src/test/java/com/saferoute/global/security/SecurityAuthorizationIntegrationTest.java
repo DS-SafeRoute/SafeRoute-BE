@@ -212,7 +212,6 @@ class SecurityAuthorizationIntegrationTest {
                 {
                   "name": "공학관",
                   "address": "서울특별시 성북구 안전로 1",
-                  "totalFloors": 5,
                   "buildingType": "CLASSROOM"
                 }
                 """;

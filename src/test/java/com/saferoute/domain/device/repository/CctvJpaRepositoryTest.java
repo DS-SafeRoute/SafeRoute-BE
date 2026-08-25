@@ -46,7 +46,6 @@ class CctvJpaRepositoryTest {
         Building building = buildingRepository.save(Building.create(
                 "테스트관",
                 "서울특별시 안전구 테스트로 123",
-                1,
                 BuildingType.CLASSROOM
         ));
         Floor floor = floorRepository.save(Floor.create(building, 1));

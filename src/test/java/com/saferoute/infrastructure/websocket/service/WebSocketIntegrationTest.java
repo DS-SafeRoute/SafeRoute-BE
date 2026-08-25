@@ -128,7 +128,7 @@ class WebSocketIntegrationTest {
         userRepository.save(managerUser);
         userRepository.save(normalUser);
 
-        building = Building.create("공학관", "서울특별시 성북구 안전로 1", 5, BuildingType.CLASSROOM);
+        building = Building.create("공학관", "서울특별시 성북구 안전로 1", BuildingType.CLASSROOM);
         buildingRepository.save(building);
 
         trainingScenario = TrainingScenario.create(
