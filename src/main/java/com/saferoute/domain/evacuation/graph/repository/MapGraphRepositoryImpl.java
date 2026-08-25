@@ -82,8 +82,9 @@ public class MapGraphRepositoryImpl implements MapGraphRepository {
     }
 
     @Override
-    public MapNode updateNodePosition(MapNode node, double x, double y) {
+    public MapNode updateNodePosition(MapNode node, double x, double y, boolean isExitTarget) {
         node.moveTo(x, y);
+        node.changeExitTarget(isExitTarget);
         return node; // 영속 상태 엔티티라 dirty checking으로 트랜잭션 커밋 시 반영됨
     }
 
