@@ -67,7 +67,7 @@ public class S3PresignedUrlService {
                     presignedRequest.expiration()
             );
         } catch (SdkException exception) {
-            throw new ApiException(S3ErrorCode.PRESIGNED_URL_GENERATION_FAILED, exception);
+            throw new ApiException(S3ErrorCode.PRESIGNED_GET_URL_GENERATION_FAILED, exception);
         }
     }
 }

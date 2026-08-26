@@ -33,6 +33,7 @@ import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import com.saferoute.domain.telemetry.dynamo.repository.CurrentCctvStateRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.IdempotentSaveResult;
+import com.saferoute.domain.telemetry.dynamo.repository.LatestMonitoringCaptureRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
@@ -60,6 +61,9 @@ class CongestionObservationServiceTest {
 
     @Mock
     private ObservationRepository observationRepository;
+
+    @Mock
+    private LatestMonitoringCaptureRepository latestMonitoringCaptureRepository;
 
     @Mock
     private CurrentCctvStateRepository currentCctvStateRepository;
@@ -206,6 +210,12 @@ class CongestionObservationServiceTest {
         service.reportObservation(cctv, request(5.0));
 
         verify(routeRecalculationService, never()).trigger(any(), any(), any(), any(), any(), anyDouble());
+        verify(latestMonitoringCaptureRepository).updateIfLatest(argThat(capture ->
+                capture.getTrainingSessionId().equals(sessionId.toString())
+                        && capture.getCctvCode().equals("CCTV_001")
+                        && capture.getCapturedAt().equals(2_000L)
+                        && capture.getMonitoringImageKey() == null
+        ));
         verify(currentCctvStateRepository).updateIfLatest(any());
     }
 

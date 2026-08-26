@@ -103,6 +103,23 @@ class TelemetryItemTest {
                 .doesNotContainKey("expiresAt");
     }
 
+    @Test
+    void 최신_모니터링_캡처는_세션_파티션과_CCTV_정렬키를_사용한다() {
+        long capturedAt = 1_786_500_005_000L;
+        LatestMonitoringCaptureItem item = LatestMonitoringCaptureItem.create(
+                SESSION_ID,
+                "CCTV_001",
+                capturedAt,
+                "training/session/monitoring/CCTV_001/frame.jpg"
+        );
+
+        assertThat(item.getPk()).isEqualTo("LATEST_MONITORING#" + SESSION_ID);
+        assertThat(item.getSk()).isEqualTo("CCTV#CCTV_001");
+        assertThat(item.getCapturedAt()).isEqualTo(capturedAt);
+        assertThat(item.getExpiresAt())
+                .isEqualTo(Math.floorDiv(capturedAt, 1_000L) + ObservationItem.TTL_SECONDS);
+    }
+
     private ObservationItem observation() {
         return ObservationItem.create(
                 OBSERVATION_ID, SESSION_ID, EDGE_ID, "CCTV_001", 5.0, 8, 25,

@@ -20,6 +20,11 @@ public enum S3ErrorCode implements BaseErrorCode {
             HttpStatus.SERVICE_UNAVAILABLE,
             "S3_ERROR_004",
             "S3 객체 확인에 실패했습니다. 잠시 후 다시 시도해 주세요."
+    ),
+    PRESIGNED_GET_URL_GENERATION_FAILED(
+            HttpStatus.INTERNAL_SERVER_ERROR,
+            "S3_ERROR_005",
+            "S3 이미지 조회 URL 발급에 실패했습니다."
     );
 
     private final HttpStatus httpStatus;
