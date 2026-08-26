@@ -127,9 +127,11 @@ public class SecurityConfig {
                         ).hasRole("MANAGER")
 
                         // 훈련 모니터링 카메라와 캡처 이미지는 관리자 화면에서만 조회한다.
+                        // 카메라 카드 목록(/cameras)과 프레임 목록(/cameras/{cctvId}/frames)을 모두 포함해야 한다.
                         .requestMatchers(
                                 HttpMethod.GET,
-                                "/api/v1/sessions/*/monitoring/cameras"
+                                "/api/v1/sessions/*/monitoring/cameras",
+                                "/api/v1/sessions/*/monitoring/cameras/**"
                         ).hasRole("MANAGER")
 
                         // 경로 이탈률은 훈련 결과 분석용 관리자 화면 전용이다.
