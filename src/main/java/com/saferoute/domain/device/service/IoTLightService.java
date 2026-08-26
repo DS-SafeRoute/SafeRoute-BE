@@ -142,6 +142,16 @@ public class IoTLightService {
         return IoTLightResponse.from(light);
     }
 
+    // 유도등의 도면 위치 노드(customNode)를 지우면 iot_lights FK의 ON DELETE CASCADE로 유도등 자체도 함께 삭제된다.
+    // 노드 삭제 전 연결된 엣지(from/to 어느 쪽이든)를 먼저 지우는 것은 MapGraphRepositoryImpl.deleteNode와 동일한 처리다.
+    @Transactional
+    public void deleteLight(UUID lightId) {
+        IoTLight light = findLightOrThrow(lightId);
+        MapNode customNode = light.getCustomNode();
+        mapEdgeJpaRepository.deleteByFromNode_IdOrToNode_Id(customNode.getId(), customNode.getId());
+        mapNodeJpaRepository.delete(customNode);
+    }
+
     // 검증(enabled/guidance) -> Pi 호출 -> 상태 저장 -> 이벤트 발행 순서로 조립한다.
     // direction은 훈련별 동적 상태라 DB에 저장하지 않고 IoTLightDirectionStore(서버 메모리)에 저장한다 (IoTLight 참고).
     public LightDirectionResponse changeDirection(UUID lightId, ChangeLightDirectionRequest request) {

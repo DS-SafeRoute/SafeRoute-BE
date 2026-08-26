@@ -32,8 +32,8 @@ public interface MapGraphRepository {
     // 엣지 단건 조회 (삭제 시 참조용)
     Optional<MapEdge> findEdgeById(UUID edgeId);
 
-    // 노드 위치 수정 (드래그 편집)
-    MapNode updateNodePosition(MapNode node, double x, double y);
+    // 노드 위치 및 EXIT 대상 여부 수정 (드래그 편집)
+    MapNode updateNodePosition(MapNode node, double x, double y, boolean isExitTarget);
 
     // 노드 삭제 - 연결된 엣지도 함께 삭제(cascade)
     void deleteNode(MapNode node);

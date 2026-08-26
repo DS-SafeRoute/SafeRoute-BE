@@ -2,6 +2,9 @@ package com.saferoute.domain.evacuation.graph.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -160,16 +163,16 @@ class MapGraphServiceTest {
     void updateNodePosition_success() {
         // given
         MapNode node = createNode("ROOM1", NodeType.ROOM);
-        UpdateMapNodePositionRequest request = new UpdateMapNodePositionRequest(10.0, 20.0);
+        UpdateMapNodePositionRequest request = new UpdateMapNodePositionRequest(10.0, 20.0, true);
         given(mapGraphRepository.findNodeById(node.getId())).willReturn(Optional.of(node));
-        given(mapGraphRepository.updateNodePosition(node, 10.0, 20.0)).willReturn(node);
+        given(mapGraphRepository.updateNodePosition(node, 10.0, 20.0, true)).willReturn(node);
 
         // when
         MapNodeResponse response = mapGraphService.updateNodePosition(node.getId(), request);
 
         // then
         assertThat(response.id()).isEqualTo(node.getId());
-        verify(mapGraphRepository).updateNodePosition(node, 10.0, 20.0);
+        verify(mapGraphRepository).updateNodePosition(node, 10.0, 20.0, true);
     }
 
     @Test
@@ -177,13 +180,48 @@ class MapGraphServiceTest {
     void updateNodePosition_nodeNotFound_throws() {
         // given
         UUID unknownNodeId = UUID.randomUUID();
-        UpdateMapNodePositionRequest request = new UpdateMapNodePositionRequest(10.0, 20.0);
+        UpdateMapNodePositionRequest request = new UpdateMapNodePositionRequest(10.0, 20.0, true);
         given(mapGraphRepository.findNodeById(unknownNodeId)).willReturn(Optional.empty());
 
         // when & then
         assertThatThrownBy(() -> mapGraphService.updateNodePosition(unknownNodeId, request))
                 .isInstanceOf(ApiException.class)
                 .hasMessage(EvacuationErrorCode.MAP_NODE_NOT_FOUND.getMessage());
+    }
+
+    @Test
+    @DisplayName("층에 남은 EXIT 대상 노드가 하나뿐이면 isExitTarget을 해제할 수 없다")
+    void updateNodePosition_lastExitNodeUnset_throws() {
+        // given
+        MapNode node = createNode("EXIT1", NodeType.EXIT, true);
+        UpdateMapNodePositionRequest request = new UpdateMapNodePositionRequest(10.0, 20.0, false);
+        given(mapGraphRepository.findNodeById(node.getId())).willReturn(Optional.of(node));
+        given(floorRepository.findByIdForUpdate(floorId)).willReturn(Optional.of(floor));
+        given(mapGraphRepository.countExitTargetNodesByFloor(floorId)).willReturn(1L);
+
+        // when & then
+        assertThatThrownBy(() -> mapGraphService.updateNodePosition(node.getId(), request))
+                .isInstanceOf(ApiException.class)
+                .hasMessage(EvacuationErrorCode.EXIT_NODE_UNSET_NOT_ALLOWED.getMessage());
+        verify(mapGraphRepository, never()).updateNodePosition(any(), anyDouble(), anyDouble(), anyBoolean());
+    }
+
+    @Test
+    @DisplayName("층에 EXIT 대상 노드가 여러 개면 그중 하나는 isExitTarget을 해제할 수 있다")
+    void updateNodePosition_notLastExitNodeUnset_success() {
+        // given
+        MapNode node = createNode("EXIT1", NodeType.EXIT, true);
+        UpdateMapNodePositionRequest request = new UpdateMapNodePositionRequest(10.0, 20.0, false);
+        given(mapGraphRepository.findNodeById(node.getId())).willReturn(Optional.of(node));
+        given(floorRepository.findByIdForUpdate(floorId)).willReturn(Optional.of(floor));
+        given(mapGraphRepository.countExitTargetNodesByFloor(floorId)).willReturn(2L);
+        given(mapGraphRepository.updateNodePosition(node, 10.0, 20.0, false)).willReturn(node);
+
+        // when
+        mapGraphService.updateNodePosition(node.getId(), request);
+
+        // then
+        verify(mapGraphRepository).updateNodePosition(node, 10.0, 20.0, false);
     }
 
     // === deleteNode ===
