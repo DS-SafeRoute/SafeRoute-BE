@@ -49,6 +49,10 @@ public class CongestionObservationService {
 
     static final Duration PROCESSING_LEASE = Duration.ofMinutes(1);
 
+    private static final String TRAINING_PREFIX = "training";
+    private static final String MONITORING_DIRECTORY = "monitoring";
+    private static final String JPEG_SUFFIX = ".jpg";
+
     private final ObservationRepository observationRepository;
     private final LatestMonitoringCaptureRepository latestMonitoringCaptureRepository;
     private final CurrentCctvStateRepository currentCctvStateRepository;
@@ -76,6 +80,9 @@ public class CongestionObservationService {
             throw new ApiException(CongestionErrorCode.MONITORED_AREA_NOT_AVAILABLE);
         }
 
+        String monitoringImageKey = validateMonitoringImageKey(
+                session.getId(), cctv.getCode(), request.capturedAt(), request.monitoringImageKey());
+
         double density = request.avgHeadcount() / monitoredAreaM2;
         CongestionLevel level = config.classify(density);
 
@@ -92,13 +99,13 @@ public class CongestionObservationService {
                 request.windowStart(),
                 request.windowEnd(),
                 request.capturedAt(),
-                request.monitoringImageKey(),
+                monitoringImageKey,
                 request.configVersion()
         );
 
         IdempotentSaveResult<ObservationItem> saveResult = observationRepository.saveIfAbsent(item);
         validateEventIdentity(saveResult.item(), request, session.getId());
-        updateLatestMonitoringCapture(session.getId(), cctv.getCode(), request);
+        updateLatestMonitoringCapture(session.getId(), cctv.getCode(), request.capturedAt(), monitoringImageKey);
 
         String processingOwner = UUID.randomUUID().toString();
         long processingStartedAt = Instant.now().toEpochMilli();
@@ -174,17 +181,76 @@ public class CongestionObservationService {
     private void updateLatestMonitoringCapture(
             UUID sessionId,
             String cctvCode,
-            ReportObservationRequest request
+            long capturedAt,
+            String monitoringImageKey
     ) {
         LatestMonitoringCaptureItem capture = LatestMonitoringCaptureItem.create(
                 sessionId,
                 cctvCode,
-                request.capturedAt(),
-                request.monitoringImageKey()
+                capturedAt,
+                monitoringImageKey
         );
         if (!latestMonitoringCaptureRepository.updateIfLatest(capture)) {
             log.debug("더 최신 캡처가 있어 모니터링 포인터 갱신을 건너뜀: cctvCode={}", cctvCode);
         }
+    }
+
+    // monitoringImageKey는 Pi가 임의로 채워 보내는 문자열이라, canonical 경로 형식과 요청 신원(세션/CCTV/캡처시각)이
+    // 일치하는지 검증한 뒤에만 저장한다. 다른 세션/CCTV의 S3 객체를 가리키는 변조된 key가 저장되는 것을 막기 위함.
+    // 빈 문자열은 이미지 없음을 뜻하는 null로 정규화해서 반환한다 - CongestionImageUrlService는 null만 이미지 없음으로 취급한다.
+    private String validateMonitoringImageKey(
+            UUID sessionId, String cctvCode, long capturedAt, String monitoringImageKey
+    ) {
+        if (monitoringImageKey == null || monitoringImageKey.isBlank()) {
+            return null;
+        }
+
+        String[] segments = monitoringImageKey.split("/", -1);
+        if (segments.length != 5
+                || !TRAINING_PREFIX.equals(segments[0])
+                || !MONITORING_DIRECTORY.equals(segments[2])
+                || !segments[4].endsWith(JPEG_SUFFIX)) {
+            throw new ApiException(CongestionErrorCode.MONITORING_IMAGE_KEY_INVALID);
+        }
+
+        UUID keySessionId = parseCanonicalUuid(segments[1]);
+        String capturedAtSegment = segments[4].substring(0, segments[4].length() - JPEG_SUFFIX.length());
+        long keyCapturedAt = parseCapturedAt(capturedAtSegment);
+
+        boolean sameIdentity = sessionId.equals(keySessionId)
+                && Objects.equals(cctvCode, segments[3])
+                && capturedAt == keyCapturedAt;
+        if (!sameIdentity) {
+            throw new ApiException(CongestionErrorCode.MONITORING_IMAGE_IDENTITY_MISMATCH);
+        }
+        return monitoringImageKey;
+    }
+
+    private UUID parseCanonicalUuid(String value) {
+        try {
+            UUID uuid = UUID.fromString(value);
+            if (!uuid.toString().equals(value)) {
+                throw new IllegalArgumentException("non-canonical UUID");
+            }
+            return uuid;
+        } catch (IllegalArgumentException exception) {
+            throw new ApiException(CongestionErrorCode.MONITORING_IMAGE_KEY_INVALID, exception);
+        }
+    }
+
+    private long parseCapturedAt(String value) {
+        long parsed;
+        try {
+            parsed = Long.parseLong(value);
+        } catch (NumberFormatException exception) {
+            throw new ApiException(CongestionErrorCode.MONITORING_IMAGE_KEY_INVALID, exception);
+        }
+        // Long.parseLong은 "+2000", "02000" 같은 비canonical 표기도 허용하므로,
+        // 다시 문자열로 되돌렸을 때 원본과 같은지 확인해 canonical decimal만 통과시킨다.
+        if (!Long.toString(parsed).equals(value)) {
+            throw new ApiException(CongestionErrorCode.MONITORING_IMAGE_KEY_INVALID);
+        }
+        return parsed;
     }
 
     private void validateEventIdentity(ObservationItem item, ReportObservationRequest request, UUID sessionId) {

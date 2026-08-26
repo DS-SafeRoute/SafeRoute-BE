@@ -112,9 +112,13 @@ class CongestionObservationServiceTest {
     }
 
     private ReportObservationRequest request(double avgHeadcount) {
+        return request(avgHeadcount, null);
+    }
+
+    private ReportObservationRequest request(double avgHeadcount, String monitoringImageKey) {
         return new ReportObservationRequest(
                 UUID.randomUUID(), sessionId, "CCTV_001", avgHeadcount, 8, 25,
-                1_000L, 2_000L, 2_000L, 1L, null
+                1_000L, 2_000L, 2_000L, 1L, monitoringImageKey
         );
     }
 
@@ -294,5 +298,125 @@ class CongestionObservationServiceTest {
                 .hasFieldOrPropertyWithValue("errorCode", CongestionErrorCode.EVENT_IDENTITY_MISMATCH);
 
         verify(observationRepository, never()).claimProcessing(anyString(), anyString(), anyLong(), anyLong());
+    }
+
+    @Test
+    @DisplayName("monitoringImageKey가 canonical 형식(training/{sessionId}/monitoring/{cctvCode}/{capturedAt}.jpg)이면 저장된다")
+    void reportObservation_acceptsValidMonitoringImageKey() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        givenProcessingClaimed();
+        givenAffectedEdges();
+        String key = "training/" + sessionId + "/monitoring/CCTV_001/2000.jpg";
+
+        service.reportObservation(cctv, request(5.0, key));
+
+        verify(observationRepository).saveIfAbsent(argThat(item ->
+                key.equals(item.getMonitoringImageKey())));
+    }
+
+    @Test
+    @DisplayName("빈 monitoringImageKey는 검증을 통과시키되 null로 정규화해서 저장한다")
+    void reportObservation_normalizesBlankMonitoringImageKeyToNull() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        givenProcessingClaimed();
+        givenAffectedEdges();
+
+        service.reportObservation(cctv, request(5.0, ""));
+
+        verify(observationRepository).saveIfAbsent(argThat(item ->
+                item.getMonitoringImageKey() == null));
+        verify(latestMonitoringCaptureRepository).updateIfLatest(argThat(capture ->
+                capture.getMonitoringImageKey() == null));
+    }
+
+    @Test
+    @DisplayName("monitoringImageKey의 capturedAt 세그먼트가 canonical decimal이 아니면 CONGESTION010을 반환한다")
+    void reportObservation_rejectsNonCanonicalCapturedAtSegment() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> service.reportObservation(
+                cctv, request(5.0, "training/" + sessionId + "/monitoring/CCTV_001/+2000.jpg")))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", CongestionErrorCode.MONITORING_IMAGE_KEY_INVALID);
+        assertThatThrownBy(() -> service.reportObservation(
+                cctv, request(5.0, "training/" + sessionId + "/monitoring/CCTV_001/02000.jpg")))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", CongestionErrorCode.MONITORING_IMAGE_KEY_INVALID);
+
+        verify(observationRepository, never()).saveIfAbsent(any());
+    }
+
+    @Test
+    @DisplayName("monitoringImageKey 형식이 canonical 경로가 아니면 CONGESTION010을 반환한다")
+    void reportObservation_rejectsMalformedMonitoringImageKey() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> service.reportObservation(
+                cctv, request(5.0, "training/" + sessionId + "/monitoring/CCTV_001/2000.png")))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", CongestionErrorCode.MONITORING_IMAGE_KEY_INVALID);
+
+        verify(observationRepository, never()).saveIfAbsent(any());
+    }
+
+    @Test
+    @DisplayName("monitoringImageKey의 세션 ID가 요청 세션과 다르면 CONGESTION011을 반환한다")
+    void reportObservation_rejectsMonitoringImageKeyWithDifferentSession() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        String otherSessionId = UUID.randomUUID().toString();
+
+        assertThatThrownBy(() -> service.reportObservation(
+                cctv, request(5.0, "training/" + otherSessionId + "/monitoring/CCTV_001/2000.jpg")))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", CongestionErrorCode.MONITORING_IMAGE_IDENTITY_MISMATCH);
+
+        verify(observationRepository, never()).saveIfAbsent(any());
+    }
+
+    @Test
+    @DisplayName("monitoringImageKey의 CCTV 코드가 요청 CCTV와 다르면 CONGESTION011을 반환한다")
+    void reportObservation_rejectsMonitoringImageKeyWithDifferentCctvCode() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> service.reportObservation(
+                cctv, request(5.0, "training/" + sessionId + "/monitoring/CCTV_999/2000.jpg")))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", CongestionErrorCode.MONITORING_IMAGE_IDENTITY_MISMATCH);
+
+        verify(observationRepository, never()).saveIfAbsent(any());
+    }
+
+    @Test
+    @DisplayName("monitoringImageKey의 capturedAt이 요청 capturedAt과 다르면 CONGESTION011을 반환한다")
+    void reportObservation_rejectsMonitoringImageKeyWithDifferentCapturedAt() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> service.reportObservation(
+                cctv, request(5.0, "training/" + sessionId + "/monitoring/CCTV_001/9999.jpg")))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", CongestionErrorCode.MONITORING_IMAGE_IDENTITY_MISMATCH);
+
+        verify(observationRepository, never()).saveIfAbsent(any());
     }
 }

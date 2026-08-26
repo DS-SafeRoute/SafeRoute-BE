@@ -53,6 +53,16 @@ public enum CongestionErrorCode implements BaseErrorCode {
             HttpStatus.CONFLICT,
             "CONGESTION009",
             "CCTV의 감시 면적을 계산할 수 없습니다. 감시 영역이 설정되지 않았습니다."
+    ),
+    MONITORING_IMAGE_KEY_INVALID(
+            HttpStatus.BAD_REQUEST,
+            "CONGESTION010",
+            "모니터링 이미지 경로 형식이 올바르지 않습니다."
+    ),
+    MONITORING_IMAGE_IDENTITY_MISMATCH(
+            HttpStatus.CONFLICT,
+            "CONGESTION011",
+            "모니터링 이미지 경로의 세션, CCTV 또는 캡처 시각이 요청과 일치하지 않습니다."
     );
 
     private final HttpStatus httpStatus;
