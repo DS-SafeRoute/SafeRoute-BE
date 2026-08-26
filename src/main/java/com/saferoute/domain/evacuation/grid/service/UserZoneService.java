@@ -85,6 +85,10 @@ public class UserZoneService {
         UserZone userZone = userZoneRepository.findById(userZoneId)
                 .orElseThrow(() -> new ApiException(UserZoneErrorCode.USER_ZONE_NOT_FOUND));
 
+        if (!userZone.getFloor().getId().equals(floorId)) {
+            throw new ApiException(UserZoneErrorCode.USER_ZONE_NOT_FOUND);
+        }
+        
         List<FloorGridCell> cells = floorGridCellRepository.findAllByUserZone_Id(userZoneId);
 
         return UserZoneCellsResponse.of(userZone, floor.getFloorNum(), cells);
