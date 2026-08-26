@@ -189,6 +189,54 @@ class RouteDeviationServiceTest {
     }
 
     @Test
+    @DisplayName("같은 관측 구간에서 좌/우 CCTV가 모두 탐지되면 한 구간으로만 집계하고 이탈로 판정한다")
+    void calculate_bothSidesDetectedInSameWindow_countsOnce() {
+        // given
+        IoTLight light = lightWithGuidance();
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        FloorGridCell leftCell = gridCell();
+        FloorGridCell rightCell = gridCell();
+        Cctv leftCctv = cctv("CCTV_LEFT");
+        Cctv rightCctv = cctv("CCTV_RIGHT");
+
+        given(iotLightJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(lightId, SCHOOL_NAME))
+                .willReturn(Optional.of(light));
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME))
+                .willReturn(Optional.of(session));
+
+        given(mapEdgeGridCellRepository.findAllByMapEdge_Id(light.getLeftEdge().getId()))
+                .willReturn(List.of(MapEdgeGridCell.create(light.getLeftEdge(), leftCell)));
+        given(mapEdgeGridCellRepository.findAllByMapEdge_Id(light.getRightEdge().getId()))
+                .willReturn(List.of(MapEdgeGridCell.create(light.getRightEdge(), rightCell)));
+        given(cctvGridCellRepository.findAllByGridCell_IdIn(List.of(leftCell.getId())))
+                .willReturn(List.of(mapping(leftCctv, leftCell)));
+        given(cctvGridCellRepository.findAllByGridCell_IdIn(List.of(rightCell.getId())))
+                .willReturn(List.of(mapping(rightCctv, rightCell)));
+
+        given(lightDirectionEventRepository.findAllBySessionIdAndLightCode(sessionId.toString(), light.getCode()))
+                .willReturn(List.of(directionEvent(light, IoTLightDirection.LEFT, 1_000L)));
+
+        // 두 CCTV 모두 같은 5초 구간(capturedAt=7000 -> windowStart=2000)에 인원을 탐지한다.
+        given(observationRepository.findAllBySessionIdAndCctvCode(anyString(), anyString(), any(Integer.class)))
+                .willAnswer(invocation -> {
+                    String cctvCode = invocation.getArgument(1);
+                    if (cctvCode.equals("CCTV_LEFT")) {
+                        return List.of(observation("CCTV_LEFT", 3.0, 7_000L));
+                    }
+                    return List.of(observation("CCTV_RIGHT", 2.0, 7_000L));
+                });
+
+        // when
+        RouteDeviationResponse response = routeDeviationService.calculate(lightId, sessionId, EMAIL);
+
+        // then: 두 레코드가 같은 구간이므로 total은 1로만 집계되고, 반대쪽(RIGHT)도 탐지됐으므로 이탈로 판정한다.
+        assertThat(response.totalObservedWindows()).isEqualTo(1);
+        assertThat(response.deviatedWindows()).isEqualTo(1);
+        assertThat(response.deviationRate()).isEqualTo(1.0);
+    }
+
+    @Test
     @DisplayName("경로 안내가 설정되지 않은 유도등이면 예외가 발생한다")
     void calculate_guidanceNotConfigured_throws() {
         MapNode customNode = node("LIGHT_001", NodeType.CUSTOM);

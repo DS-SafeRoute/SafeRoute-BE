@@ -18,7 +18,9 @@ import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -68,26 +70,43 @@ public class RouteDeviationService {
         List<LightDirectionEventItem> directionEvents = lightDirectionEventRepository
                 .findAllBySessionIdAndLightCode(session.getId().toString(), light.getCode());
 
-        long total = 0;
-        long deviated = 0;
+        // windowStart(5초 관측 구간의 시작 시각) 기준으로 좌/우 CCTV 결과를 먼저 합산한다.
+        // 같은 구간을 좌/우 CCTV 레코드 각각으로 두 번 집계하지 않기 위함이다.
+        Map<Long, WindowHeadcount> windows = new TreeMap<>();
         for (String cctvCode : union(leftCctvCodes, rightCctvCodes)) {
-            IoTLightDirection guidedSide = leftCctvCodes.contains(cctvCode)
-                    ? IoTLightDirection.LEFT
-                    : IoTLightDirection.RIGHT;
+            boolean isLeft = leftCctvCodes.contains(cctvCode);
             List<ObservationItem> observations = observationRepository.findAllBySessionIdAndCctvCode(
                     session.getId().toString(), cctvCode, OBSERVATION_QUERY_LIMIT);
             for (ObservationItem observation : observations) {
                 if (observation.getAvgHeadcount() == null || observation.getAvgHeadcount() <= 0) {
                     continue;
                 }
-                IoTLightDirection activeDirection = activeDirectionAt(directionEvents, observation.getCapturedAt());
-                if (activeDirection == null || activeDirection == IoTLightDirection.OFF) {
-                    continue;
+                WindowHeadcount window = windows.computeIfAbsent(observation.getWindowStart(),
+                        key -> new WindowHeadcount());
+                window.capturedAt = observation.getCapturedAt();
+                if (isLeft) {
+                    window.left += observation.getAvgHeadcount();
+                } else {
+                    window.right += observation.getAvgHeadcount();
                 }
-                total++;
-                if (activeDirection != guidedSide) {
-                    deviated++;
-                }
+            }
+        }
+
+        long total = 0;
+        long deviated = 0;
+        for (WindowHeadcount headcount : windows.values()) {
+            // 방향 조회는 관측 구간의 실제 보고 시각(capturedAt)을 기준으로 한다. windowStart는 병합 키일 뿐이다.
+            IoTLightDirection activeDirection = activeDirectionAt(directionEvents, headcount.capturedAt);
+            if (activeDirection == null || activeDirection == IoTLightDirection.OFF) {
+                continue;
+            }
+            total++;
+            // 안내 방향의 반대쪽에서도 인원이 탐지되면(양쪽 모두 탐지된 경우 포함) 그 구간은 이탈로 집계한다.
+            boolean nonGuidedSideDetected = activeDirection == IoTLightDirection.LEFT
+                    ? headcount.right > 0
+                    : headcount.left > 0;
+            if (nonGuidedSideDetected) {
+                deviated++;
             }
         }
 
@@ -95,8 +114,14 @@ public class RouteDeviationService {
         return new RouteDeviationResponse(light.getId(), session.getId(), total, deviated, deviationRate);
     }
 
-    // 관측 시각 시점에 유도등이 가리키고 있던 방향. 이력이 시간순으로 정렬되어 있으므로
-    // 해당 시각 이전(이하)의 마지막 전환 이벤트를 찾는다. 전환 이력이 아직 없으면 null.
+    private static final class WindowHeadcount {
+        private double left;
+        private double right;
+        private long capturedAt;
+    }
+
+    // 주어진 시각(관측 구간의 windowStart)에 유도등이 가리키고 있던 방향. 이력이 시간순으로 정렬되어
+    // 있으므로 해당 시각 이전(이하)의 마지막 전환 이벤트를 찾는다. 전환 이력이 아직 없으면 null.
     private IoTLightDirection activeDirectionAt(List<LightDirectionEventItem> events, long timestamp) {
         IoTLightDirection active = null;
         for (LightDirectionEventItem event : events) {
