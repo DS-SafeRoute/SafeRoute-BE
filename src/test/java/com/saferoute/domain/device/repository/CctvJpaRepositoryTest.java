@@ -13,6 +13,7 @@ import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.floor.repository.FloorRepository;
 import com.saferoute.global.config.JpaAuditingConfig;
+import java.util.List;
 import org.hibernate.Hibernate;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -71,5 +72,59 @@ class CctvJpaRepositoryTest {
         entityManager.clear();
         assertThatCode(() -> found.getCustomNode().getFloor().getBuilding().getId())
                 .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("건물의 활성 CCTV만 층과 코드 순으로 위치 정보와 함께 조회한다")
+    void findMonitoringCctvs_filtersAndOrdersWithLocationGraph() {
+        Building targetBuilding = buildingRepository.save(Building.create(
+                "A동",
+                "서울특별시 안전구 모니터링로 123",
+                BuildingType.CLASSROOM,
+                "SafeRoute School"
+        ));
+        Building otherBuilding = buildingRepository.save(Building.create(
+                "B동",
+                "서울특별시 안전구 모니터링로 456",
+                BuildingType.CLASSROOM,
+                "SafeRoute School"
+        ));
+        Floor firstFloor = floorRepository.save(Floor.create(targetBuilding, 1));
+        Floor secondFloor = floorRepository.save(Floor.create(targetBuilding, 2));
+        Floor otherFloor = floorRepository.save(Floor.create(otherBuilding, 1));
+
+        saveCctv(secondFloor, "CCTV_001");
+        saveCctv(firstFloor, "CCTV_003");
+        saveCctv(firstFloor, "CCTV_002");
+        Cctv disabled = saveCctv(firstFloor, "CCTV_004");
+        disabled.disable();
+        saveCctv(otherFloor, "CCTV_005");
+        entityManager.flush();
+        entityManager.clear();
+
+        List<Cctv> found = cctvJpaRepository
+                .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
+                        targetBuilding.getId());
+
+        assertThat(found)
+                .extracting(Cctv::getCode)
+                .containsExactly("CCTV_002", "CCTV_003", "CCTV_001");
+        assertThat(found).allSatisfy(cctv -> {
+            assertThat(Hibernate.isInitialized(cctv.getCustomNode())).isTrue();
+            assertThat(Hibernate.isInitialized(cctv.getCustomNode().getFloor())).isTrue();
+            assertThat(Hibernate.isInitialized(cctv.getCustomNode().getFloor().getBuilding())).isTrue();
+        });
+    }
+
+    private Cctv saveCctv(Floor floor, String code) {
+        MapNode customNode = mapNodeJpaRepository.save(MapNode.createCustom(
+                floor,
+                code,
+                code + " 카메라",
+                0.5,
+                0.5,
+                CustomDeviceType.CCTV
+        ));
+        return cctvJpaRepository.save(Cctv.create(code, code + " 카메라", customNode));
     }
 }
