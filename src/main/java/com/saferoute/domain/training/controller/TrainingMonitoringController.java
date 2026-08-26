@@ -179,8 +179,8 @@ public class TrainingMonitoringController {
                             examples = @ExampleObject(value = """
                                     {
                                       "isSuccess": false,
-                                      "code": "S3_ERROR_003",
-                                      "message": "S3 업로드 URL 발급에 실패했습니다."
+                                      "code": "S3_ERROR_005",
+                                      "message": "S3 이미지 조회 URL 발급에 실패했습니다."
                                     }
                                     """)
                     )
