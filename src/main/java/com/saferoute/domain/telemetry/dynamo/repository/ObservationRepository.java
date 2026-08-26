@@ -183,7 +183,8 @@ public class ObservationRepository {
             String trainingSessionId,
             String cctvCode,
             int limit,
-            Long beforeCapturedAt
+            Long beforeCapturedAt,
+            String beforeEventId
     ) {
         validateLimit(limit);
         QueryConditional queryConditional = beforeCapturedAt == null
@@ -192,7 +193,7 @@ public class ObservationRepository {
                         .build())
                 : QueryConditional.sortLessThan(Key.builder()
                         .partitionValue(ObservationItem.buildGsi1Pk(trainingSessionId, cctvCode))
-                        .sortValue(ObservationItem.buildGsi1Sk(beforeCapturedAt))
+                        .sortValue(ObservationItem.buildGsi1Sk(beforeCapturedAt, beforeEventId))
                         .build());
         QueryEnhancedRequest request = QueryEnhancedRequest.builder()
                 .queryConditional(queryConditional)

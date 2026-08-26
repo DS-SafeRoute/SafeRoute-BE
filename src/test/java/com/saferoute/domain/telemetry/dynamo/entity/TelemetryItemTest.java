@@ -38,7 +38,7 @@ class TelemetryItemTest {
         assertThat(item.getSk()).isEqualTo("META");
         assertThat(item.getEdgeId()).isEqualTo(EDGE_ID.toString());
         assertThat(item.getGsi1Pk()).isEqualTo("SESSION#" + SESSION_ID + "#CCTV#CCTV_001");
-        assertThat(item.getGsi1Sk()).isEqualTo("TIME#0000001786500005000");
+        assertThat(item.getGsi1Sk()).isEqualTo("TIME#0000001786500005000#" + OBSERVATION_ID);
         assertThat(item.getEventStatus()).isEqualTo(EventProcessingStatus.RECEIVED);
         assertThat(item.getImageUploadStatus()).isEqualTo(ImageUploadStatus.PENDING);
     }
@@ -63,17 +63,25 @@ class TelemetryItemTest {
         assertThat(attributes.get("edgeId").s()).isEqualTo(EDGE_ID.toString());
         assertThat(attributes)
                 .containsEntry("GSI1_PK", AttributeValue.fromS("SESSION#" + SESSION_ID + "#CCTV#CCTV_001"))
-                .containsEntry("GSI1_SK", AttributeValue.fromS("TIME#0000001786500005000"));
+                .containsEntry("GSI1_SK", AttributeValue.fromS("TIME#0000001786500005000#" + OBSERVATION_ID));
     }
 
     @Test
     void 관측값의_GSI_시간키는_자릿수_경계에서도_시간순으로_정렬된다() {
-        String beforeBoundary = ObservationItem.buildGsi1Sk(999L);
-        String afterBoundary = ObservationItem.buildGsi1Sk(1_000L);
+        String beforeBoundary = ObservationItem.buildGsi1Sk(999L, OBSERVATION_ID.toString());
+        String afterBoundary = ObservationItem.buildGsi1Sk(1_000L, OBSERVATION_ID.toString());
 
-        assertThat(beforeBoundary).isEqualTo("TIME#0000000000000000999");
-        assertThat(afterBoundary).isEqualTo("TIME#0000000000000001000");
+        assertThat(beforeBoundary).isEqualTo("TIME#0000000000000000999#" + OBSERVATION_ID);
+        assertThat(afterBoundary).isEqualTo("TIME#0000000000000001000#" + OBSERVATION_ID);
         assertThat(afterBoundary).isGreaterThan(beforeBoundary);
+    }
+
+    @Test
+    void 캡처_시각이_같아도_eventId로_정렬키가_서로_달라진다() {
+        String first = ObservationItem.buildGsi1Sk(1_000L, EVENT_ID.toString());
+        String second = ObservationItem.buildGsi1Sk(1_000L, OBSERVATION_ID.toString());
+
+        assertThat(first).isNotEqualTo(second);
     }
 
     @Test

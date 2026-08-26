@@ -421,11 +421,14 @@ class TrainingMonitoringServiceTest {
     void 프레임_목록을_최신순으로_반환하고_다음_페이지가_있으면_커서를_반환한다() {
         stubSession(TrainingStatus.RUNNING);
         Cctv cctv = frameCctv();
-        ObservationItem newest = observation(3_000L, "monitoring/frame-3.jpg");
-        ObservationItem middle = observation(2_000L, "monitoring/frame-2.jpg");
-        ObservationItem oldest = observation(1_000L, "monitoring/frame-1.jpg");
+        UUID newestEventId = UUID.randomUUID();
+        UUID middleEventId = UUID.randomUUID();
+        UUID oldestEventId = UUID.randomUUID();
+        ObservationItem newest = observation(newestEventId, 3_000L, "monitoring/frame-3.jpg");
+        ObservationItem middle = observation(middleEventId, 2_000L, "monitoring/frame-2.jpg");
+        ObservationItem oldest = observation(oldestEventId, 1_000L, "monitoring/frame-1.jpg");
         given(observationRepository.findPageBySessionIdAndCctvCode(
-                SESSION_ID.toString(), "CCTV_001", 3, null))
+                SESSION_ID.toString(), "CCTV_001", 3, null, null))
                 .willReturn(List.of(newest, middle, oldest));
         given(s3PresignedUrlService.createGetUrl(org.mockito.ArgumentMatchers.anyString()))
                 .willReturn(new PresignedGetUrl(
@@ -441,16 +444,17 @@ class TrainingMonitoringServiceTest {
                 .extracting(MonitoringFrameResponse::capturedAt)
                 .containsExactly(3_000L, 2_000L);
         assertThat(response.hasNext()).isTrue();
-        assertThat(response.nextCursor()).isEqualTo(FrameCursor.encode(2_000L));
+        assertThat(response.nextCursor())
+                .isEqualTo(FrameCursor.encode(2_000L, middleEventId.toString()));
     }
 
     @Test
     void 마지막_페이지면_nextCursor가_없다() {
         stubSession(TrainingStatus.RUNNING);
         frameCctv();
-        ObservationItem only = observation(1_000L, "monitoring/frame-1.jpg");
+        ObservationItem only = observation(UUID.randomUUID(), 1_000L, "monitoring/frame-1.jpg");
         given(observationRepository.findPageBySessionIdAndCctvCode(
-                SESSION_ID.toString(), "CCTV_001", 21, null))
+                SESSION_ID.toString(), "CCTV_001", 21, null, null))
                 .willReturn(List.of(only));
         given(s3PresignedUrlService.createGetUrl("monitoring/frame-1.jpg"))
                 .willReturn(new PresignedGetUrl(
@@ -469,23 +473,55 @@ class TrainingMonitoringServiceTest {
     void cursor를_전달하면_해당_시점_이전_프레임을_조회한다() {
         stubSession(TrainingStatus.RUNNING);
         frameCctv();
+        UUID cursorEventId = UUID.randomUUID();
         given(observationRepository.findPageBySessionIdAndCctvCode(
-                SESSION_ID.toString(), "CCTV_001", 21, 1_000L))
+                SESSION_ID.toString(), "CCTV_001", 21, 1_000L, cursorEventId.toString()))
                 .willReturn(List.of());
 
-        service.getFrames(SESSION_ID, CCTV_ID, 20, FrameCursor.encode(1_000L), EMAIL);
+        service.getFrames(
+                SESSION_ID, CCTV_ID, 20, FrameCursor.encode(1_000L, cursorEventId.toString()), EMAIL);
 
-        verify(observationRepository)
-                .findPageBySessionIdAndCctvCode(SESSION_ID.toString(), "CCTV_001", 21, 1_000L);
+        verify(observationRepository).findPageBySessionIdAndCctvCode(
+                SESSION_ID.toString(), "CCTV_001", 21, 1_000L, cursorEventId.toString());
+    }
+
+    @Test
+    void 캡처_시각이_같은_프레임이_페이지_경계에_있어도_누락되지_않는다() {
+        stubSession(TrainingStatus.RUNNING);
+        frameCctv();
+        UUID firstEventId = UUID.randomUUID();
+        UUID secondEventId = UUID.randomUUID();
+        ObservationItem first = observation(firstEventId, 1_000L, "monitoring/first.jpg");
+        ObservationItem second = observation(secondEventId, 1_000L, "monitoring/second.jpg");
+        given(observationRepository.findPageBySessionIdAndCctvCode(
+                SESSION_ID.toString(), "CCTV_001", 2, null, null))
+                .willReturn(List.of(first, second));
+        given(observationRepository.findPageBySessionIdAndCctvCode(
+                SESSION_ID.toString(), "CCTV_001", 2, 1_000L, firstEventId.toString()))
+                .willReturn(List.of(second));
+        given(s3PresignedUrlService.createGetUrl(org.mockito.ArgumentMatchers.anyString()))
+                .willReturn(new PresignedGetUrl(
+                        "https://example.com/frame.jpg",
+                        Instant.parse("2026-08-27T01:00:00Z")
+                ));
+
+        MonitoringFrameListResponse firstPage = service.getFrames(SESSION_ID, CCTV_ID, 1, null, EMAIL);
+        MonitoringFrameListResponse secondPage = service.getFrames(
+                SESSION_ID, CCTV_ID, 1, firstPage.nextCursor(), EMAIL);
+
+        assertThat(firstPage.frames()).extracting(MonitoringFrameResponse::frameId)
+                .containsExactly(firstEventId.toString());
+        assertThat(secondPage.frames()).extracting(MonitoringFrameResponse::frameId)
+                .containsExactly(secondEventId.toString());
     }
 
     @Test
     void 이미지_키가_없는_프레임은_imageUrl이_null이다() {
         stubSession(TrainingStatus.RUNNING);
         frameCctv();
-        ObservationItem withoutImage = observation(1_000L, null);
+        ObservationItem withoutImage = observation(UUID.randomUUID(), 1_000L, null);
         given(observationRepository.findPageBySessionIdAndCctvCode(
-                SESSION_ID.toString(), "CCTV_001", 21, null))
+                SESSION_ID.toString(), "CCTV_001", 21, null, null))
                 .willReturn(List.of(withoutImage));
 
         MonitoringFrameResponse frame = service.getFrames(SESSION_ID, CCTV_ID, 20, null, EMAIL)
@@ -510,6 +546,7 @@ class TrainingMonitoringServiceTest {
                         org.mockito.ArgumentMatchers.anyString(),
                         org.mockito.ArgumentMatchers.anyString(),
                         org.mockito.ArgumentMatchers.anyInt(),
+                        org.mockito.ArgumentMatchers.any(),
                         org.mockito.ArgumentMatchers.any());
     }
 
@@ -533,9 +570,9 @@ class TrainingMonitoringServiceTest {
         return cctv;
     }
 
-    private ObservationItem observation(long capturedAt, String monitoringImageKey) {
+    private ObservationItem observation(UUID eventId, long capturedAt, String monitoringImageKey) {
         return ObservationItem.create(
-                UUID.randomUUID(),
+                eventId,
                 SESSION_ID,
                 null,
                 "CCTV_001",

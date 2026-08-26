@@ -71,11 +71,13 @@ public class TrainingMonitoringService {
     ) {
         TrainingSession session = findRunningSessionForSchool(sessionId, email);
         Cctv cctv = findCctvInSessionBuilding(cctvId, session);
-        Long beforeCapturedAt = FrameCursor.decode(cursor);
+        FrameCursor.Position position = FrameCursor.decode(cursor);
+        Long beforeCapturedAt = position != null ? position.capturedAt() : null;
+        String beforeEventId = position != null ? position.eventId() : null;
 
         // hasNext 판단을 위해 요청한 개수보다 하나 더 조회한다.
         List<ObservationItem> page = observationRepository.findPageBySessionIdAndCctvCode(
-                sessionId.toString(), cctv.getCode(), limit + 1, beforeCapturedAt);
+                sessionId.toString(), cctv.getCode(), limit + 1, beforeCapturedAt, beforeEventId);
 
         boolean hasNext = page.size() > limit;
         List<ObservationItem> items = hasNext ? page.subList(0, limit) : page;
@@ -83,7 +85,11 @@ public class TrainingMonitoringService {
         List<MonitoringFrameResponse> frames = items.stream()
                 .map(this::toFrameResponse)
                 .toList();
-        String nextCursor = hasNext ? FrameCursor.encode(items.get(items.size() - 1).getCapturedAt()) : null;
+        String nextCursor = hasNext
+                ? FrameCursor.encode(
+                        items.get(items.size() - 1).getCapturedAt(),
+                        items.get(items.size() - 1).getEventId())
+                : null;
 
         return new MonitoringFrameListResponse(sessionId, cctvId, frames, nextCursor, hasNext);
     }
