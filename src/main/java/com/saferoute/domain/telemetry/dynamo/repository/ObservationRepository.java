@@ -179,6 +179,33 @@ public class ObservationRepository {
                 .toList();
     }
 
+    public List<ObservationItem> findPageBySessionIdAndCctvCode(
+            String trainingSessionId,
+            String cctvCode,
+            int limit,
+            Long beforeCapturedAt
+    ) {
+        validateLimit(limit);
+        QueryConditional queryConditional = beforeCapturedAt == null
+                ? QueryConditional.keyEqualTo(Key.builder()
+                        .partitionValue(ObservationItem.buildGsi1Pk(trainingSessionId, cctvCode))
+                        .build())
+                : QueryConditional.sortLessThan(Key.builder()
+                        .partitionValue(ObservationItem.buildGsi1Pk(trainingSessionId, cctvCode))
+                        .sortValue(ObservationItem.buildGsi1Sk(beforeCapturedAt))
+                        .build());
+        QueryEnhancedRequest request = QueryEnhancedRequest.builder()
+                .queryConditional(queryConditional)
+                .scanIndexForward(false)
+                .limit(limit)
+                .build();
+
+        return gsi1.query(request).stream()
+                .flatMap(page -> page.items().stream())
+                .limit(limit)
+                .toList();
+    }
+
     private void validateLimit(int limit) {
         if (limit <= 0) {
             throw new IllegalArgumentException("limit은 0보다 커야합니다.");
