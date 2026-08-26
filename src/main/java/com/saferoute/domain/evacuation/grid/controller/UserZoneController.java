@@ -24,7 +24,7 @@ public class UserZoneController {
     @PostMapping
     public ApiResponse<UserZoneResponse> createUserZone(
             @PathVariable UUID floorId,
-            UserZoneCreateRequest request
+            @RequestBody UserZoneCreateRequest request
     ) {
         return ApiResponse.success(userZoneService.create(floorId, request));
     }
