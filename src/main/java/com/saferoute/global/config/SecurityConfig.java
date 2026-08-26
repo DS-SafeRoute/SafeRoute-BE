@@ -126,6 +126,12 @@ public class SecurityConfig {
                                 "/api/v1/congestion-observations/*/image-url"
                         ).hasRole("MANAGER")
 
+                        // 경로 이탈률은 훈련 결과 분석용 관리자 화면 전용이다.
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/lights/*/deviation"
+                        ).hasRole("MANAGER")
+
                         .requestMatchers(
                                 HttpMethod.GET,
                                 "/api/**"

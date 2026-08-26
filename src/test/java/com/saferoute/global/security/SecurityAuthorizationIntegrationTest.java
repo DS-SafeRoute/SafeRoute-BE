@@ -103,6 +103,33 @@ class SecurityAuthorizationIntegrationTest {
     }
 
     @Test
+    @DisplayName("일반 사용자는 경로 이탈률 조회 엔드포인트에 접근할 수 없다")
+    void normalUserCannotReadRouteDeviation() throws Exception {
+        String token = signupAndLogin(UserRole.NORMAL);
+
+        mockMvc.perform(
+                        get("/api/v1/lights/{lightId}/deviation", UUID.randomUUID())
+                                .param("trainingSessionId", UUID.randomUUID().toString())
+                                .header("Authorization", "Bearer " + token)
+                )
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMMON403"));
+    }
+
+    @Test
+    @DisplayName("관리자는 경로 이탈률 조회 엔드포인트에 접근할 수 있다")
+    void managerCanReadRouteDeviation() throws Exception {
+        String token = signupAndLogin(UserRole.MANAGER);
+
+        mockMvc.perform(
+                        get("/api/v1/lights/{lightId}/deviation", UUID.randomUUID())
+                                .param("trainingSessionId", UUID.randomUUID().toString())
+                                .header("Authorization", "Bearer " + token)
+                )
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     @DisplayName("관리자는 건물을 등록할 수 있다")
     void managerCanWrite() throws Exception {
         String token =
