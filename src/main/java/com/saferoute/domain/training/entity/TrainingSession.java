@@ -62,8 +62,9 @@ public class TrainingSession {
   @JoinColumn(name = "user_id", nullable = false)
   private User admin;
 
+  // 시나리오당 세션은 1개만 존재한다. 재훈련이 필요하면 시나리오를 새로 만든다.
   @ManyToOne(fetch = FetchType.LAZY)
-  @JoinColumn(name = "training_scenario_id", nullable = false)
+  @JoinColumn(name = "training_scenario_id", nullable = false, unique = true)
   private TrainingScenario scenario;
 
   @OneToOne(mappedBy = "trainingSession", cascade = CascadeType.ALL)

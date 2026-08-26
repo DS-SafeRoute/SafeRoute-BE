@@ -15,7 +15,8 @@ public enum TrainingErrorCode implements BaseErrorCode {
     INVALID_STATUS_TRANSITION(HttpStatus.CONFLICT, "TRAINING004", "현재 상태에서는 요청한 전이를 수행할 수 없습니다."),
     UNSUPPORTED_STATUS(HttpStatus.CONFLICT, "TRAINING005", "지원하지 않는 훈련 상태입니다."),
     RUNNING_TRAINING_SESSION_NOT_FOUND(HttpStatus.CONFLICT,"TRAINING006", "진행 중인 훈련 세션을 찾을 수 없습니다."),
-    SCENARIO_DELETE_NOT_ALLOWED(HttpStatus.CONFLICT, "TRAINING007", "훈련 세션이 존재하는 시나리오는 삭제할 수 없습니다.");
+    SCENARIO_DELETE_NOT_ALLOWED(HttpStatus.CONFLICT, "TRAINING007", "훈련 세션이 존재하는 시나리오는 삭제할 수 없습니다."),
+    SESSION_ALREADY_EXISTS(HttpStatus.CONFLICT, "TRAINING008", "이미 훈련 세션이 존재하는 시나리오입니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

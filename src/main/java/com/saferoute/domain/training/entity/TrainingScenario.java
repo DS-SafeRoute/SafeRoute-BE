@@ -12,14 +12,11 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
-import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -84,11 +81,6 @@ public class TrainingScenario {
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
-
-    // 훈련 세션은 시나리오와 생명주기를 공유하지 않는다.
-    // 시나리오를 지워도 과거 훈련 기록은 보존되어야 하므로 Cascade를 걸지 않는다.
-    @OneToMany(mappedBy = "scenario")
-    private List<TrainingSession> trainingSessions = new ArrayList<>();
 
     public static TrainingScenario create(String name,
                                           Integer expectedParticipants,

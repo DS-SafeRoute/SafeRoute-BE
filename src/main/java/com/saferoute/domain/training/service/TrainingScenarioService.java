@@ -6,6 +6,7 @@ import com.saferoute.domain.training.dto.CreateScenarioRequest;
 import com.saferoute.domain.training.dto.ScenarioResponse;
 import com.saferoute.domain.training.dto.UpdateScenarioRequest;
 import com.saferoute.domain.training.entity.TrainingScenario;
+import com.saferoute.domain.report.repository.TrainingReportRepository;
 import com.saferoute.domain.training.repository.TrainingScenarioRepository;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.user.entity.User;
@@ -16,8 +17,10 @@ import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.error.UserErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,11 +32,12 @@ public class TrainingScenarioService {
 
     private final TrainingScenarioRepository scenarioRepository;
     private final TrainingSessionRepository trainingSessionRepository;
+    private final TrainingReportRepository trainingReportRepository;
     private final BuildingRepository buildingRepository;
     private final UserRepository userRepository;
     private final SchoolContextService schoolContextService;
 
-    // 목록 조회 (deletable = 연결된 훈련 세션이 하나도 없는 시나리오인지 여부)
+    // 목록 조회 (deletable = 연결된 훈련 세션이 하나도 없는 시나리오인지 여부, reportId = 리포트가 있으면 그 id)
     public List<ScenarioResponse> getScenarios(String email) {
         String schoolName = schoolContextService.getSchoolName(email);
         List<TrainingScenario> scenarios =
@@ -44,9 +48,17 @@ public class TrainingScenarioService {
 
         List<UUID> scenarioIds = scenarios.stream().map(TrainingScenario::getId).toList();
         Set<UUID> scenarioIdsWithSession = trainingSessionRepository.findScenarioIdsWithAnySession(scenarioIds);
+        Map<UUID, UUID> reportIdsByScenarioId = trainingReportRepository.findReportIdsByScenarioIds(scenarioIds)
+                .stream()
+                .collect(Collectors.toMap(
+                        TrainingReportRepository.ScenarioReportId::getScenarioId,
+                        TrainingReportRepository.ScenarioReportId::getReportId));
 
         return scenarios.stream()
-                .map(scenario -> ScenarioResponse.from(scenario, !scenarioIdsWithSession.contains(scenario.getId())))
+                .map(scenario -> ScenarioResponse.from(
+                        scenario,
+                        !scenarioIdsWithSession.contains(scenario.getId()),
+                        reportIdsByScenarioId.get(scenario.getId())))
                 .toList();
     }
 
