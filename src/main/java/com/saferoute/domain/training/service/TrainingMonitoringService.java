@@ -3,13 +3,18 @@ package com.saferoute.domain.training.service;
 import com.saferoute.domain.device.entity.Cctv;
 import com.saferoute.domain.device.repository.CctvJpaRepository;
 import com.saferoute.domain.telemetry.dynamo.entity.LatestMonitoringCaptureItem;
+import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import com.saferoute.domain.telemetry.dynamo.repository.LatestMonitoringCaptureRepository;
+import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
 import com.saferoute.domain.training.dto.MonitoringCameraListResponse;
 import com.saferoute.domain.training.dto.MonitoringCameraResponse;
+import com.saferoute.domain.training.dto.MonitoringFrameListResponse;
+import com.saferoute.domain.training.dto.MonitoringFrameResponse;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.user.service.SchoolContextService;
+import com.saferoute.global.api.error.CctvErrorCode;
 import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.s3.dto.PresignedGetUrl;
@@ -31,6 +36,7 @@ public class TrainingMonitoringService {
     private final TrainingSessionRepository trainingSessionRepository;
     private final CctvJpaRepository cctvJpaRepository;
     private final LatestMonitoringCaptureRepository latestMonitoringCaptureRepository;
+    private final ObservationRepository observationRepository;
     private final S3PresignedUrlService s3PresignedUrlService;
     private final SchoolContextService schoolContextService;
 
@@ -54,6 +60,46 @@ public class TrainingMonitoringService {
                 .map(cctv -> toResponse(cctv, capturesByCctvCode.get(cctv.getCode())))
                 .toList();
         return new MonitoringCameraListResponse(sessionId, cameras);
+    }
+
+    public MonitoringFrameListResponse getFrames(
+            UUID sessionId,
+            UUID cctvId,
+            int limit,
+            String cursor,
+            String email
+    ) {
+        TrainingSession session = findRunningSessionForSchool(sessionId, email);
+        Cctv cctv = findCctvInSessionBuilding(cctvId, session);
+        Long beforeCapturedAt = FrameCursor.decode(cursor);
+
+        // hasNext 판단을 위해 요청한 개수보다 하나 더 조회한다.
+        List<ObservationItem> page = observationRepository.findPageBySessionIdAndCctvCode(
+                sessionId.toString(), cctv.getCode(), limit + 1, beforeCapturedAt);
+
+        boolean hasNext = page.size() > limit;
+        List<ObservationItem> items = hasNext ? page.subList(0, limit) : page;
+
+        List<MonitoringFrameResponse> frames = items.stream()
+                .map(this::toFrameResponse)
+                .toList();
+        String nextCursor = hasNext ? FrameCursor.encode(items.get(items.size() - 1).getCapturedAt()) : null;
+
+        return new MonitoringFrameListResponse(sessionId, cctvId, frames, nextCursor, hasNext);
+    }
+
+    private Cctv findCctvInSessionBuilding(UUID cctvId, TrainingSession session) {
+        UUID buildingId = session.getScenario().getBuilding().getId();
+        return cctvJpaRepository.findByIdAndCustomNode_Floor_Building_Id(cctvId, buildingId)
+                .orElseThrow(() -> new ApiException(CctvErrorCode.CCTV_NOT_FOUND));
+    }
+
+    private MonitoringFrameResponse toFrameResponse(ObservationItem item) {
+        if (item.getMonitoringImageKey() == null || item.getMonitoringImageKey().isBlank()) {
+            return MonitoringFrameResponse.withoutImage(item);
+        }
+        PresignedGetUrl presignedGetUrl = s3PresignedUrlService.createGetUrl(item.getMonitoringImageKey());
+        return MonitoringFrameResponse.withImage(item, presignedGetUrl);
     }
 
     private TrainingSession findRunningSessionForSchool(UUID sessionId, String email) {
