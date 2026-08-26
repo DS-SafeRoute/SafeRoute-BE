@@ -52,6 +52,21 @@ class LightDirectionEventRepositoryTest {
     }
 
     @Test
+    void 같은_밀리초에_전환된_두_이벤트는_서로_다른_정렬키로_모두_저장된다() {
+        LightDirectionEventItem first = item(IoTLightDirection.LEFT, 1_000L);
+        LightDirectionEventItem second = item(IoTLightDirection.RIGHT, 1_000L);
+
+        assertThat(first.getSk()).isNotEqualTo(second.getSk());
+        assertThat(first.getPk()).isEqualTo(second.getPk());
+
+        repository.save(first);
+        repository.save(second);
+
+        verify(table).putItem(first);
+        verify(table).putItem(second);
+    }
+
+    @Test
     void 세션과_유도등의_방향_전환_이력을_시간순으로_조회한다() {
         LightDirectionEventItem first = item(IoTLightDirection.LEFT, 1_000L);
         LightDirectionEventItem second = item(IoTLightDirection.RIGHT, 2_000L);

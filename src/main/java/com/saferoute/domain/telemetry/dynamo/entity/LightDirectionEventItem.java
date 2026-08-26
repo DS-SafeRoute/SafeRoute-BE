@@ -49,7 +49,7 @@ public class LightDirectionEventItem {
         item.changedAt = changedAt;
         item.expiresAt = Math.floorDiv(changedAt, 1_000L) + TTL_SECONDS;
         item.pk = buildPk(item.trainingSessionId, lightCode);
-        item.sk = buildSk(changedAt);
+        item.sk = buildSk(changedAt, UUID.randomUUID().toString());
         return item;
     }
 
@@ -57,8 +57,10 @@ public class LightDirectionEventItem {
         return "LIGHT_DIRECTION#" + trainingSessionId + "#" + lightCode;
     }
 
-    public static String buildSk(long changedAt) {
-        return "TIME#" + changedAt;
+    // changedAt만으로는 같은 밀리초에 발생한 두 전환이 같은 정렬 키를 갖게 되어 뒤의 저장이 앞의 이력을
+    // 덮어쓸 수 있다. 시간순 정렬은 changedAt 접두사로 유지하면서, UUID를 tie-breaker로 덧붙여 유일성을 보장한다.
+    public static String buildSk(long changedAt, String tieBreaker) {
+        return "TIME#" + changedAt + "#" + tieBreaker;
     }
 
     @DynamoDbPartitionKey
