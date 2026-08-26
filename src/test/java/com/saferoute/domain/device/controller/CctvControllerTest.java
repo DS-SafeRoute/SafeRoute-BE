@@ -30,6 +30,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -41,6 +42,7 @@ import org.springframework.test.web.servlet.MockMvc;
         )
 )
 @AutoConfigureMockMvc(addFilters = false)
+@WithMockUser(username = "manager@saferoute.com")
 class CctvControllerTest {
 
     private static final String EMAIL = "manager@saferoute.com";
@@ -119,9 +121,10 @@ class CctvControllerTest {
     void configureGridCells_returnsUpdatedCoverage() throws Exception {
         ConfigureCctvGridCellsRequest request =
                 new ConfigureCctvGridCellsRequest(List.of(cellId));
-        given(cctvService.configureGridCells(eq(cctvId), any())).willReturn(response(true));
+        given(cctvService.configureGridCells(eq(cctvId), any(), eq(EMAIL))).willReturn(response(true));
 
         mockMvc.perform(put("/api/v1/cctvs/{cctvId}/grid-cells", cctvId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -131,10 +134,11 @@ class CctvControllerTest {
     @Test
     void updateCctv_returnsUpdatedNameAndPosition() throws Exception {
         UpdateCctvRequest request = new UpdateCctvRequest("1층 출입구 CCTV", 0.4, 0.6);
-        given(cctvService.updateCctv(eq(cctvId), any()))
+        given(cctvService.updateCctv(eq(cctvId), any(), eq(EMAIL)))
                 .willReturn(response(true, request.name(), request.x(), request.y()));
 
         mockMvc.perform(patch("/api/v1/cctvs/{cctvId}", cctvId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -174,6 +178,7 @@ class CctvControllerTest {
 
     private void performInvalidUpdate(UpdateCctvRequest request) throws Exception {
         mockMvc.perform(patch("/api/v1/cctvs/{cctvId}", cctvId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -181,9 +186,10 @@ class CctvControllerTest {
 
     @Test
     void disableCctv_returnsDisabledState() throws Exception {
-        given(cctvService.disableCctv(cctvId)).willReturn(response(false));
+        given(cctvService.disableCctv(cctvId, EMAIL)).willReturn(response(false));
 
-        mockMvc.perform(patch("/api/v1/cctvs/{cctvId}/disable", cctvId))
+        mockMvc.perform(patch("/api/v1/cctvs/{cctvId}/disable", cctvId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.enabled").value(false));
     }

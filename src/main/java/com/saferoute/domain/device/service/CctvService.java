@@ -102,9 +102,10 @@ public class CctvService {
     @Transactional
     public CctvResponse configureGridCells(
             UUID cctvId,
-            ConfigureCctvGridCellsRequest request
+            ConfigureCctvGridCellsRequest request,
+            String email
     ) {
-        Cctv cctv = findCctvOrThrow(cctvId);
+        Cctv cctv = findCctvForSchoolOrThrow(cctvId, email);
         Floor floor = cctv.getCustomNode().getFloor();
         validateGridConfigured(floor);
         List<FloorGridCell> gridCells = findAndValidateGridCells(
@@ -117,23 +118,23 @@ public class CctvService {
     }
 
     @Transactional
-    public CctvResponse updateCctv(UUID cctvId, UpdateCctvRequest request) {
-        Cctv cctv = findCctvOrThrow(cctvId);
+    public CctvResponse updateCctv(UUID cctvId, UpdateCctvRequest request, String email) {
+        Cctv cctv = findCctvForSchoolOrThrow(cctvId, email);
         cctv.rename(request.name());
         cctv.getCustomNode().moveTo(request.x(), request.y());
         return toResponse(cctv);
     }
 
     @Transactional
-    public CctvResponse enableCctv(UUID cctvId) {
-        Cctv cctv = findCctvOrThrow(cctvId);
+    public CctvResponse enableCctv(UUID cctvId, String email) {
+        Cctv cctv = findCctvForSchoolOrThrow(cctvId, email);
         cctv.enable();
         return toResponse(cctv);
     }
 
     @Transactional
-    public CctvResponse disableCctv(UUID cctvId) {
-        Cctv cctv = findCctvOrThrow(cctvId);
+    public CctvResponse disableCctv(UUID cctvId, String email) {
+        Cctv cctv = findCctvForSchoolOrThrow(cctvId, email);
         cctv.disable();
         return toResponse(cctv);
     }
@@ -185,11 +186,6 @@ public class CctvService {
         if (cellSizeMeter == null || cellSizeMeter <= 0) {
             throw new ApiException(CctvErrorCode.GRID_NOT_CONFIGURED);
         }
-    }
-
-    private Cctv findCctvOrThrow(UUID cctvId) {
-        return cctvJpaRepository.findByIdWithLocation(cctvId)
-                .orElseThrow(() -> new ApiException(CctvErrorCode.CCTV_NOT_FOUND));
     }
 
     private Cctv findCctvForSchoolOrThrow(UUID cctvId, String email) {
