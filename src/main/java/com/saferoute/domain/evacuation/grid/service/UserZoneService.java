@@ -52,4 +52,16 @@ public class UserZoneService {
 
         return UserZoneResponse.of(zone.getId(), zone.getName(), floor.getFloorNum(), cells);
     }
+
+    @Transactional
+    public void delete(UUID floorId, UUID userZoneId){
+        UserZone userZone = userZoneRepository.findById(userZoneId)
+                .orElseThrow(() -> new ApiException(UserZoneErrorCode.USER_ZONE_NOT_FOUND));
+
+        if (!userZone.getFloor().getId().equals(floorId)) {
+            throw new ApiException(UserZoneErrorCode.USER_ZONE_NOT_FOUND);
+        }
+
+        userZoneRepository.delete(userZone);
+    }
 }

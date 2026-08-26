@@ -2,7 +2,6 @@ package com.saferoute.domain.evacuation.grid.entity;
 
 import com.saferoute.domain.floor.entity.Floor;
 import jakarta.persistence.*;
-import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
 import java.util.UUID;
 import lombok.AccessLevel;

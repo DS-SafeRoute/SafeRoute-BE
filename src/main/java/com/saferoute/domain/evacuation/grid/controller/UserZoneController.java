@@ -5,11 +5,9 @@ import com.saferoute.domain.evacuation.grid.dto.response.UserZoneResponse;
 import com.saferoute.domain.evacuation.grid.service.UserZoneService;
 import com.saferoute.global.api.response.ApiResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
 
@@ -27,5 +25,14 @@ public class UserZoneController {
             UserZoneCreateRequest request
     ) {
         return ApiResponse.success(userZoneService.create(floorId, request));
+    }
+    
+    @DeleteMapping("/{floorId}/{userZoneId}")
+    public ResponseEntity<Void> deleteUserZone(
+            @PathVariable UUID floorId,
+            @PathVariable UUID userZoneId
+    ){
+        userZoneService.delete(floorId, userZoneId);
+        return ResponseEntity.noContent().build();
     }
 }
