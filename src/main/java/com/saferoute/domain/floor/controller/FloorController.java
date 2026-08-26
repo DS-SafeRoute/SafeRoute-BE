@@ -3,6 +3,7 @@ package com.saferoute.domain.floor.controller;
 import com.saferoute.domain.floor.dto.request.CreateFloorRequest;
 import com.saferoute.domain.floor.dto.request.UpdateFloorRequest;
 import com.saferoute.domain.floor.dto.request.UploadFloorRequest;
+import com.saferoute.domain.floor.dto.response.FloorImageUrlResponse;
 import com.saferoute.domain.floor.dto.response.FloorResponse;
 import com.saferoute.domain.floor.service.FloorService;
 import com.saferoute.global.api.response.ApiResponse;
@@ -70,6 +71,17 @@ public class FloorController {
     ) {
         return ResponseEntity.ok(ApiResponse.success(FloorSuccessCode.FLOOR_DETAIL_FOUND,
                 floorService.getFloor(buildingId, floorId, authentication.getName())));
+    }
+
+    // 도면 이미지 조회용 Presigned GET URL 발급
+    @GetMapping("/{floorId}/image-url")
+    public ResponseEntity<ApiResponse<FloorImageUrlResponse>> getFloorImageUrl(
+            @PathVariable UUID buildingId,
+            @PathVariable UUID floorId,
+            Authentication authentication
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(FloorSuccessCode.FLOOR_IMAGE_URL_ISSUED,
+                floorService.getFloorImageUrl(buildingId, floorId, authentication.getName())));
     }
 
     // 층 정보 수정
