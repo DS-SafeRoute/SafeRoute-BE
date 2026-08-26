@@ -56,6 +56,10 @@ public class TrainingSessionService {
     TrainingScenario scenario = trainingScenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, schoolName)
         .orElseThrow(() -> new ApiException(TrainingErrorCode.TRAINING_SCENARIO_NOT_FOUND));
 
+    if (trainingSessionRepository.existsByScenario_Id(scenarioId)) {
+      throw new ApiException(TrainingErrorCode.SESSION_ALREADY_EXISTS);
+    }
+
     if (request.getStatus() == TrainingStatus.RUNNING && request.getStartedAt() == null) {
       throw new ApiException(ErrorCode.INVALID_INPUT);
     }

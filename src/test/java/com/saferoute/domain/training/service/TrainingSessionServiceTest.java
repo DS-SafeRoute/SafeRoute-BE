@@ -117,6 +117,27 @@ class TrainingSessionServiceTest {
     }
 
     @Test
+    @DisplayName("이미 세션이 존재하는 시나리오로는 세션을 또 생성할 수 없다")
+    void create_scenarioAlreadyHasSession_throwsException() {
+        UUID adminId = UUID.randomUUID();
+        UUID scenarioId = UUID.randomUUID();
+        User manager = mock(User.class);
+        given(manager.getRole()).willReturn(UserRole.MANAGER);
+        given(userRepository.findByIdAndSchoolName(adminId, SCHOOL_NAME)).willReturn(Optional.of(manager));
+        given(trainingScenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
+                .willReturn(Optional.of(mock(TrainingScenario.class)));
+        given(trainingSessionRepository.existsByScenario_Id(scenarioId)).willReturn(true);
+
+        CreateSessionRequest request = new CreateSessionRequest(TrainingStatus.SCHEDULED, null, adminId);
+
+        assertThatThrownBy(() -> trainingSessionService.create(request, scenarioId, EMAIL))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(TrainingErrorCode.SESSION_ALREADY_EXISTS);
+        verify(trainingSessionRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("다른 기관의 시나리오로 훈련 세션을 생성할 수 없다")
     void create_otherSchoolScenario_throwsNotFound() {
         UUID adminId = UUID.randomUUID();

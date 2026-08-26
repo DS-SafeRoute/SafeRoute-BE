@@ -198,11 +198,20 @@ class WebSocketIntegrationTest {
         session.disconnect();
     }
 
+    // 시나리오당 세션은 1개만 허용되므로(UNIQUE 제약), setUp()의 trainingScenario를 재사용하지 않고
+    // 테스트마다 별도 시나리오를 만들어 추가 세션을 붙인다.
+    private TrainingScenario newScenario() {
+        TrainingScenario scenario = TrainingScenario.create(
+                "정기 훈련", 50, Instant.now(), false, FireSpreadSpeed.MEDIUM, building, managerUser);
+        return trainingScenarioRepository.save(scenario);
+    }
+
     @Test
     @DisplayName("훈련을 시작하면 구독자가 TRAINING_STATUS_UPDATED(RUNNING) 이벤트를 수신한다")
     void startingTrainingPublishesRunningEvent() throws Exception {
+        TrainingScenario scenario = newScenario();
         TrainingSession scheduledSession = TrainingSession.create(
-                TrainingStatus.SCHEDULED, Instant.now(), managerUser, trainingScenario);
+                TrainingStatus.SCHEDULED, Instant.now(), managerUser, scenario);
         trainingSessionRepository.save(scheduledSession);
 
         try {
@@ -218,14 +227,16 @@ class WebSocketIntegrationTest {
             session.disconnect();
         } finally {
             trainingSessionRepository.deleteById(scheduledSession.getId());
+            trainingScenarioRepository.delete(scenario);
         }
     }
 
     @Test
     @DisplayName("훈련을 정상 종료하면 구독자가 TRAINING_STATUS_UPDATED(COMPLETED) 이벤트를 수신한다")
     void endingTrainingPublishesCompletedEvent() throws Exception {
+        TrainingScenario scenario = newScenario();
         TrainingSession runningSession = TrainingSession.create(
-                TrainingStatus.RUNNING, Instant.now(), managerUser, trainingScenario);
+                TrainingStatus.RUNNING, Instant.now(), managerUser, scenario);
         trainingSessionRepository.save(runningSession);
 
         try {
@@ -240,14 +251,16 @@ class WebSocketIntegrationTest {
             session.disconnect();
         } finally {
             trainingSessionRepository.deleteById(runningSession.getId());
+            trainingScenarioRepository.delete(scenario);
         }
     }
 
     @Test
     @DisplayName("훈련을 강제 종료하면 구독자가 TRAINING_STATUS_UPDATED(STOPPED) 이벤트를 수신한다")
     void forceEndingTrainingPublishesStoppedEvent() throws Exception {
+        TrainingScenario scenario = newScenario();
         TrainingSession runningSession = TrainingSession.create(
-                TrainingStatus.RUNNING, Instant.now(), managerUser, trainingScenario);
+                TrainingStatus.RUNNING, Instant.now(), managerUser, scenario);
         trainingSessionRepository.save(runningSession);
 
         try {
@@ -262,6 +275,7 @@ class WebSocketIntegrationTest {
             session.disconnect();
         } finally {
             trainingSessionRepository.deleteById(runningSession.getId());
+            trainingScenarioRepository.delete(scenario);
         }
     }
 
