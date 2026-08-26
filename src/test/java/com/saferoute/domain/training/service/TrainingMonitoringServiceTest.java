@@ -11,15 +11,22 @@ import com.saferoute.domain.device.entity.Cctv;
 import com.saferoute.domain.device.repository.CctvJpaRepository;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.floor.entity.Floor;
+import com.saferoute.domain.congestion.entity.CongestionLevel;
 import com.saferoute.domain.telemetry.dynamo.entity.LatestMonitoringCaptureItem;
+import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import com.saferoute.domain.telemetry.dynamo.repository.LatestMonitoringCaptureRepository;
+import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
 import com.saferoute.domain.training.dto.MonitoringCameraListResponse;
 import com.saferoute.domain.training.dto.MonitoringCameraResponse;
+import com.saferoute.domain.training.dto.MonitoringFrameListResponse;
+import com.saferoute.domain.training.dto.MonitoringFrameResponse;
 import com.saferoute.domain.training.entity.TrainingScenario;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.user.service.SchoolContextService;
+import com.saferoute.global.api.code.ErrorCode;
+import com.saferoute.global.api.error.CctvErrorCode;
 import com.saferoute.global.api.error.S3ErrorCode;
 import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
@@ -51,6 +58,8 @@ class TrainingMonitoringServiceTest {
     @Mock
     private LatestMonitoringCaptureRepository latestMonitoringCaptureRepository;
     @Mock
+    private ObservationRepository observationRepository;
+    @Mock
     private S3PresignedUrlService s3PresignedUrlService;
     @Mock
     private SchoolContextService schoolContextService;
@@ -63,6 +72,7 @@ class TrainingMonitoringServiceTest {
                 trainingSessionRepository,
                 cctvJpaRepository,
                 latestMonitoringCaptureRepository,
+                observationRepository,
                 s3PresignedUrlService,
                 schoolContextService
         );
@@ -405,6 +415,141 @@ class TrainingMonitoringServiceTest {
         verify(cctvJpaRepository, never())
                 .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
                         org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void 프레임_목록을_최신순으로_반환하고_다음_페이지가_있으면_커서를_반환한다() {
+        stubSession(TrainingStatus.RUNNING);
+        Cctv cctv = frameCctv();
+        ObservationItem newest = observation(3_000L, "monitoring/frame-3.jpg");
+        ObservationItem middle = observation(2_000L, "monitoring/frame-2.jpg");
+        ObservationItem oldest = observation(1_000L, "monitoring/frame-1.jpg");
+        given(observationRepository.findPageBySessionIdAndCctvCode(
+                SESSION_ID.toString(), "CCTV_001", 3, null))
+                .willReturn(List.of(newest, middle, oldest));
+        given(s3PresignedUrlService.createGetUrl(org.mockito.ArgumentMatchers.anyString()))
+                .willReturn(new PresignedGetUrl(
+                        "https://example.com/frame.jpg",
+                        Instant.parse("2026-08-27T01:00:00Z")
+                ));
+
+        MonitoringFrameListResponse response = service.getFrames(SESSION_ID, CCTV_ID, 2, null, EMAIL);
+
+        assertThat(response.sessionId()).isEqualTo(SESSION_ID);
+        assertThat(response.cctvId()).isEqualTo(CCTV_ID);
+        assertThat(response.frames())
+                .extracting(MonitoringFrameResponse::capturedAt)
+                .containsExactly(3_000L, 2_000L);
+        assertThat(response.hasNext()).isTrue();
+        assertThat(response.nextCursor()).isEqualTo(FrameCursor.encode(2_000L));
+    }
+
+    @Test
+    void 마지막_페이지면_nextCursor가_없다() {
+        stubSession(TrainingStatus.RUNNING);
+        frameCctv();
+        ObservationItem only = observation(1_000L, "monitoring/frame-1.jpg");
+        given(observationRepository.findPageBySessionIdAndCctvCode(
+                SESSION_ID.toString(), "CCTV_001", 21, null))
+                .willReturn(List.of(only));
+        given(s3PresignedUrlService.createGetUrl("monitoring/frame-1.jpg"))
+                .willReturn(new PresignedGetUrl(
+                        "https://example.com/frame-1.jpg",
+                        Instant.parse("2026-08-27T01:00:00Z")
+                ));
+
+        MonitoringFrameListResponse response = service.getFrames(SESSION_ID, CCTV_ID, 20, null, EMAIL);
+
+        assertThat(response.frames()).hasSize(1);
+        assertThat(response.hasNext()).isFalse();
+        assertThat(response.nextCursor()).isNull();
+    }
+
+    @Test
+    void cursor를_전달하면_해당_시점_이전_프레임을_조회한다() {
+        stubSession(TrainingStatus.RUNNING);
+        frameCctv();
+        given(observationRepository.findPageBySessionIdAndCctvCode(
+                SESSION_ID.toString(), "CCTV_001", 21, 1_000L))
+                .willReturn(List.of());
+
+        service.getFrames(SESSION_ID, CCTV_ID, 20, FrameCursor.encode(1_000L), EMAIL);
+
+        verify(observationRepository)
+                .findPageBySessionIdAndCctvCode(SESSION_ID.toString(), "CCTV_001", 21, 1_000L);
+    }
+
+    @Test
+    void 이미지_키가_없는_프레임은_imageUrl이_null이다() {
+        stubSession(TrainingStatus.RUNNING);
+        frameCctv();
+        ObservationItem withoutImage = observation(1_000L, null);
+        given(observationRepository.findPageBySessionIdAndCctvCode(
+                SESSION_ID.toString(), "CCTV_001", 21, null))
+                .willReturn(List.of(withoutImage));
+
+        MonitoringFrameResponse frame = service.getFrames(SESSION_ID, CCTV_ID, 20, null, EMAIL)
+                .frames().get(0);
+
+        assertThat(frame.imageUrl()).isNull();
+        assertThat(frame.urlExpiresAt()).isNull();
+        verify(s3PresignedUrlService, never()).createGetUrl(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void 세션이_속한_건물의_CCTV가_아니면_조회할_수_없다() {
+        stubSession(TrainingStatus.RUNNING);
+        given(cctvJpaRepository.findByIdAndCustomNode_Floor_Building_Id(CCTV_ID, BUILDING_ID))
+                .willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getFrames(SESSION_ID, CCTV_ID, 20, null, EMAIL))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", CctvErrorCode.CCTV_NOT_FOUND);
+        verify(observationRepository, never())
+                .findPageBySessionIdAndCctvCode(
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyInt(),
+                        org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void cursor_형식이_올바르지_않으면_400을_반환한다() {
+        stubSession(TrainingStatus.RUNNING);
+        Cctv cctv = org.mockito.Mockito.mock(Cctv.class);
+        given(cctvJpaRepository.findByIdAndCustomNode_Floor_Building_Id(CCTV_ID, BUILDING_ID))
+                .willReturn(Optional.of(cctv));
+
+        assertThatThrownBy(() -> service.getFrames(SESSION_ID, CCTV_ID, 20, "not-a-valid-cursor!!", EMAIL))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_INPUT);
+    }
+
+    private Cctv frameCctv() {
+        Cctv cctv = org.mockito.Mockito.mock(Cctv.class);
+        given(cctv.getCode()).willReturn("CCTV_001");
+        given(cctvJpaRepository.findByIdAndCustomNode_Floor_Building_Id(CCTV_ID, BUILDING_ID))
+                .willReturn(Optional.of(cctv));
+        return cctv;
+    }
+
+    private ObservationItem observation(long capturedAt, String monitoringImageKey) {
+        return ObservationItem.create(
+                UUID.randomUUID(),
+                SESSION_ID,
+                null,
+                "CCTV_001",
+                4.0,
+                5,
+                10,
+                0.42,
+                CongestionLevel.CROWDED,
+                capturedAt - 500,
+                capturedAt,
+                capturedAt,
+                monitoringImageKey,
+                1L
+        );
     }
 
     private void stubSession(TrainingStatus status) {

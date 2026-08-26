@@ -5,9 +5,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.saferoute.domain.congestion.entity.CongestionLevel;
 import com.saferoute.domain.training.dto.MonitoringCameraListResponse;
 import com.saferoute.domain.training.dto.MonitoringCameraResponse;
+import com.saferoute.domain.training.dto.MonitoringFrameListResponse;
+import com.saferoute.domain.training.dto.MonitoringFrameResponse;
 import com.saferoute.domain.training.service.TrainingMonitoringService;
+import com.saferoute.global.api.code.ErrorCode;
+import com.saferoute.global.api.error.CctvErrorCode;
 import com.saferoute.global.api.error.S3ErrorCode;
 import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
@@ -216,5 +221,91 @@ class TrainingMonitoringControllerTest {
                 .andExpect(jsonPath("$.code").value("S3_ERROR_005"))
                 .andExpect(jsonPath("$.message")
                         .value("S3 이미지 조회 URL 발급에 실패했습니다."));
+    }
+
+    @Test
+    void 카메라별_프레임_목록을_공통_응답으로_반환한다() throws Exception {
+        MonitoringFrameResponse frame = new MonitoringFrameResponse(
+                "3c9f7e2a-3b39-4f0a-9f0a-6a2b6b1f5a11",
+                1_787_722_095_000L,
+                "https://example.com/frame.jpg",
+                1_787_725_695_000L,
+                12,
+                0.42,
+                CongestionLevel.CROWDED
+        );
+        given(trainingMonitoringService.getFrames(SESSION_ID, CCTV_ID, 20, null, EMAIL))
+                .willReturn(new MonitoringFrameListResponse(
+                        SESSION_ID, CCTV_ID, List.of(frame), "next-cursor", true
+                ));
+
+        mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/cameras/{cctvId}/frames",
+                        SESSION_ID, CCTV_ID)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.code").value("TRAINING_SUCCESS_007"))
+                .andExpect(jsonPath("$.result.sessionId").value(SESSION_ID.toString()))
+                .andExpect(jsonPath("$.result.cctvId").value(CCTV_ID.toString()))
+                .andExpect(jsonPath("$.result.frames[0].frameId")
+                        .value("3c9f7e2a-3b39-4f0a-9f0a-6a2b6b1f5a11"))
+                .andExpect(jsonPath("$.result.frames[0].capturedAt").value(1_787_722_095_000L))
+                .andExpect(jsonPath("$.result.frames[0].imageUrl")
+                        .value("https://example.com/frame.jpg"))
+                .andExpect(jsonPath("$.result.frames[0].urlExpiresAt").value(1_787_725_695_000L))
+                .andExpect(jsonPath("$.result.frames[0].headcount").value(12))
+                .andExpect(jsonPath("$.result.frames[0].density").value(0.42))
+                .andExpect(jsonPath("$.result.frames[0].congestionLevel").value("CROWDED"))
+                .andExpect(jsonPath("$.result.nextCursor").value("next-cursor"))
+                .andExpect(jsonPath("$.result.hasNext").value(true));
+    }
+
+    @Test
+    void limit과_cursor_쿼리파라미터를_서비스에_그대로_전달한다() throws Exception {
+        given(trainingMonitoringService.getFrames(SESSION_ID, CCTV_ID, 5, "prev-cursor", EMAIL))
+                .willReturn(new MonitoringFrameListResponse(SESSION_ID, CCTV_ID, List.of(), null, false));
+
+        mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/cameras/{cctvId}/frames",
+                        SESSION_ID, CCTV_ID)
+                        .param("limit", "5")
+                        .param("cursor", "prev-cursor")
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.frames").isEmpty())
+                .andExpect(jsonPath("$.result.hasNext").value(false));
+    }
+
+    @Test
+    void limit이_범위를_벗어나면_400을_반환한다() throws Exception {
+        mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/cameras/{cctvId}/frames",
+                        SESSION_ID, CCTV_ID)
+                        .param("limit", "0")
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void 세션이_속한_건물의_CCTV가_아니면_404를_반환한다() throws Exception {
+        given(trainingMonitoringService.getFrames(SESSION_ID, CCTV_ID, 20, null, EMAIL))
+                .willThrow(new ApiException(CctvErrorCode.CCTV_NOT_FOUND));
+
+        mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/cameras/{cctvId}/frames",
+                        SESSION_ID, CCTV_ID)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("CCTV001"));
+    }
+
+    @Test
+    void cursor_형식이_올바르지_않으면_400을_반환한다() throws Exception {
+        given(trainingMonitoringService.getFrames(SESSION_ID, CCTV_ID, 20, "invalid-cursor", EMAIL))
+                .willThrow(new ApiException(ErrorCode.INVALID_INPUT));
+
+        mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/cameras/{cctvId}/frames",
+                        SESSION_ID, CCTV_ID)
+                        .param("cursor", "invalid-cursor")
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON400"));
     }
 }
