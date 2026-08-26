@@ -68,6 +68,7 @@ public class FloorGridCell {
     // UserZone이 삭제되면 이 셀은 구역 미지정 상태로 남아야 하므로 SET NULL
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_zone_id")
+    @OnDelete(action = OnDeleteAction.SET_NULL)
     private UserZone userZone;
 
     private FloorGridCell(Floor floor, int rowIndex, int columnIndex,
