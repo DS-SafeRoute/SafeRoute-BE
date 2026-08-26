@@ -11,8 +11,8 @@ import com.saferoute.domain.device.entity.Cctv;
 import com.saferoute.domain.device.repository.CctvJpaRepository;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.floor.entity.Floor;
-import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
-import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
+import com.saferoute.domain.telemetry.dynamo.entity.LatestMonitoringCaptureItem;
+import com.saferoute.domain.telemetry.dynamo.repository.LatestMonitoringCaptureRepository;
 import com.saferoute.domain.training.dto.MonitoringCameraListResponse;
 import com.saferoute.domain.training.dto.MonitoringCameraResponse;
 import com.saferoute.domain.training.entity.TrainingScenario;
@@ -48,7 +48,7 @@ class TrainingMonitoringServiceTest {
     @Mock
     private CctvJpaRepository cctvJpaRepository;
     @Mock
-    private ObservationRepository observationRepository;
+    private LatestMonitoringCaptureRepository latestMonitoringCaptureRepository;
     @Mock
     private S3PresignedUrlService s3PresignedUrlService;
     @Mock
@@ -61,7 +61,7 @@ class TrainingMonitoringServiceTest {
         service = new TrainingMonitoringService(
                 trainingSessionRepository,
                 cctvJpaRepository,
-                observationRepository,
+                latestMonitoringCaptureRepository,
                 s3PresignedUrlService,
                 schoolContextService
         );
@@ -72,18 +72,18 @@ class TrainingMonitoringServiceTest {
     void 활성_CCTV의_최신_캡처와_presigned_URL을_반환한다() {
         stubSession(TrainingStatus.RUNNING);
         Cctv cctv = cctv(3);
-        ObservationItem observation = org.mockito.Mockito.mock(ObservationItem.class);
+        LatestMonitoringCaptureItem capture = org.mockito.Mockito.mock(LatestMonitoringCaptureItem.class);
         Instant expiresAt = Instant.parse("2026-08-27T01:00:00Z");
         given(cctvJpaRepository
                 .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
                         BUILDING_ID))
                 .willReturn(List.of(cctv));
-        given(observationRepository.findLatestBySessionIdAndCctvCode(
-                SESSION_ID.toString(), "CCTV_001"))
-                .willReturn(Optional.of(observation));
-        given(observation.getMonitoringImageKey())
+        given(latestMonitoringCaptureRepository.findAllBySessionId(SESSION_ID.toString()))
+                .willReturn(List.of(capture));
+        given(capture.getCctvCode()).willReturn("CCTV_001");
+        given(capture.getMonitoringImageKey())
                 .willReturn("training/session/monitoring/CCTV_001/1787722095000.jpg");
-        given(observation.getCapturedAt()).willReturn(1_787_722_095_000L);
+        given(capture.getCapturedAt()).willReturn(1_787_722_095_000L);
         given(s3PresignedUrlService.createGetUrl(
                 "training/session/monitoring/CCTV_001/1787722095000.jpg"))
                 .willReturn(new PresignedGetUrl("https://example.com/frame.jpg", expiresAt));
@@ -112,9 +112,8 @@ class TrainingMonitoringServiceTest {
                 .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
                         BUILDING_ID))
                 .willReturn(List.of(cctv));
-        given(observationRepository.findLatestBySessionIdAndCctvCode(
-                SESSION_ID.toString(), "CCTV_001"))
-                .willReturn(Optional.empty());
+        given(latestMonitoringCaptureRepository.findAllBySessionId(SESSION_ID.toString()))
+                .willReturn(List.of());
 
         MonitoringCameraResponse camera = service.getCameras(SESSION_ID, EMAIL)
                 .cameras().get(0);
@@ -131,15 +130,15 @@ class TrainingMonitoringServiceTest {
     void 최신_관측의_이미지_키가_공백이면_placeholder_응답을_반환한다() {
         stubSession(TrainingStatus.RUNNING);
         Cctv cctv = cctv(1);
-        ObservationItem observation = org.mockito.Mockito.mock(ObservationItem.class);
+        LatestMonitoringCaptureItem capture = org.mockito.Mockito.mock(LatestMonitoringCaptureItem.class);
         given(cctvJpaRepository
                 .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
                         BUILDING_ID))
                 .willReturn(List.of(cctv));
-        given(observationRepository.findLatestBySessionIdAndCctvCode(
-                SESSION_ID.toString(), "CCTV_001"))
-                .willReturn(Optional.of(observation));
-        given(observation.getMonitoringImageKey()).willReturn(" ");
+        given(latestMonitoringCaptureRepository.findAllBySessionId(SESSION_ID.toString()))
+                .willReturn(List.of(capture));
+        given(capture.getCctvCode()).willReturn("CCTV_001");
+        given(capture.getMonitoringImageKey()).willReturn(" ");
 
         MonitoringCameraResponse camera = service.getCameras(SESSION_ID, EMAIL)
                 .cameras().get(0);
@@ -148,6 +147,51 @@ class TrainingMonitoringServiceTest {
         assertThat(camera.capturedAt()).isNull();
         assertThat(camera.urlExpiresAt()).isNull();
         verify(s3PresignedUrlService, never()).createGetUrl(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void 여러_CCTV의_최신_캡처를_세션_Query_한번으로_매핑한다() {
+        stubSession(TrainingStatus.RUNNING);
+        Cctv firstCctv = cctv(
+                CCTV_ID,
+                "CCTV_001",
+                "CAM-1",
+                1
+        );
+        Cctv secondCctv = cctv(
+                UUID.fromString("00000000-0000-0000-0000-000000000004"),
+                "CCTV_002",
+                "CAM-2",
+                2
+        );
+        LatestMonitoringCaptureItem firstCapture = LatestMonitoringCaptureItem.create(
+                SESSION_ID, "CCTV_001", 1_000L, "monitoring/first.jpg"
+        );
+        LatestMonitoringCaptureItem secondCapture = LatestMonitoringCaptureItem.create(
+                SESSION_ID, "CCTV_002", 2_000L, "monitoring/second.jpg"
+        );
+        given(cctvJpaRepository
+                .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
+                        BUILDING_ID))
+                .willReturn(List.of(firstCctv, secondCctv));
+        given(latestMonitoringCaptureRepository.findAllBySessionId(SESSION_ID.toString()))
+                .willReturn(List.of(firstCapture, secondCapture));
+        given(s3PresignedUrlService.createGetUrl(org.mockito.ArgumentMatchers.anyString()))
+                .willReturn(new PresignedGetUrl(
+                        "https://example.com/frame.jpg",
+                        Instant.parse("2026-08-27T01:00:00Z")
+                ));
+
+        MonitoringCameraListResponse response = service.getCameras(SESSION_ID, EMAIL);
+
+        assertThat(response.cameras())
+                .extracting(MonitoringCameraResponse::code, MonitoringCameraResponse::capturedAt)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("CCTV_001", 1_000L),
+                        org.assertj.core.groups.Tuple.tuple("CCTV_002", 2_000L)
+                );
+        verify(latestMonitoringCaptureRepository)
+                .findAllBySessionId(SESSION_ID.toString());
     }
 
     @Test
@@ -161,11 +205,8 @@ class TrainingMonitoringServiceTest {
         MonitoringCameraListResponse response = service.getCameras(SESSION_ID, EMAIL);
 
         assertThat(response.cameras()).isEmpty();
-        verify(observationRepository, never())
-                .findLatestBySessionIdAndCctvCode(
-                        org.mockito.ArgumentMatchers.anyString(),
-                        org.mockito.ArgumentMatchers.anyString()
-                );
+        verify(latestMonitoringCaptureRepository, never())
+                .findAllBySessionId(org.mockito.ArgumentMatchers.anyString());
     }
 
     @Test
@@ -211,13 +252,17 @@ class TrainingMonitoringServiceTest {
     }
 
     private Cctv cctv(int floorNum) {
+        return cctv(CCTV_ID, "CCTV_001", "CAM-1", floorNum);
+    }
+
+    private Cctv cctv(UUID cctvId, String code, String name, int floorNum) {
         Cctv cctv = org.mockito.Mockito.mock(Cctv.class);
         MapNode node = org.mockito.Mockito.mock(MapNode.class);
         Floor floor = org.mockito.Mockito.mock(Floor.class);
         Building building = org.mockito.Mockito.mock(Building.class);
-        given(cctv.getId()).willReturn(CCTV_ID);
-        given(cctv.getCode()).willReturn("CCTV_001");
-        given(cctv.getName()).willReturn("CAM-1");
+        given(cctv.getId()).willReturn(cctvId);
+        given(cctv.getCode()).willReturn(code);
+        given(cctv.getName()).willReturn(name);
         given(cctv.getCustomNode()).willReturn(node);
         given(node.getFloor()).willReturn(floor);
         given(floor.getFloorNum()).willReturn(floorNum);

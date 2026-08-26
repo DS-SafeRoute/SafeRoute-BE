@@ -14,9 +14,11 @@ import com.saferoute.domain.evacuation.recalculation.entity.RecalculationTrigger
 import com.saferoute.domain.evacuation.recalculation.service.RouteRecalculationService;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.telemetry.dynamo.entity.CurrentCctvStateItem;
+import com.saferoute.domain.telemetry.dynamo.entity.LatestMonitoringCaptureItem;
 import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import com.saferoute.domain.telemetry.dynamo.repository.CurrentCctvStateRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.IdempotentSaveResult;
+import com.saferoute.domain.telemetry.dynamo.repository.LatestMonitoringCaptureRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
@@ -48,6 +50,7 @@ public class CongestionObservationService {
     static final Duration PROCESSING_LEASE = Duration.ofMinutes(1);
 
     private final ObservationRepository observationRepository;
+    private final LatestMonitoringCaptureRepository latestMonitoringCaptureRepository;
     private final CurrentCctvStateRepository currentCctvStateRepository;
     private final TrainingSessionRepository trainingSessionRepository;
     private final CctvGridCellRepository cctvGridCellRepository;
@@ -95,6 +98,7 @@ public class CongestionObservationService {
 
         IdempotentSaveResult<ObservationItem> saveResult = observationRepository.saveIfAbsent(item);
         validateEventIdentity(saveResult.item(), request, session.getId());
+        updateLatestMonitoringCapture(session.getId(), cctv.getCode(), request);
 
         String processingOwner = UUID.randomUUID().toString();
         long processingStartedAt = Instant.now().toEpochMilli();
@@ -164,6 +168,22 @@ public class CongestionObservationService {
         // 오래된 관측값이 최신 상태를 덮어쓰지 않도록 조건부 갱신 (lastDetectedAt 기준). 실패해도 관측값 저장 자체는 유지한다.
         if (!currentCctvStateRepository.updateIfLatest(stateItem)) {
             log.debug("더 최신 상태가 있어 CCTV 현재 상태 갱신을 건너뜀: cctvCode={}", cctvCode);
+        }
+    }
+
+    private void updateLatestMonitoringCapture(
+            UUID sessionId,
+            String cctvCode,
+            ReportObservationRequest request
+    ) {
+        LatestMonitoringCaptureItem capture = LatestMonitoringCaptureItem.create(
+                sessionId,
+                cctvCode,
+                request.capturedAt(),
+                request.monitoringImageKey()
+        );
+        if (!latestMonitoringCaptureRepository.updateIfLatest(capture)) {
+            log.debug("더 최신 캡처가 있어 모니터링 포인터 갱신을 건너뜀: cctvCode={}", cctvCode);
         }
     }
 

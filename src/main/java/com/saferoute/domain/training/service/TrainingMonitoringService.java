@@ -2,8 +2,8 @@ package com.saferoute.domain.training.service;
 
 import com.saferoute.domain.device.entity.Cctv;
 import com.saferoute.domain.device.repository.CctvJpaRepository;
-import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
-import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
+import com.saferoute.domain.telemetry.dynamo.entity.LatestMonitoringCaptureItem;
+import com.saferoute.domain.telemetry.dynamo.repository.LatestMonitoringCaptureRepository;
 import com.saferoute.domain.training.dto.MonitoringCameraListResponse;
 import com.saferoute.domain.training.dto.MonitoringCameraResponse;
 import com.saferoute.domain.training.entity.TrainingSession;
@@ -15,7 +15,10 @@ import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.s3.dto.PresignedGetUrl;
 import com.saferoute.infrastructure.s3.service.S3PresignedUrlService;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,7 +30,7 @@ public class TrainingMonitoringService {
 
     private final TrainingSessionRepository trainingSessionRepository;
     private final CctvJpaRepository cctvJpaRepository;
-    private final ObservationRepository observationRepository;
+    private final LatestMonitoringCaptureRepository latestMonitoringCaptureRepository;
     private final S3PresignedUrlService s3PresignedUrlService;
     private final SchoolContextService schoolContextService;
 
@@ -37,9 +40,18 @@ public class TrainingMonitoringService {
         List<Cctv> cctvs = cctvJpaRepository
                 .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
                         buildingId);
+        if (cctvs.isEmpty()) {
+            return new MonitoringCameraListResponse(sessionId, List.of());
+        }
+        Map<String, LatestMonitoringCaptureItem> capturesByCctvCode =
+                latestMonitoringCaptureRepository.findAllBySessionId(sessionId.toString()).stream()
+                        .collect(Collectors.toMap(
+                                LatestMonitoringCaptureItem::getCctvCode,
+                                Function.identity()
+                        ));
 
         List<MonitoringCameraResponse> cameras = cctvs.stream()
-                .map(cctv -> toResponse(sessionId, cctv))
+                .map(cctv -> toResponse(cctv, capturesByCctvCode.get(cctv.getCode())))
                 .toList();
         return new MonitoringCameraListResponse(sessionId, cameras);
     }
@@ -55,25 +67,28 @@ public class TrainingMonitoringService {
         return session;
     }
 
-    private MonitoringCameraResponse toResponse(UUID sessionId, Cctv cctv) {
-        return observationRepository
-                .findLatestBySessionIdAndCctvCode(sessionId.toString(), cctv.getCode())
-                .filter(this::hasMonitoringImage)
-                .map(observation -> withCapture(cctv, observation))
-                .orElseGet(() -> MonitoringCameraResponse.withoutCapture(cctv));
+    private MonitoringCameraResponse toResponse(
+            Cctv cctv,
+            LatestMonitoringCaptureItem capture
+    ) {
+        if (!hasMonitoringImage(capture)) {
+            return MonitoringCameraResponse.withoutCapture(cctv);
+        }
+        return withCapture(cctv, capture);
     }
 
-    private boolean hasMonitoringImage(ObservationItem observation) {
-        return observation.getMonitoringImageKey() != null
-                && !observation.getMonitoringImageKey().isBlank();
+    private boolean hasMonitoringImage(LatestMonitoringCaptureItem capture) {
+        return capture != null
+                && capture.getMonitoringImageKey() != null
+                && !capture.getMonitoringImageKey().isBlank();
     }
 
-    private MonitoringCameraResponse withCapture(Cctv cctv, ObservationItem observation) {
+    private MonitoringCameraResponse withCapture(Cctv cctv, LatestMonitoringCaptureItem capture) {
         PresignedGetUrl presignedGetUrl =
-                s3PresignedUrlService.createGetUrl(observation.getMonitoringImageKey());
+                s3PresignedUrlService.createGetUrl(capture.getMonitoringImageKey());
         return MonitoringCameraResponse.withCapture(
                 cctv,
-                observation.getCapturedAt(),
+                capture.getCapturedAt(),
                 presignedGetUrl
         );
     }
