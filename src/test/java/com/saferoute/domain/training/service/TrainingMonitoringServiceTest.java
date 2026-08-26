@@ -20,6 +20,7 @@ import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.user.service.SchoolContextService;
+import com.saferoute.global.api.error.S3ErrorCode;
 import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.s3.dto.PresignedGetUrl;
@@ -195,6 +196,122 @@ class TrainingMonitoringServiceTest {
     }
 
     @Test
+    void 일부_CCTV에만_캡처가_있어도_모든_활성_CCTV를_반환한다() {
+        stubSession(TrainingStatus.RUNNING);
+        Cctv capturedCctv = cctv(
+                CCTV_ID,
+                "CCTV_001",
+                "CAM-1",
+                1
+        );
+        Cctv pendingCctv = cctv(
+                UUID.fromString("00000000-0000-0000-0000-000000000004"),
+                "CCTV_002",
+                "CAM-2",
+                2
+        );
+        LatestMonitoringCaptureItem capture = LatestMonitoringCaptureItem.create(
+                SESSION_ID,
+                "CCTV_001",
+                1_000L,
+                "monitoring/first.jpg"
+        );
+        Instant expiresAt = Instant.parse("2026-08-27T01:00:00Z");
+        given(cctvJpaRepository
+                .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
+                        BUILDING_ID))
+                .willReturn(List.of(capturedCctv, pendingCctv));
+        given(latestMonitoringCaptureRepository.findAllBySessionId(SESSION_ID.toString()))
+                .willReturn(List.of(capture));
+        given(s3PresignedUrlService.createGetUrl("monitoring/first.jpg"))
+                .willReturn(new PresignedGetUrl("https://example.com/first.jpg", expiresAt));
+
+        MonitoringCameraListResponse response = service.getCameras(SESSION_ID, EMAIL);
+
+        assertThat(response.cameras()).hasSize(2);
+        assertThat(response.cameras().get(0))
+                .extracting(
+                        MonitoringCameraResponse::code,
+                        MonitoringCameraResponse::thumbnailUrl,
+                        MonitoringCameraResponse::capturedAt,
+                        MonitoringCameraResponse::urlExpiresAt
+                )
+                .containsExactly(
+                        "CCTV_001",
+                        "https://example.com/first.jpg",
+                        1_000L,
+                        expiresAt.toEpochMilli()
+                );
+        assertThat(response.cameras().get(1))
+                .extracting(
+                        MonitoringCameraResponse::code,
+                        MonitoringCameraResponse::thumbnailUrl,
+                        MonitoringCameraResponse::capturedAt,
+                        MonitoringCameraResponse::urlExpiresAt
+                )
+                .containsExactly("CCTV_002", null, null, null);
+        verify(s3PresignedUrlService).createGetUrl("monitoring/first.jpg");
+    }
+
+    @Test
+    void 동일_CCTV는_최신_캡처_포인터의_프레임_한_장만_반환한다() {
+        stubSession(TrainingStatus.RUNNING);
+        Cctv cctv = cctv(1);
+        LatestMonitoringCaptureItem latestCapture = LatestMonitoringCaptureItem.create(
+                SESSION_ID,
+                "CCTV_001",
+                2_000L,
+                "monitoring/latest.jpg"
+        );
+        given(cctvJpaRepository
+                .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
+                        BUILDING_ID))
+                .willReturn(List.of(cctv));
+        given(latestMonitoringCaptureRepository.findAllBySessionId(SESSION_ID.toString()))
+                .willReturn(List.of(latestCapture));
+        given(s3PresignedUrlService.createGetUrl("monitoring/latest.jpg"))
+                .willReturn(new PresignedGetUrl(
+                        "https://example.com/latest.jpg",
+                        Instant.parse("2026-08-27T01:00:00Z")
+                ));
+
+        MonitoringCameraListResponse response = service.getCameras(SESSION_ID, EMAIL);
+
+        assertThat(response.cameras()).singleElement().satisfies(camera -> {
+            assertThat(camera.code()).isEqualTo("CCTV_001");
+            assertThat(camera.thumbnailUrl()).isEqualTo("https://example.com/latest.jpg");
+            assertThat(camera.capturedAt()).isEqualTo(2_000L);
+        });
+        verify(s3PresignedUrlService, never()).createGetUrl("monitoring/old.jpg");
+    }
+
+    @Test
+    void 최신_관측의_이미지_키가_null이면_placeholder_응답을_반환한다() {
+        stubSession(TrainingStatus.RUNNING);
+        Cctv cctv = cctv(1);
+        LatestMonitoringCaptureItem capture = LatestMonitoringCaptureItem.create(
+                SESSION_ID,
+                "CCTV_001",
+                1_000L,
+                null
+        );
+        given(cctvJpaRepository
+                .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
+                        BUILDING_ID))
+                .willReturn(List.of(cctv));
+        given(latestMonitoringCaptureRepository.findAllBySessionId(SESSION_ID.toString()))
+                .willReturn(List.of(capture));
+
+        MonitoringCameraResponse camera = service.getCameras(SESSION_ID, EMAIL)
+                .cameras().get(0);
+
+        assertThat(camera.thumbnailUrl()).isNull();
+        assertThat(camera.capturedAt()).isNull();
+        assertThat(camera.urlExpiresAt()).isNull();
+        verify(s3PresignedUrlService, never()).createGetUrl(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
     void 활성_CCTV가_없으면_빈_목록을_반환한다() {
         stubSession(TrainingStatus.RUNNING);
         given(cctvJpaRepository
@@ -210,7 +327,7 @@ class TrainingMonitoringServiceTest {
     }
 
     @Test
-    void 다른_학교이거나_없는_세션은_조회할_수_없다() {
+    void 존재하지_않는_세션은_조회할_수_없다() {
         given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(
                 SESSION_ID, SCHOOL_NAME)).willReturn(Optional.empty());
 
@@ -219,6 +336,59 @@ class TrainingMonitoringServiceTest {
                 .hasFieldOrPropertyWithValue(
                         "errorCode",
                         TrainingErrorCode.TRAINING_SESSION_NOT_FOUND
+                );
+        verify(cctvJpaRepository, never())
+                .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
+                        org.mockito.ArgumentMatchers.any());
+        verify(latestMonitoringCaptureRepository, never())
+                .findAllBySessionId(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void 다른_학교의_세션은_존재_여부를_노출하지_않고_조회할_수_없다() {
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(
+                SESSION_ID, SCHOOL_NAME)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getCameras(SESSION_ID, EMAIL))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue(
+                        "errorCode",
+                        TrainingErrorCode.TRAINING_SESSION_NOT_FOUND
+                );
+        verify(trainingSessionRepository)
+                .findByIdAndScenario_Building_SchoolName(SESSION_ID, SCHOOL_NAME);
+        verify(cctvJpaRepository, never())
+                .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
+                        org.mockito.ArgumentMatchers.any());
+        verify(latestMonitoringCaptureRepository, never())
+                .findAllBySessionId(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void S3_조회_URL_발급에_실패하면_정의된_예외를_전파한다() {
+        stubSession(TrainingStatus.RUNNING);
+        Cctv cctv = org.mockito.Mockito.mock(Cctv.class);
+        given(cctv.getCode()).willReturn("CCTV_001");
+        LatestMonitoringCaptureItem capture = LatestMonitoringCaptureItem.create(
+                SESSION_ID,
+                "CCTV_001",
+                1_000L,
+                "monitoring/frame.jpg"
+        );
+        given(cctvJpaRepository
+                .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
+                        BUILDING_ID))
+                .willReturn(List.of(cctv));
+        given(latestMonitoringCaptureRepository.findAllBySessionId(SESSION_ID.toString()))
+                .willReturn(List.of(capture));
+        given(s3PresignedUrlService.createGetUrl("monitoring/frame.jpg"))
+                .willThrow(new ApiException(S3ErrorCode.PRESIGNED_GET_URL_GENERATION_FAILED));
+
+        assertThatThrownBy(() -> service.getCameras(SESSION_ID, EMAIL))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue(
+                        "errorCode",
+                        S3ErrorCode.PRESIGNED_GET_URL_GENERATION_FAILED
                 );
     }
 
