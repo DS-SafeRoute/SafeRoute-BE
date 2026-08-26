@@ -49,6 +49,10 @@ public class CongestionObservationService {
 
     static final Duration PROCESSING_LEASE = Duration.ofMinutes(1);
 
+    private static final String TRAINING_PREFIX = "training";
+    private static final String MONITORING_DIRECTORY = "monitoring";
+    private static final String JPEG_SUFFIX = ".jpg";
+
     private final ObservationRepository observationRepository;
     private final LatestMonitoringCaptureRepository latestMonitoringCaptureRepository;
     private final CurrentCctvStateRepository currentCctvStateRepository;
@@ -75,6 +79,8 @@ public class CongestionObservationService {
         if (monitoredAreaM2 == null || monitoredAreaM2 <= 0) {
             throw new ApiException(CongestionErrorCode.MONITORED_AREA_NOT_AVAILABLE);
         }
+
+        validateMonitoringImageKey(session.getId(), cctv.getCode(), request.capturedAt(), request.monitoringImageKey());
 
         double density = request.avgHeadcount() / monitoredAreaM2;
         CongestionLevel level = config.classify(density);
@@ -184,6 +190,55 @@ public class CongestionObservationService {
         );
         if (!latestMonitoringCaptureRepository.updateIfLatest(capture)) {
             log.debug("더 최신 캡처가 있어 모니터링 포인터 갱신을 건너뜀: cctvCode={}", cctvCode);
+        }
+    }
+
+    // monitoringImageKey는 Pi가 임의로 채워 보내는 문자열이라, canonical 경로 형식과 요청 신원(세션/CCTV/캡처시각)이
+    // 일치하는지 검증한 뒤에만 저장한다. 다른 세션/CCTV의 S3 객체를 가리키는 변조된 key가 저장되는 것을 막기 위함.
+    private void validateMonitoringImageKey(
+            UUID sessionId, String cctvCode, long capturedAt, String monitoringImageKey
+    ) {
+        if (monitoringImageKey == null || monitoringImageKey.isBlank()) {
+            return;
+        }
+
+        String[] segments = monitoringImageKey.split("/", -1);
+        if (segments.length != 5
+                || !TRAINING_PREFIX.equals(segments[0])
+                || !MONITORING_DIRECTORY.equals(segments[2])
+                || !segments[4].endsWith(JPEG_SUFFIX)) {
+            throw new ApiException(CongestionErrorCode.MONITORING_IMAGE_KEY_INVALID);
+        }
+
+        UUID keySessionId = parseCanonicalUuid(segments[1]);
+        String capturedAtSegment = segments[4].substring(0, segments[4].length() - JPEG_SUFFIX.length());
+        long keyCapturedAt = parseCapturedAt(capturedAtSegment);
+
+        boolean sameIdentity = sessionId.equals(keySessionId)
+                && Objects.equals(cctvCode, segments[3])
+                && capturedAt == keyCapturedAt;
+        if (!sameIdentity) {
+            throw new ApiException(CongestionErrorCode.MONITORING_IMAGE_IDENTITY_MISMATCH);
+        }
+    }
+
+    private UUID parseCanonicalUuid(String value) {
+        try {
+            UUID uuid = UUID.fromString(value);
+            if (!uuid.toString().equals(value)) {
+                throw new IllegalArgumentException("non-canonical UUID");
+            }
+            return uuid;
+        } catch (IllegalArgumentException exception) {
+            throw new ApiException(CongestionErrorCode.MONITORING_IMAGE_KEY_INVALID, exception);
+        }
+    }
+
+    private long parseCapturedAt(String value) {
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException exception) {
+            throw new ApiException(CongestionErrorCode.MONITORING_IMAGE_KEY_INVALID, exception);
         }
     }
 
