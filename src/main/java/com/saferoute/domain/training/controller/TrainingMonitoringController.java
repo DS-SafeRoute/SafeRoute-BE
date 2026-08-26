@@ -1,5 +1,6 @@
 package com.saferoute.domain.training.controller;
 
+import com.saferoute.domain.training.dto.MonitoringCameraListApiResponse;
 import com.saferoute.domain.training.dto.MonitoringCameraListResponse;
 import com.saferoute.domain.training.service.TrainingMonitoringService;
 import com.saferoute.global.api.response.ApiResponse;
@@ -55,6 +56,9 @@ public class TrainingMonitoringController {
                     description = "모니터링 카메라 목록 조회 성공",
                     content = @Content(
                             mediaType = "application/json",
+                            schema = @io.swagger.v3.oas.annotations.media.Schema(
+                                    implementation = MonitoringCameraListApiResponse.class
+                            ),
                             examples = {
                                     @ExampleObject(
                                             name = "최신 캡처가 있는 카메라",
