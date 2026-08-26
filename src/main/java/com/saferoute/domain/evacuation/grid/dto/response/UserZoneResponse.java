@@ -1,8 +1,5 @@
 package com.saferoute.domain.evacuation.grid.dto.response;
 
-import com.saferoute.domain.evacuation.grid.entity.FloorGridCell;
-
-import java.util.List;
 import java.util.UUID;
 
 public record UserZoneResponse(

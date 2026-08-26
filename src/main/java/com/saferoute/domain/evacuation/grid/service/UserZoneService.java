@@ -2,6 +2,7 @@ package com.saferoute.domain.evacuation.grid.service;
 
 import com.saferoute.domain.evacuation.grid.dto.request.UserZoneCreateRequest;
 import com.saferoute.domain.evacuation.grid.dto.response.AllUserZoneResponse;
+import com.saferoute.domain.evacuation.grid.dto.response.UserZoneCellsResponse;
 import com.saferoute.domain.evacuation.grid.dto.response.UserZoneResponse;
 import com.saferoute.domain.evacuation.grid.entity.FloorGridCell;
 import com.saferoute.domain.evacuation.grid.entity.UserZone;
@@ -75,5 +76,17 @@ public class UserZoneService {
         List<UserZone> userZones = userZoneRepository.findAllByFloor_Id(floorId);
 
         return AllUserZoneResponse.of(userZones, floor.getFloorNum());
+    }
+
+    @Transactional(readOnly = true)
+    public UserZoneCellsResponse findUserZone(UUID floorId, UUID userZoneId){
+        Floor floor = floorRepository.findById(floorId)
+                .orElseThrow(() -> new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
+        UserZone userZone = userZoneRepository.findById(userZoneId)
+                .orElseThrow(() -> new ApiException(UserZoneErrorCode.USER_ZONE_NOT_FOUND));
+
+        List<FloorGridCell> cells = floorGridCellRepository.findAllByUserZone_Id(userZoneId);
+
+        return UserZoneCellsResponse.of(userZone, floor.getFloorNum(), cells);
     }
 }
