@@ -37,9 +37,10 @@ public class IoTLightController {
 
     @PostMapping
     public ResponseEntity<ApiResponse<IoTLightResponse>> createLight(
-            @Valid @RequestBody CreateIoTLightRequest request
+            @Valid @RequestBody CreateIoTLightRequest request,
+            Authentication authentication
     ) {
-        IoTLightResponse response = iotLightService.createLight(request);
+        IoTLightResponse response = iotLightService.createLight(request, authentication.getName());
         return ResponseEntity.status(IoTLightSuccessCode.IOT_LIGHT_CREATED.getHttpStatus())
                 .body(ApiResponse.success(IoTLightSuccessCode.IOT_LIGHT_CREATED, response));
     }
@@ -66,54 +67,64 @@ public class IoTLightController {
     @PatchMapping("/{lightId}/guidance")
     public ResponseEntity<ApiResponse<IoTLightResponse>> configureGuidance(
             @PathVariable UUID lightId,
-            @Valid @RequestBody ConfigureGuidanceRequest request
+            @Valid @RequestBody ConfigureGuidanceRequest request,
+            Authentication authentication
     ) {
-        IoTLightResponse response = iotLightService.configureGuidance(lightId, request);
+        IoTLightResponse response = iotLightService.configureGuidance(lightId, request, authentication.getName());
         return ResponseEntity.ok(ApiResponse.success(IoTLightSuccessCode.IOT_LIGHT_GUIDANCE_CONFIGURED, response));
     }
 
     @PatchMapping("/{lightId}")
     public ResponseEntity<ApiResponse<IoTLightResponse>> updateLight(
             @PathVariable UUID lightId,
-            @Valid @RequestBody UpdateIoTLightRequest request
+            @Valid @RequestBody UpdateIoTLightRequest request,
+            Authentication authentication
     ) {
-        IoTLightResponse response = iotLightService.updateLight(lightId, request);
+        IoTLightResponse response = iotLightService.updateLight(lightId, request, authentication.getName());
         return ResponseEntity.ok(ApiResponse.success(IoTLightSuccessCode.IOT_LIGHT_UPDATED, response));
     }
 
     @PatchMapping("/{lightId}/direction")
     public ResponseEntity<ApiResponse<LightDirectionResponse>> changeDirection(
             @PathVariable UUID lightId,
-            @Valid @RequestBody ChangeLightDirectionRequest request
+            @Valid @RequestBody ChangeLightDirectionRequest request,
+            Authentication authentication
     ) {
-        LightDirectionResponse response = iotLightService.changeDirection(lightId, request);
+        LightDirectionResponse response = iotLightService.changeDirection(lightId, request, authentication.getName());
         return ResponseEntity.ok(ApiResponse.success(IoTLightSuccessCode.IOT_LIGHT_DIRECTION_CHANGED, response));
     }
 
     @PatchMapping("/{lightId}/pi-endpoint")
     public ResponseEntity<ApiResponse<IoTLightResponse>> updatePiEndpoint(
             @PathVariable UUID lightId,
-            @Valid @RequestBody UpdatePiEndpointRequest request
+            @Valid @RequestBody UpdatePiEndpointRequest request,
+            Authentication authentication
     ) {
-        IoTLightResponse response = iotLightService.updatePiEndpoint(lightId, request);
+        IoTLightResponse response = iotLightService.updatePiEndpoint(lightId, request, authentication.getName());
         return ResponseEntity.ok(ApiResponse.success(IoTLightSuccessCode.IOT_LIGHT_PI_ENDPOINT_UPDATED, response));
     }
 
     @PatchMapping("/{lightId}/enable")
-    public ResponseEntity<ApiResponse<IoTLightResponse>> enableLight(@PathVariable UUID lightId) {
-        IoTLightResponse response = iotLightService.enableLight(lightId);
+    public ResponseEntity<ApiResponse<IoTLightResponse>> enableLight(
+            @PathVariable UUID lightId,
+            Authentication authentication) {
+        IoTLightResponse response = iotLightService.enableLight(lightId, authentication.getName());
         return ResponseEntity.ok(ApiResponse.success(IoTLightSuccessCode.IOT_LIGHT_ENABLED, response));
     }
 
     @PatchMapping("/{lightId}/disable")
-    public ResponseEntity<ApiResponse<IoTLightResponse>> disableLight(@PathVariable UUID lightId) {
-        IoTLightResponse response = iotLightService.disableLight(lightId);
+    public ResponseEntity<ApiResponse<IoTLightResponse>> disableLight(
+            @PathVariable UUID lightId,
+            Authentication authentication) {
+        IoTLightResponse response = iotLightService.disableLight(lightId, authentication.getName());
         return ResponseEntity.ok(ApiResponse.success(IoTLightSuccessCode.IOT_LIGHT_DISABLED, response));
     }
 
     @DeleteMapping("/{lightId}")
-    public ResponseEntity<ApiResponse<Void>> deleteLight(@PathVariable UUID lightId) {
-        iotLightService.deleteLight(lightId);
+    public ResponseEntity<ApiResponse<Void>> deleteLight(
+            @PathVariable UUID lightId,
+            Authentication authentication) {
+        iotLightService.deleteLight(lightId, authentication.getName());
         return ResponseEntity.ok(ApiResponse.success(IoTLightSuccessCode.IOT_LIGHT_DELETED, null));
     }
 }

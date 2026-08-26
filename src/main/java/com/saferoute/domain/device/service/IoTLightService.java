@@ -46,8 +46,9 @@ public class IoTLightService {
     private final SchoolContextService schoolContextService;
 
     @Transactional
-    public IoTLightResponse createLight(CreateIoTLightRequest request) {
-        Floor floor = floorRepository.findById(request.floorId())
+    public IoTLightResponse createLight(CreateIoTLightRequest request, String email) {
+        String schoolName = schoolContextService.getSchoolName(email);
+        Floor floor = floorRepository.findByIdAndBuilding_SchoolName(request.floorId(), schoolName)
                 .orElseThrow(() -> new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
 
         String code = generateLightCode();
@@ -90,8 +91,10 @@ public class IoTLightService {
     }
 
     @Transactional
-    public IoTLightResponse configureGuidance(UUID lightId, ConfigureGuidanceRequest request) {
-        IoTLight light = findLightOrThrow(lightId);
+    public IoTLightResponse configureGuidance(
+            UUID lightId, ConfigureGuidanceRequest request, String email) {
+        String schoolName = schoolContextService.getSchoolName(email);
+        IoTLight light = findLightForSchoolNameOrThrow(lightId, schoolName);
 
         // leftEdge/rightEdge가 같은 엣지면 IoTLight.configureGuidance()가 IllegalArgumentException을
         // 던지는데 GlobalExceptionHandler가 이를 500으로 처리하므로 여기서 먼저 ApiException으로 막는다.
@@ -99,11 +102,14 @@ public class IoTLightService {
             throw new ApiException(IoTLightErrorCode.INVALID_GUIDANCE_EDGE);
         }
 
-        MapNode decisionNode = mapNodeJpaRepository.findById(request.decisionNodeId())
+        MapNode decisionNode = mapNodeJpaRepository
+                .findByIdAndFloor_Building_SchoolName(request.decisionNodeId(), schoolName)
                 .orElseThrow(() -> new ApiException(IoTLightErrorCode.DECISION_NODE_NOT_FOUND));
-        MapEdge leftEdge = mapEdgeJpaRepository.findById(request.leftEdgeId())
+        MapEdge leftEdge = mapEdgeJpaRepository
+                .findByIdAndFloor_Building_SchoolName(request.leftEdgeId(), schoolName)
                 .orElseThrow(() -> new ApiException(IoTLightErrorCode.GUIDANCE_EDGE_NOT_FOUND));
-        MapEdge rightEdge = mapEdgeJpaRepository.findById(request.rightEdgeId())
+        MapEdge rightEdge = mapEdgeJpaRepository
+                .findByIdAndFloor_Building_SchoolName(request.rightEdgeId(), schoolName)
                 .orElseThrow(() -> new ApiException(IoTLightErrorCode.GUIDANCE_EDGE_NOT_FOUND));
 
         validateConnectedToDecisionNode(decisionNode, leftEdge);
@@ -114,30 +120,31 @@ public class IoTLightService {
     }
 
     @Transactional
-    public IoTLightResponse updateLight(UUID lightId, UpdateIoTLightRequest request) {
-        IoTLight light = findLightOrThrow(lightId);
+    public IoTLightResponse updateLight(UUID lightId, UpdateIoTLightRequest request, String email) {
+        IoTLight light = findLightForSchoolOrThrow(lightId, email);
         light.rename(request.name());
         light.getCustomNode().moveTo(request.x(), request.y());
         return IoTLightResponse.from(light);
     }
 
     @Transactional
-    public IoTLightResponse updatePiEndpoint(UUID lightId, UpdatePiEndpointRequest request) {
-        IoTLight light = findLightOrThrow(lightId);
+    public IoTLightResponse updatePiEndpoint(
+            UUID lightId, UpdatePiEndpointRequest request, String email) {
+        IoTLight light = findLightForSchoolOrThrow(lightId, email);
         light.updatePiEndpoint(request.piEndpoint());
         return IoTLightResponse.from(light);
     }
 
     @Transactional
-    public IoTLightResponse enableLight(UUID lightId) {
-        IoTLight light = findLightOrThrow(lightId);
+    public IoTLightResponse enableLight(UUID lightId, String email) {
+        IoTLight light = findLightForSchoolOrThrow(lightId, email);
         light.enable();
         return IoTLightResponse.from(light);
     }
 
     @Transactional
-    public IoTLightResponse disableLight(UUID lightId) {
-        IoTLight light = findLightOrThrow(lightId);
+    public IoTLightResponse disableLight(UUID lightId, String email) {
+        IoTLight light = findLightForSchoolOrThrow(lightId, email);
         light.disable();
         return IoTLightResponse.from(light);
     }
@@ -145,8 +152,8 @@ public class IoTLightService {
     // 유도등의 도면 위치 노드(customNode)를 지우면 iot_lights FK의 ON DELETE CASCADE로 유도등 자체도 함께 삭제된다.
     // 노드 삭제 전 연결된 엣지(from/to 어느 쪽이든)를 먼저 지우는 것은 MapGraphRepositoryImpl.deleteNode와 동일한 처리다.
     @Transactional
-    public void deleteLight(UUID lightId) {
-        IoTLight light = findLightOrThrow(lightId);
+    public void deleteLight(UUID lightId, String email) {
+        IoTLight light = findLightForSchoolOrThrow(lightId, email);
         MapNode customNode = light.getCustomNode();
         mapEdgeJpaRepository.deleteByFromNode_IdOrToNode_Id(customNode.getId(), customNode.getId());
         mapNodeJpaRepository.delete(customNode);
@@ -154,8 +161,14 @@ public class IoTLightService {
 
     // 검증(enabled/guidance) -> Pi 호출 -> 상태 저장 -> 이벤트 발행 순서로 조립한다.
     // direction은 훈련별 동적 상태라 DB에 저장하지 않고 IoTLightDirectionStore(서버 메모리)에 저장한다 (IoTLight 참고).
-    public LightDirectionResponse changeDirection(UUID lightId, ChangeLightDirectionRequest request) {
-        IoTLight light = findLightOrThrow(lightId);
+    public LightDirectionResponse changeDirection(
+            UUID lightId, ChangeLightDirectionRequest request, String email) {
+        IoTLight light = findLightForSchoolOrThrow(lightId, email);
+        return changeDirection(light, request);
+    }
+
+    private LightDirectionResponse changeDirection(
+            IoTLight light, ChangeLightDirectionRequest request) {
         IoTLightDirection direction = request.direction();
 
         if (!light.isEnabled()) {
@@ -188,7 +201,7 @@ public class IoTLightService {
                     continue;
                 }
                 try {
-                    changeDirection(light.getId(), new ChangeLightDirectionRequest(direction));
+                    changeDirection(light, new ChangeLightDirectionRequest(direction));
                 } catch (ApiException exception) {
                     log.warn("경로 승인에 따른 유도등 자동 전환 실패: lightId={}, direction={}",
                             light.getId(), direction, exception);
@@ -215,8 +228,13 @@ public class IoTLightService {
         return edge.getFromNode().getId().equals(nodeId) ? edge.getToNode().getId() : edge.getFromNode().getId();
     }
 
-    private IoTLight findLightOrThrow(UUID lightId) {
-        return iotLightJpaRepository.findById(lightId)
+    private IoTLight findLightForSchoolOrThrow(UUID lightId, String email) {
+        return findLightForSchoolNameOrThrow(lightId, schoolContextService.getSchoolName(email));
+    }
+
+    private IoTLight findLightForSchoolNameOrThrow(UUID lightId, String schoolName) {
+        return iotLightJpaRepository
+                .findByIdAndCustomNode_Floor_Building_SchoolName(lightId, schoolName)
                 .orElseThrow(() -> new ApiException(IoTLightErrorCode.IOT_LIGHT_NOT_FOUND));
     }
 

@@ -13,6 +13,7 @@ import com.saferoute.domain.device.dto.request.ChangeLightDirectionRequest;
 import com.saferoute.domain.device.dto.request.ConfigureGuidanceRequest;
 import com.saferoute.domain.device.dto.request.CreateIoTLightRequest;
 import com.saferoute.domain.device.dto.request.UpdateIoTLightRequest;
+import com.saferoute.domain.device.dto.request.UpdatePiEndpointRequest;
 import com.saferoute.domain.device.dto.response.IoTLightResponse;
 import com.saferoute.domain.device.dto.response.LightDirectionResponse;
 import com.saferoute.domain.device.entity.IoTLight;
@@ -41,6 +42,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 
 @ExtendWith(MockitoExtension.class)
 class IoTLightServiceTest {
@@ -81,6 +83,9 @@ class IoTLightServiceTest {
     @BeforeEach
     void setUp() {
         floor = mock(Floor.class);
+        org.mockito.Mockito.lenient()
+                .when(schoolContextService.getSchoolName(EMAIL))
+                .thenReturn(SCHOOL_NAME);
     }
 
     private MapNode createNode(String code, NodeType type) {
@@ -113,13 +118,13 @@ class IoTLightServiceTest {
         MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
         IoTLight savedLight = createLight("LIGHT_001", customNode);
 
-        given(floorRepository.findById(floorId)).willReturn(Optional.of(floor));
+        given(floorRepository.findByIdAndBuilding_SchoolName(floorId, SCHOOL_NAME)).willReturn(Optional.of(floor));
         given(iotLightJpaRepository.count()).willReturn(0L);
         given(mapNodeJpaRepository.save(any(MapNode.class))).willReturn(customNode);
         given(iotLightJpaRepository.save(any(IoTLight.class))).willReturn(savedLight);
 
         // when
-        IoTLightResponse response = iotLightService.createLight(request);
+        IoTLightResponse response = iotLightService.createLight(request, EMAIL);
 
         // then
         assertThat(response.code()).isEqualTo("LIGHT_001");
@@ -135,13 +140,13 @@ class IoTLightServiceTest {
         MapNode customNode = createNode("LIGHT_006", NodeType.CUSTOM);
         IoTLight savedLight = createLight("LIGHT_006", customNode);
 
-        given(floorRepository.findById(floorId)).willReturn(Optional.of(floor));
+        given(floorRepository.findByIdAndBuilding_SchoolName(floorId, SCHOOL_NAME)).willReturn(Optional.of(floor));
         given(iotLightJpaRepository.count()).willReturn(5L);
         given(mapNodeJpaRepository.save(any(MapNode.class))).willReturn(customNode);
         given(iotLightJpaRepository.save(any(IoTLight.class))).willReturn(savedLight);
 
         // when
-        IoTLightResponse response = iotLightService.createLight(request);
+        IoTLightResponse response = iotLightService.createLight(request, EMAIL);
 
         // then
         assertThat(response.code()).isEqualTo("LIGHT_006");
@@ -152,10 +157,10 @@ class IoTLightServiceTest {
     void createLight_floorNotFound_throws() {
         // given
         CreateIoTLightRequest request = new CreateIoTLightRequest(floorId, "복도1 유도등", 0.3, 0.4);
-        given(floorRepository.findById(floorId)).willReturn(Optional.empty());
+        given(floorRepository.findByIdAndBuilding_SchoolName(floorId, SCHOOL_NAME)).willReturn(Optional.empty());
 
         // when & then
-        assertThatThrownBy(() -> iotLightService.createLight(request))
+        assertThatThrownBy(() -> iotLightService.createLight(request, EMAIL))
                 .isInstanceOf(ApiException.class)
                 .hasMessage(FloorErrorCode.FLOOR_NOT_FOUND.getMessage());
     }
@@ -213,13 +218,13 @@ class IoTLightServiceTest {
         ConfigureGuidanceRequest request =
                 new ConfigureGuidanceRequest(decisionNode.getId(), leftEdge.getId(), rightEdge.getId());
 
-        given(iotLightJpaRepository.findById(light.getId())).willReturn(Optional.of(light));
-        given(mapNodeJpaRepository.findById(decisionNode.getId())).willReturn(Optional.of(decisionNode));
-        given(mapEdgeJpaRepository.findById(leftEdge.getId())).willReturn(Optional.of(leftEdge));
-        given(mapEdgeJpaRepository.findById(rightEdge.getId())).willReturn(Optional.of(rightEdge));
+        given(iotLightJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(light.getId(), SCHOOL_NAME)).willReturn(Optional.of(light));
+        given(mapNodeJpaRepository.findByIdAndFloor_Building_SchoolName(decisionNode.getId(), SCHOOL_NAME)).willReturn(Optional.of(decisionNode));
+        given(mapEdgeJpaRepository.findByIdAndFloor_Building_SchoolName(leftEdge.getId(), SCHOOL_NAME)).willReturn(Optional.of(leftEdge));
+        given(mapEdgeJpaRepository.findByIdAndFloor_Building_SchoolName(rightEdge.getId(), SCHOOL_NAME)).willReturn(Optional.of(rightEdge));
 
         // when
-        IoTLightResponse response = iotLightService.configureGuidance(light.getId(), request);
+        IoTLightResponse response = iotLightService.configureGuidance(light.getId(), request, EMAIL);
 
         // then
         assertThat(response.guidanceConfigured()).isTrue();
@@ -242,13 +247,13 @@ class IoTLightServiceTest {
         ConfigureGuidanceRequest request =
                 new ConfigureGuidanceRequest(decisionNode.getId(), unrelatedEdge.getId(), rightEdge.getId());
 
-        given(iotLightJpaRepository.findById(light.getId())).willReturn(Optional.of(light));
-        given(mapNodeJpaRepository.findById(decisionNode.getId())).willReturn(Optional.of(decisionNode));
-        given(mapEdgeJpaRepository.findById(unrelatedEdge.getId())).willReturn(Optional.of(unrelatedEdge));
-        given(mapEdgeJpaRepository.findById(rightEdge.getId())).willReturn(Optional.of(rightEdge));
+        given(iotLightJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(light.getId(), SCHOOL_NAME)).willReturn(Optional.of(light));
+        given(mapNodeJpaRepository.findByIdAndFloor_Building_SchoolName(decisionNode.getId(), SCHOOL_NAME)).willReturn(Optional.of(decisionNode));
+        given(mapEdgeJpaRepository.findByIdAndFloor_Building_SchoolName(unrelatedEdge.getId(), SCHOOL_NAME)).willReturn(Optional.of(unrelatedEdge));
+        given(mapEdgeJpaRepository.findByIdAndFloor_Building_SchoolName(rightEdge.getId(), SCHOOL_NAME)).willReturn(Optional.of(rightEdge));
 
         // when & then
-        assertThatThrownBy(() -> iotLightService.configureGuidance(light.getId(), request))
+        assertThatThrownBy(() -> iotLightService.configureGuidance(light.getId(), request, EMAIL))
                 .isInstanceOf(ApiException.class)
                 .hasMessage(IoTLightErrorCode.INVALID_GUIDANCE_EDGE.getMessage());
     }
@@ -263,10 +268,10 @@ class IoTLightServiceTest {
         UUID sameEdgeId = UUID.randomUUID();
         ConfigureGuidanceRequest request = new ConfigureGuidanceRequest(decisionNodeId, sameEdgeId, sameEdgeId);
 
-        given(iotLightJpaRepository.findById(light.getId())).willReturn(Optional.of(light));
+        given(iotLightJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(light.getId(), SCHOOL_NAME)).willReturn(Optional.of(light));
 
         // when & then: decisionNode/엣지 조회 전에 걸러지므로 관련 mock 없이도 검증 가능
-        assertThatThrownBy(() -> iotLightService.configureGuidance(light.getId(), request))
+        assertThatThrownBy(() -> iotLightService.configureGuidance(light.getId(), request, EMAIL))
                 .isInstanceOf(ApiException.class)
                 .hasMessage(IoTLightErrorCode.INVALID_GUIDANCE_EDGE.getMessage());
     }
@@ -281,11 +286,11 @@ class IoTLightServiceTest {
         ConfigureGuidanceRequest request =
                 new ConfigureGuidanceRequest(unknownNodeId, UUID.randomUUID(), UUID.randomUUID());
 
-        given(iotLightJpaRepository.findById(light.getId())).willReturn(Optional.of(light));
-        given(mapNodeJpaRepository.findById(unknownNodeId)).willReturn(Optional.empty());
+        given(iotLightJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(light.getId(), SCHOOL_NAME)).willReturn(Optional.of(light));
+        given(mapNodeJpaRepository.findByIdAndFloor_Building_SchoolName(unknownNodeId, SCHOOL_NAME)).willReturn(Optional.empty());
 
         // when & then
-        assertThatThrownBy(() -> iotLightService.configureGuidance(light.getId(), request))
+        assertThatThrownBy(() -> iotLightService.configureGuidance(light.getId(), request, EMAIL))
                 .isInstanceOf(ApiException.class)
                 .hasMessage(IoTLightErrorCode.DECISION_NODE_NOT_FOUND.getMessage());
     }
@@ -299,10 +304,10 @@ class IoTLightServiceTest {
         MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
         IoTLight light = createLight("LIGHT_001", customNode);
         UpdateIoTLightRequest request = new UpdateIoTLightRequest("변경된 이름", 0.7, 0.8);
-        given(iotLightJpaRepository.findById(light.getId())).willReturn(Optional.of(light));
+        given(iotLightJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(light.getId(), SCHOOL_NAME)).willReturn(Optional.of(light));
 
         // when
-        IoTLightResponse response = iotLightService.updateLight(light.getId(), request);
+        IoTLightResponse response = iotLightService.updateLight(light.getId(), request, EMAIL);
 
         // then
         assertThat(response.name()).isEqualTo("변경된 이름");
@@ -318,10 +323,10 @@ class IoTLightServiceTest {
         // given
         MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
         IoTLight light = createLight("LIGHT_001", customNode);
-        given(iotLightJpaRepository.findById(light.getId())).willReturn(Optional.of(light));
+        given(iotLightJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(light.getId(), SCHOOL_NAME)).willReturn(Optional.of(light));
 
         // when
-        IoTLightResponse response = iotLightService.disableLight(light.getId());
+        IoTLightResponse response = iotLightService.disableLight(light.getId(), EMAIL);
 
         // then
         assertThat(response.enabled()).isFalse();
@@ -335,10 +340,10 @@ class IoTLightServiceTest {
         // given
         MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
         IoTLight light = createLight("LIGHT_001", customNode);
-        given(iotLightJpaRepository.findById(light.getId())).willReturn(Optional.of(light));
+        given(iotLightJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(light.getId(), SCHOOL_NAME)).willReturn(Optional.of(light));
 
         // when
-        iotLightService.deleteLight(light.getId());
+        iotLightService.deleteLight(light.getId(), EMAIL);
 
         // then
         verify(mapEdgeJpaRepository).deleteByFromNode_IdOrToNode_Id(customNode.getId(), customNode.getId());
@@ -350,10 +355,10 @@ class IoTLightServiceTest {
     void deleteLight_notFound_throws() {
         // given
         UUID unknownId = UUID.randomUUID();
-        given(iotLightJpaRepository.findById(unknownId)).willReturn(Optional.empty());
+        given(iotLightJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(unknownId, SCHOOL_NAME)).willReturn(Optional.empty());
 
         // when & then
-        assertThatThrownBy(() -> iotLightService.deleteLight(unknownId))
+        assertThatThrownBy(() -> iotLightService.deleteLight(unknownId, EMAIL))
                 .isInstanceOf(ApiException.class)
                 .hasMessage(IoTLightErrorCode.IOT_LIGHT_NOT_FOUND.getMessage());
         verifyNoInteractions(mapEdgeJpaRepository, mapNodeJpaRepository);
@@ -370,10 +375,10 @@ class IoTLightServiceTest {
         light.updatePiEndpoint("http://192.168.0.50:5000");
         ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.OFF);
 
-        given(iotLightJpaRepository.findById(light.getId())).willReturn(Optional.of(light));
+        given(iotLightJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(light.getId(), SCHOOL_NAME)).willReturn(Optional.of(light));
 
         // when
-        LightDirectionResponse response = iotLightService.changeDirection(light.getId(), request);
+        LightDirectionResponse response = iotLightService.changeDirection(light.getId(), request, EMAIL);
 
         // then
         assertThat(response.direction()).isEqualTo(IoTLightDirection.OFF);
@@ -395,10 +400,10 @@ class IoTLightServiceTest {
         light.configureGuidance(decisionNode, createEdge(decisionNode, leftTarget), createEdge(decisionNode, rightTarget));
         ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.LEFT);
 
-        given(iotLightJpaRepository.findById(light.getId())).willReturn(Optional.of(light));
+        given(iotLightJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(light.getId(), SCHOOL_NAME)).willReturn(Optional.of(light));
 
         // when
-        LightDirectionResponse response = iotLightService.changeDirection(light.getId(), request);
+        LightDirectionResponse response = iotLightService.changeDirection(light.getId(), request, EMAIL);
 
         // then
         assertThat(response.direction()).isEqualTo(IoTLightDirection.LEFT);
@@ -414,10 +419,10 @@ class IoTLightServiceTest {
         light.updatePiEndpoint("http://192.168.0.50:5000");
         ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.LEFT);
 
-        given(iotLightJpaRepository.findById(light.getId())).willReturn(Optional.of(light));
+        given(iotLightJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(light.getId(), SCHOOL_NAME)).willReturn(Optional.of(light));
 
         // when & then
-        assertThatThrownBy(() -> iotLightService.changeDirection(light.getId(), request))
+        assertThatThrownBy(() -> iotLightService.changeDirection(light.getId(), request, EMAIL))
                 .isInstanceOf(ApiException.class)
                 .hasMessage(IoTLightErrorCode.GUIDANCE_NOT_CONFIGURED.getMessage());
         verifyNoInteractions(iotLightPiClient, iotLightDirectionStore, trainingEventPublisher);
@@ -433,10 +438,10 @@ class IoTLightServiceTest {
         light.disable();
         ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.OFF);
 
-        given(iotLightJpaRepository.findById(light.getId())).willReturn(Optional.of(light));
+        given(iotLightJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(light.getId(), SCHOOL_NAME)).willReturn(Optional.of(light));
 
         // when & then
-        assertThatThrownBy(() -> iotLightService.changeDirection(light.getId(), request))
+        assertThatThrownBy(() -> iotLightService.changeDirection(light.getId(), request, EMAIL))
                 .isInstanceOf(ApiException.class)
                 .hasMessage(IoTLightErrorCode.LIGHT_DISABLED.getMessage());
         verifyNoInteractions(iotLightPiClient, iotLightDirectionStore, trainingEventPublisher);
@@ -450,10 +455,10 @@ class IoTLightServiceTest {
         IoTLight light = createLight("LIGHT_001", customNode);
         ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.OFF);
 
-        given(iotLightJpaRepository.findById(light.getId())).willReturn(Optional.of(light));
+        given(iotLightJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(light.getId(), SCHOOL_NAME)).willReturn(Optional.of(light));
 
         // when & then
-        assertThatThrownBy(() -> iotLightService.changeDirection(light.getId(), request))
+        assertThatThrownBy(() -> iotLightService.changeDirection(light.getId(), request, EMAIL))
                 .isInstanceOf(ApiException.class)
                 .hasMessage(IoTLightErrorCode.DEVICE_UNREACHABLE.getMessage());
         verifyNoInteractions(iotLightPiClient, iotLightDirectionStore, trainingEventPublisher);
@@ -468,14 +473,45 @@ class IoTLightServiceTest {
         light.updatePiEndpoint("http://192.168.0.50:5000");
         ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.OFF);
 
-        given(iotLightJpaRepository.findById(light.getId())).willReturn(Optional.of(light));
+        given(iotLightJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(light.getId(), SCHOOL_NAME)).willReturn(Optional.of(light));
         org.mockito.BDDMockito.willThrow(new ApiException(IoTLightErrorCode.DEVICE_UNREACHABLE))
                 .given(iotLightPiClient).sendDirection(any(), any(), any());
 
         // when & then
-        assertThatThrownBy(() -> iotLightService.changeDirection(light.getId(), request))
+        assertThatThrownBy(() -> iotLightService.changeDirection(light.getId(), request, EMAIL))
                 .isInstanceOf(ApiException.class)
                 .hasMessage(IoTLightErrorCode.DEVICE_UNREACHABLE.getMessage());
         verifyNoInteractions(iotLightDirectionStore, trainingEventPublisher);
+    }
+
+    @Test
+    @DisplayName("다른 기관 유도등의 모든 변경 요청은 not-found로 거부한다")
+    void mutations_otherSchool_throwNotFoundWithoutChangingState() {
+        UUID lightId = UUID.randomUUID();
+        List<ThrowingCallable> operations = List.of(
+                () -> iotLightService.configureGuidance(
+                        lightId,
+                        new ConfigureGuidanceRequest(
+                                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID()),
+                        EMAIL),
+                () -> iotLightService.updateLight(
+                        lightId, new UpdateIoTLightRequest("변경 이름", 0.4, 0.6), EMAIL),
+                () -> iotLightService.updatePiEndpoint(
+                        lightId, new UpdatePiEndpointRequest("http://localhost:5000"), EMAIL),
+                () -> iotLightService.enableLight(lightId, EMAIL),
+                () -> iotLightService.disableLight(lightId, EMAIL),
+                () -> iotLightService.deleteLight(lightId, EMAIL),
+                () -> iotLightService.changeDirection(
+                        lightId, new ChangeLightDirectionRequest(IoTLightDirection.OFF), EMAIL)
+        );
+
+        for (ThrowingCallable operation : operations) {
+            assertThatThrownBy(operation)
+                    .isInstanceOf(ApiException.class)
+                    .extracting(exception -> ((ApiException) exception).getErrorCode())
+                    .isEqualTo(IoTLightErrorCode.IOT_LIGHT_NOT_FOUND);
+        }
+
+        verifyNoInteractions(iotLightPiClient, iotLightDirectionStore, trainingEventPublisher);
     }
 }

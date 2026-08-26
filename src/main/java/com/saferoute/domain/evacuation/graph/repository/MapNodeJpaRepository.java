@@ -5,6 +5,7 @@ import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.evacuation.graph.entity.NodeType;
 import com.saferoute.domain.floor.entity.Floor;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -16,6 +17,8 @@ public interface MapNodeJpaRepository extends JpaRepository<MapNode, UUID> {
     List<MapNode> findAllByFloor_Id(UUID floorId);
 
     List<MapNode> findAllByFloor_IdAndType(UUID floorId, NodeType type);
+
+    Optional<MapNode> findByIdAndFloor_Building_SchoolName(UUID id, String schoolName);
 
     // MapNode.code 순번 생성용 (Service에서 NODE_001 형태로 채번)
     long countByFloor_Id(UUID floorId);
