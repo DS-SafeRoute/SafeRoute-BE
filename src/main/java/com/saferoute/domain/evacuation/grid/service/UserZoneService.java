@@ -1,6 +1,7 @@
 package com.saferoute.domain.evacuation.grid.service;
 
 import com.saferoute.domain.evacuation.grid.dto.request.UserZoneCreateRequest;
+import com.saferoute.domain.evacuation.grid.dto.response.AllUserZoneResponse;
 import com.saferoute.domain.evacuation.grid.dto.response.UserZoneResponse;
 import com.saferoute.domain.evacuation.grid.entity.FloorGridCell;
 import com.saferoute.domain.evacuation.grid.entity.UserZone;
@@ -11,9 +12,10 @@ import com.saferoute.domain.floor.repository.FloorRepository;
 import com.saferoute.global.api.error.FloorErrorCode;
 import com.saferoute.global.api.error.UserZoneErrorCode;
 import com.saferoute.global.api.exception.ApiException;
-import jakarta.transaction.Transactional;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;
@@ -50,7 +52,7 @@ public class UserZoneService {
 
         cells.forEach(cell -> cell.assignUserZone(zone));
 
-        return UserZoneResponse.of(zone.getId(), zone.getName(), floor.getFloorNum(), cells);
+        return UserZoneResponse.of(zone.getId(), zone.getName(), floor.getFloorNum());
     }
 
     @Transactional
@@ -63,5 +65,15 @@ public class UserZoneService {
         }
 
         userZoneRepository.delete(userZone);
+    }
+
+    @Transactional(readOnly=true)
+    public AllUserZoneResponse findAll(UUID floorId){
+        Floor floor = floorRepository.findById(floorId)
+                .orElseThrow(() -> new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
+
+        List<UserZone> userZones = userZoneRepository.findAllByFloor_Id(floorId);
+
+        return AllUserZoneResponse.of(userZones, floor.getFloorNum());
     }
 }

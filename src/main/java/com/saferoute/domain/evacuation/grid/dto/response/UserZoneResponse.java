@@ -6,18 +6,16 @@ import java.util.List;
 import java.util.UUID;
 
 public record UserZoneResponse(
-        UUID UserZoneId,
-        String UserZoneName,
-        int FloorNum,
-        List<FloorGridCell> cells
+        UUID userZoneId,
+        String userZoneName,
+        int floorNum
 
 ) {
-    public static UserZoneResponse of(UUID userZoneId, String userZoneName, int floorNum, List<FloorGridCell> cells) {
+    public static UserZoneResponse of(UUID userZoneId, String userZoneName, int floorNum) {
         return new UserZoneResponse(
                 userZoneId,
                 userZoneName,
-                floorNum,
-                cells
+                floorNum
         );
     }
 }

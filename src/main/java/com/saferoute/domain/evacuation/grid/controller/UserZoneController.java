@@ -1,6 +1,7 @@
 package com.saferoute.domain.evacuation.grid.controller;
 
 import com.saferoute.domain.evacuation.grid.dto.request.UserZoneCreateRequest;
+import com.saferoute.domain.evacuation.grid.dto.response.AllUserZoneResponse;
 import com.saferoute.domain.evacuation.grid.dto.response.UserZoneResponse;
 import com.saferoute.domain.evacuation.grid.service.UserZoneService;
 import com.saferoute.global.api.response.ApiResponse;
@@ -34,5 +35,12 @@ public class UserZoneController {
     ){
         userZoneService.delete(floorId, userZoneId);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/{floorId}")
+    public ApiResponse<AllUserZoneResponse> findAllUserZone(
+            @PathVariable UUID floorId
+    ){
+        return ApiResponse.success(userZoneService.findAll(floorId));
     }
 }
