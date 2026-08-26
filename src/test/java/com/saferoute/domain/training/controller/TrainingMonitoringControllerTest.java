@@ -140,9 +140,9 @@ class TrainingMonitoringControllerTest {
                 .andExpect(jsonPath("$.result.cameras[0].thumbnailUrl")
                         .value("https://example.com/frame.jpg"))
                 .andExpect(jsonPath("$.result.cameras[1].code").value("CCTV_002"))
-                .andExpect(jsonPath("$.result.cameras[1].thumbnailUrl").isEmpty())
-                .andExpect(jsonPath("$.result.cameras[1].capturedAt").isEmpty())
-                .andExpect(jsonPath("$.result.cameras[1].urlExpiresAt").isEmpty());
+                .andExpect(jsonPath("$.result.cameras[1].thumbnailUrl").value((Object) null))
+                .andExpect(jsonPath("$.result.cameras[1].capturedAt").value((Object) null))
+                .andExpect(jsonPath("$.result.cameras[1].urlExpiresAt").value((Object) null));
     }
 
     @Test
@@ -164,9 +164,9 @@ class TrainingMonitoringControllerTest {
         mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/cameras", SESSION_ID)
                         .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.cameras[0].thumbnailUrl").isEmpty())
-                .andExpect(jsonPath("$.result.cameras[0].capturedAt").isEmpty())
-                .andExpect(jsonPath("$.result.cameras[0].urlExpiresAt").isEmpty());
+                .andExpect(jsonPath("$.result.cameras[0].thumbnailUrl").value((Object) null))
+                .andExpect(jsonPath("$.result.cameras[0].capturedAt").value((Object) null))
+                .andExpect(jsonPath("$.result.cameras[0].urlExpiresAt").value((Object) null));
     }
 
     @Test
