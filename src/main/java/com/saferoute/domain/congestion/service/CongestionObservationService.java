@@ -80,7 +80,8 @@ public class CongestionObservationService {
             throw new ApiException(CongestionErrorCode.MONITORED_AREA_NOT_AVAILABLE);
         }
 
-        validateMonitoringImageKey(session.getId(), cctv.getCode(), request.capturedAt(), request.monitoringImageKey());
+        String monitoringImageKey = validateMonitoringImageKey(
+                session.getId(), cctv.getCode(), request.capturedAt(), request.monitoringImageKey());
 
         double density = request.avgHeadcount() / monitoredAreaM2;
         CongestionLevel level = config.classify(density);
@@ -98,13 +99,13 @@ public class CongestionObservationService {
                 request.windowStart(),
                 request.windowEnd(),
                 request.capturedAt(),
-                request.monitoringImageKey(),
+                monitoringImageKey,
                 request.configVersion()
         );
 
         IdempotentSaveResult<ObservationItem> saveResult = observationRepository.saveIfAbsent(item);
         validateEventIdentity(saveResult.item(), request, session.getId());
-        updateLatestMonitoringCapture(session.getId(), cctv.getCode(), request);
+        updateLatestMonitoringCapture(session.getId(), cctv.getCode(), request.capturedAt(), monitoringImageKey);
 
         String processingOwner = UUID.randomUUID().toString();
         long processingStartedAt = Instant.now().toEpochMilli();
@@ -180,13 +181,14 @@ public class CongestionObservationService {
     private void updateLatestMonitoringCapture(
             UUID sessionId,
             String cctvCode,
-            ReportObservationRequest request
+            long capturedAt,
+            String monitoringImageKey
     ) {
         LatestMonitoringCaptureItem capture = LatestMonitoringCaptureItem.create(
                 sessionId,
                 cctvCode,
-                request.capturedAt(),
-                request.monitoringImageKey()
+                capturedAt,
+                monitoringImageKey
         );
         if (!latestMonitoringCaptureRepository.updateIfLatest(capture)) {
             log.debug("더 최신 캡처가 있어 모니터링 포인터 갱신을 건너뜀: cctvCode={}", cctvCode);
@@ -195,11 +197,12 @@ public class CongestionObservationService {
 
     // monitoringImageKey는 Pi가 임의로 채워 보내는 문자열이라, canonical 경로 형식과 요청 신원(세션/CCTV/캡처시각)이
     // 일치하는지 검증한 뒤에만 저장한다. 다른 세션/CCTV의 S3 객체를 가리키는 변조된 key가 저장되는 것을 막기 위함.
-    private void validateMonitoringImageKey(
+    // 빈 문자열은 이미지 없음을 뜻하는 null로 정규화해서 반환한다 - CongestionImageUrlService는 null만 이미지 없음으로 취급한다.
+    private String validateMonitoringImageKey(
             UUID sessionId, String cctvCode, long capturedAt, String monitoringImageKey
     ) {
         if (monitoringImageKey == null || monitoringImageKey.isBlank()) {
-            return;
+            return null;
         }
 
         String[] segments = monitoringImageKey.split("/", -1);
@@ -220,6 +223,7 @@ public class CongestionObservationService {
         if (!sameIdentity) {
             throw new ApiException(CongestionErrorCode.MONITORING_IMAGE_IDENTITY_MISMATCH);
         }
+        return monitoringImageKey;
     }
 
     private UUID parseCanonicalUuid(String value) {
@@ -235,11 +239,18 @@ public class CongestionObservationService {
     }
 
     private long parseCapturedAt(String value) {
+        long parsed;
         try {
-            return Long.parseLong(value);
+            parsed = Long.parseLong(value);
         } catch (NumberFormatException exception) {
             throw new ApiException(CongestionErrorCode.MONITORING_IMAGE_KEY_INVALID, exception);
         }
+        // Long.parseLong은 "+2000", "02000" 같은 비canonical 표기도 허용하므로,
+        // 다시 문자열로 되돌렸을 때 원본과 같은지 확인해 canonical decimal만 통과시킨다.
+        if (!Long.toString(parsed).equals(value)) {
+            throw new ApiException(CongestionErrorCode.MONITORING_IMAGE_KEY_INVALID);
+        }
+        return parsed;
     }
 
     private void validateEventIdentity(ObservationItem item, ReportObservationRequest request, UUID sessionId) {

@@ -318,6 +318,44 @@ class CongestionObservationServiceTest {
     }
 
     @Test
+    @DisplayName("빈 monitoringImageKey는 검증을 통과시키되 null로 정규화해서 저장한다")
+    void reportObservation_normalizesBlankMonitoringImageKeyToNull() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        givenProcessingClaimed();
+        givenAffectedEdges();
+
+        service.reportObservation(cctv, request(5.0, ""));
+
+        verify(observationRepository).saveIfAbsent(argThat(item ->
+                item.getMonitoringImageKey() == null));
+        verify(latestMonitoringCaptureRepository).updateIfLatest(argThat(capture ->
+                capture.getMonitoringImageKey() == null));
+    }
+
+    @Test
+    @DisplayName("monitoringImageKey의 capturedAt 세그먼트가 canonical decimal이 아니면 CONGESTION010을 반환한다")
+    void reportObservation_rejectsNonCanonicalCapturedAtSegment() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> service.reportObservation(
+                cctv, request(5.0, "training/" + sessionId + "/monitoring/CCTV_001/+2000.jpg")))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", CongestionErrorCode.MONITORING_IMAGE_KEY_INVALID);
+        assertThatThrownBy(() -> service.reportObservation(
+                cctv, request(5.0, "training/" + sessionId + "/monitoring/CCTV_001/02000.jpg")))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", CongestionErrorCode.MONITORING_IMAGE_KEY_INVALID);
+
+        verify(observationRepository, never()).saveIfAbsent(any());
+    }
+
+    @Test
     @DisplayName("monitoringImageKey 형식이 canonical 경로가 아니면 CONGESTION010을 반환한다")
     void reportObservation_rejectsMalformedMonitoringImageKey() {
         TrainingSession session = mock(TrainingSession.class);
