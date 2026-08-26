@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -108,5 +108,11 @@ public class IoTLightController {
     public ResponseEntity<ApiResponse<IoTLightResponse>> disableLight(@PathVariable UUID lightId) {
         IoTLightResponse response = iotLightService.disableLight(lightId);
         return ResponseEntity.ok(ApiResponse.success(IoTLightSuccessCode.IOT_LIGHT_DISABLED, response));
+    }
+
+    @DeleteMapping("/{lightId}")
+    public ResponseEntity<ApiResponse<Void>> deleteLight(@PathVariable UUID lightId) {
+        iotLightService.deleteLight(lightId);
+        return ResponseEntity.ok(ApiResponse.success(IoTLightSuccessCode.IOT_LIGHT_DELETED, null));
     }
 }

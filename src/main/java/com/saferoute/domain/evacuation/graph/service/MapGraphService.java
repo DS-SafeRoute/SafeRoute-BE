@@ -62,11 +62,18 @@ public class MapGraphService {
         return MapNodeResponse.from(node);
     }
 
-    // 노드 위치 수정 (드래그 편집)
+    // 노드 위치 및 EXIT 대상 여부 수정 (드래그 편집)
     @Transactional
     public MapNodeResponse updateNodePosition(UUID nodeId, UpdateMapNodePositionRequest request) {
         MapNode node = findNodeOrThrow(nodeId);
-        MapNode updated = mapGraphRepository.updateNodePosition(node, request.x(), request.y());
+        if (!request.isExitTarget()) {
+            // 동일 층에 대한 동시 수정 요청을 직렬화해 마지막 EXIT 카운트 검증과 해제 사이의 경쟁을 방지
+            floorRepository.findByIdForUpdate(node.getFloor().getId())
+                    .orElseThrow(() -> new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
+            validateNotLastExitNode(node, EvacuationErrorCode.EXIT_NODE_UNSET_NOT_ALLOWED);
+        }
+        MapNode updated = mapGraphRepository.updateNodePosition(
+                node, request.x(), request.y(), request.isExitTarget());
         return MapNodeResponse.from(updated);
     }
 
@@ -77,19 +84,19 @@ public class MapGraphService {
         // 동일 층에 대한 동시 삭제 요청을 직렬화해 마지막 EXIT 카운트 검증과 삭제 사이의 경쟁을 방지
         floorRepository.findByIdForUpdate(node.getFloor().getId())
                 .orElseThrow(() -> new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
-        validateNotLastExitNode(node);
+        validateNotLastExitNode(node, EvacuationErrorCode.EXIT_NODE_DELETE_NOT_ALLOWED);
         mapGraphRepository.deleteNode(node);
     }
 
-    // 대상 노드가 EXIT 대상(isExitTarget)이고, 해당 층에 남은 EXIT 대상 노드가 1개뿐이면 삭제 금지
-    // (출구가 여러 개인 층에서 하나를 지우는 정상 편집은 허용, 마지막 하나만 보호)
-    private void validateNotLastExitNode(MapNode node) {
+    // 대상 노드가 EXIT 대상(isExitTarget)이고, 해당 층에 남은 EXIT 대상 노드가 1개뿐이면 거부
+    // (출구가 여러 개인 층에서 하나를 지우거나 해제하는 정상 편집은 허용, 마지막 하나만 보호)
+    private void validateNotLastExitNode(MapNode node, EvacuationErrorCode errorCode) {
         if (!node.isExitTarget()) {
             return;
         }
         long exitCount = mapGraphRepository.countExitTargetNodesByFloor(node.getFloor().getId());
         if (exitCount <= 1) {
-            throw new ApiException(EvacuationErrorCode.EXIT_NODE_DELETE_NOT_ALLOWED);
+            throw new ApiException(errorCode);
         }
     }
 

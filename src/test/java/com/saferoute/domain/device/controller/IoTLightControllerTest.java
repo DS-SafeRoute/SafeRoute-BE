@@ -4,6 +4,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -34,7 +35,6 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -51,8 +51,6 @@ import org.springframework.test.web.servlet.MockMvc;
 )
 @AutoConfigureMockMvc(addFilters = false)
 class IoTLightControllerTest {
-
-    private static final String EMAIL = "manager@saferoute.com";
 
     @Autowired
     private MockMvc mockMvc;
@@ -119,11 +117,9 @@ class IoTLightControllerTest {
     @Test
     @DisplayName("GET /lights - 층별로 유도등 목록을 조회한다")
     void getLights_success() throws Exception {
-        given(iotLightService.getLights(floorId, EMAIL)).willReturn(List.of(sampleResponse()));
+        given(iotLightService.getLights(floorId)).willReturn(List.of(sampleResponse()));
 
-        mockMvc.perform(get("/api/v1/lights")
-                        .param("floorId", floorId.toString())
-                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
+        mockMvc.perform(get("/api/v1/lights").param("floorId", floorId.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.length()").value(1));
     }
@@ -131,11 +127,10 @@ class IoTLightControllerTest {
     @Test
     @DisplayName("GET /lights/{lightId} - 유도등이 없으면 404를 반환한다")
     void getLight_notFound() throws Exception {
-        given(iotLightService.getLight(lightId, EMAIL))
+        given(iotLightService.getLight(lightId))
                 .willThrow(new ApiException(IoTLightErrorCode.IOT_LIGHT_NOT_FOUND));
 
-        mockMvc.perform(get("/api/v1/lights/{lightId}", lightId)
-                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
+        mockMvc.perform(get("/api/v1/lights/{lightId}", lightId))
                 .andExpect(status().isNotFound());
     }
 
@@ -291,5 +286,25 @@ class IoTLightControllerTest {
                         .contentType("application/json")
                         .content("{}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    // === deleteLight ===
+
+    @Test
+    @DisplayName("DELETE /lights/{lightId} - 유도등을 삭제하면 200을 반환한다")
+    void deleteLight_success() throws Exception {
+        mockMvc.perform(delete("/api/v1/lights/{lightId}", lightId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true));
+    }
+
+    @Test
+    @DisplayName("DELETE /lights/{lightId} - 유도등이 없으면 404를 반환한다")
+    void deleteLight_notFound() throws Exception {
+        org.mockito.BDDMockito.willThrow(new ApiException(IoTLightErrorCode.IOT_LIGHT_NOT_FOUND))
+                .given(iotLightService).deleteLight(lightId);
+
+        mockMvc.perform(delete("/api/v1/lights/{lightId}", lightId))
+                .andExpect(status().isNotFound());
     }
 }
