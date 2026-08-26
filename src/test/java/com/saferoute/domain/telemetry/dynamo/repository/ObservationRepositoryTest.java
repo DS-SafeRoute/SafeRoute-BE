@@ -106,6 +106,46 @@ class ObservationRepositoryTest {
     }
 
     @Test
+    void 세션과_CCTV의_최신_관측값을_GSI에서_한_건_조회한다() {
+        ObservationItem latest = item("observation-latest", 2_000L);
+        ObservationItem older = item("observation-older", 1_000L);
+        when(gsi1.query(any(QueryEnhancedRequest.class))).thenReturn(
+                PageIterable.create(() -> List.of(Page.builder(ObservationItem.class)
+                        .items(List.of(latest, older)).build()).iterator())
+        );
+        ArgumentCaptor<QueryEnhancedRequest> captor = ArgumentCaptor.forClass(QueryEnhancedRequest.class);
+
+        var result = repository.findLatestBySessionIdAndCctvCode(
+                SESSION_ID.toString(), "CCTV_001"
+        );
+
+        verify(gsi1).query(captor.capture());
+        QueryEnhancedRequest request = captor.getValue();
+        assertThat(request.scanIndexForward()).isFalse();
+        assertThat(request.limit()).isEqualTo(1);
+        assertThat(request.queryConditional()
+                .expression(TableSchema.fromBean(ObservationItem.class), ObservationItem.GSI1_NAME)
+                .expressionValues().values())
+                .extracting(value -> value.s())
+                .containsExactly("SESSION#" + SESSION_ID + "#CCTV#CCTV_001");
+        assertThat(result).contains(latest);
+    }
+
+    @Test
+    void 세션과_CCTV의_관측값이_없으면_empty를_반환한다() {
+        when(gsi1.query(any(QueryEnhancedRequest.class))).thenReturn(
+                PageIterable.create(() -> List.of(Page.builder(ObservationItem.class)
+                        .items(List.of()).build()).iterator())
+        );
+
+        var result = repository.findLatestBySessionIdAndCctvCode(
+                SESSION_ID.toString(), "CCTV_001"
+        );
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
     void 조회_limit은_양수여야_한다() {
         assertThatThrownBy(() -> repository.findAllBySessionIdAndCctvCode(
                 SESSION_ID.toString(), "CCTV_001", 0

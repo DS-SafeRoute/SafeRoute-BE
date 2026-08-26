@@ -1,6 +1,7 @@
 package com.saferoute.domain.telemetry.dynamo.entity;
 
 import com.saferoute.domain.congestion.entity.CongestionLevel;
+import java.util.Locale;
 import java.util.UUID;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbAttribute;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
@@ -14,6 +15,7 @@ public class ObservationItem {
 
     public static final String GSI1_NAME = "GSI1";
     public static final long TTL_SECONDS = 30L * 24 * 60 * 60;
+    private static final int GSI1_TIMESTAMP_WIDTH = 19;
 
     private String pk;
     private String sk;
@@ -97,7 +99,11 @@ public class ObservationItem {
     }
 
     public static String buildGsi1Sk(long capturedAt) {
-        return "TIME#" + capturedAt;
+        return "TIME#" + String.format(
+                Locale.ROOT,
+                "%0" + GSI1_TIMESTAMP_WIDTH + "d",
+                capturedAt
+        );
     }
 
     @DynamoDbPartitionKey

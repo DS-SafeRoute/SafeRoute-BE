@@ -71,6 +71,23 @@ public class ObservationRepository {
         return Optional.ofNullable(table.getItem(request));
     }
 
+    public Optional<ObservationItem> findLatestBySessionIdAndCctvCode(
+            String trainingSessionId,
+            String cctvCode
+    ) {
+        QueryEnhancedRequest request = QueryEnhancedRequest.builder()
+                .queryConditional(QueryConditional.keyEqualTo(Key.builder()
+                        .partitionValue(ObservationItem.buildGsi1Pk(trainingSessionId, cctvCode))
+                        .build()))
+                .scanIndexForward(false)
+                .limit(1)
+                .build();
+
+        return gsi1.query(request).stream()
+                .flatMap(page -> page.items().stream())
+                .findFirst();
+    }
+
     public boolean claimProcessing(
             String eventId,
             String processingOwner,
