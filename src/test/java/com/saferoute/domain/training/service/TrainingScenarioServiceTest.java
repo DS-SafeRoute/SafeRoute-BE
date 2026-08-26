@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 
 import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.building.repository.BuildingRepository;
+import com.saferoute.domain.report.repository.TrainingReportRepository;
 import com.saferoute.domain.training.dto.ScenarioResponse;
 import com.saferoute.domain.training.entity.FireSpreadSpeed;
 import com.saferoute.domain.training.entity.TrainingScenario;
@@ -48,6 +49,9 @@ class TrainingScenarioServiceTest {
     private TrainingSessionRepository trainingSessionRepository;
 
     @Mock
+    private TrainingReportRepository trainingReportRepository;
+
+    @Mock
     private BuildingRepository buildingRepository;
 
     @Mock
@@ -81,6 +85,8 @@ class TrainingScenarioServiceTest {
                 .willReturn(List.of(scenario));
         given(trainingSessionRepository.findScenarioIdsWithAnySession(List.of(scenarioId)))
                 .willReturn(Set.of());
+        given(trainingReportRepository.findReportIdsByScenarioIds(List.of(scenarioId)))
+                .willReturn(List.of());
 
         List<ScenarioResponse> responses = trainingScenarioService.getScenarios(EMAIL);
 
@@ -98,6 +104,8 @@ class TrainingScenarioServiceTest {
                 .willReturn(List.of(scenario));
         given(trainingSessionRepository.findScenarioIdsWithAnySession(List.of(scenarioId)))
                 .willReturn(Set.of(scenarioId));
+        given(trainingReportRepository.findReportIdsByScenarioIds(List.of(scenarioId)))
+                .willReturn(List.of());
 
         List<ScenarioResponse> responses = trainingScenarioService.getScenarios(EMAIL);
 
@@ -106,7 +114,60 @@ class TrainingScenarioServiceTest {
     }
 
     @Test
-    @DisplayName("시나리오가 하나도 없으면 세션 조회 없이 빈 목록을 반환한다")
+    @DisplayName("리포트가 생성된 시나리오는 목록에서 reportId를 함께 응답한다")
+    void getScenarios_scenarioWithReport_returnsReportId() {
+        UUID scenarioId = UUID.randomUUID();
+        UUID reportId = UUID.randomUUID();
+        TrainingScenario scenario = scenarioWithId(scenarioId);
+        given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
+        given(scenarioRepository.findAllByBuilding_SchoolNameOrderByCreatedAtDesc(SCHOOL_NAME))
+                .willReturn(List.of(scenario));
+        given(trainingSessionRepository.findScenarioIdsWithAnySession(List.of(scenarioId)))
+                .willReturn(Set.of(scenarioId));
+        given(trainingReportRepository.findReportIdsByScenarioIds(List.of(scenarioId)))
+                .willReturn(List.of(scenarioReportId(scenarioId, reportId)));
+
+        List<ScenarioResponse> responses = trainingScenarioService.getScenarios(EMAIL);
+
+        assertThat(responses).hasSize(1);
+        assertThat(responses.get(0).getReportId()).isEqualTo(reportId);
+    }
+
+    @Test
+    @DisplayName("리포트가 없는 시나리오는 목록에서 reportId가 null이다")
+    void getScenarios_scenarioWithoutReport_returnsNullReportId() {
+        UUID scenarioId = UUID.randomUUID();
+        TrainingScenario scenario = scenarioWithId(scenarioId);
+        given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
+        given(scenarioRepository.findAllByBuilding_SchoolNameOrderByCreatedAtDesc(SCHOOL_NAME))
+                .willReturn(List.of(scenario));
+        given(trainingSessionRepository.findScenarioIdsWithAnySession(List.of(scenarioId)))
+                .willReturn(Set.of());
+        given(trainingReportRepository.findReportIdsByScenarioIds(List.of(scenarioId)))
+                .willReturn(List.of());
+
+        List<ScenarioResponse> responses = trainingScenarioService.getScenarios(EMAIL);
+
+        assertThat(responses).hasSize(1);
+        assertThat(responses.get(0).getReportId()).isNull();
+    }
+
+    private TrainingReportRepository.ScenarioReportId scenarioReportId(UUID scenarioId, UUID reportId) {
+        return new TrainingReportRepository.ScenarioReportId() {
+            @Override
+            public UUID getScenarioId() {
+                return scenarioId;
+            }
+
+            @Override
+            public UUID getReportId() {
+                return reportId;
+            }
+        };
+    }
+
+    @Test
+    @DisplayName("시나리오가 하나도 없으면 세션/리포트 조회 없이 빈 목록을 반환한다")
     void getScenarios_noScenarios_returnsEmptyListWithoutQueryingSessions() {
         given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
         given(scenarioRepository.findAllByBuilding_SchoolNameOrderByCreatedAtDesc(SCHOOL_NAME))
@@ -116,6 +177,7 @@ class TrainingScenarioServiceTest {
 
         assertThat(responses).isEmpty();
         verify(trainingSessionRepository, never()).findScenarioIdsWithAnySession(org.mockito.ArgumentMatchers.any());
+        verify(trainingReportRepository, never()).findReportIdsByScenarioIds(org.mockito.ArgumentMatchers.any());
     }
 
     // === deleteScenario ===
