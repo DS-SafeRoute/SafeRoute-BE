@@ -67,6 +67,13 @@ class TrainingSessionServiceTest {
 
     private final UUID sessionId = UUID.randomUUID();
 
+    @BeforeEach
+    void setUpSchoolContext() {
+        org.mockito.Mockito.lenient()
+                .when(schoolContextService.getSchoolName(EMAIL))
+                .thenReturn(SCHOOL_NAME);
+    }
+
     private TrainingSession sessionWithStatus(TrainingStatus status) {
         TrainingSession session =
                 TrainingSession.create(status, Instant.now(), mock(User.class), mock(TrainingScenario.class));
@@ -97,16 +104,38 @@ class TrainingSessionServiceTest {
 
         User manager = mock(User.class);
         given(manager.getRole()).willReturn(UserRole.MANAGER);
-        given(userRepository.findById(adminId)).willReturn(Optional.of(manager));
-        given(trainingScenarioRepository.findById(scenarioId))
+        given(userRepository.findByIdAndSchoolName(adminId, SCHOOL_NAME)).willReturn(Optional.of(manager));
+        given(trainingScenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
                 .willReturn(Optional.of(mock(TrainingScenario.class)));
 
         CreateSessionRequest request = new CreateSessionRequest(TrainingStatus.RUNNING, null, adminId);
 
-        assertThatThrownBy(() -> trainingSessionService.create(request, scenarioId))
+        assertThatThrownBy(() -> trainingSessionService.create(request, scenarioId, EMAIL))
                 .isInstanceOf(ApiException.class)
                 .extracting(exception -> ((ApiException) exception).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_INPUT);
+    }
+
+    @Test
+    @DisplayName("다른 기관의 시나리오로 훈련 세션을 생성할 수 없다")
+    void create_otherSchoolScenario_throwsNotFound() {
+        UUID adminId = UUID.randomUUID();
+        UUID scenarioId = UUID.randomUUID();
+        User manager = mock(User.class);
+        given(manager.getRole()).willReturn(UserRole.MANAGER);
+        given(userRepository.findByIdAndSchoolName(adminId, SCHOOL_NAME))
+                .willReturn(Optional.of(manager));
+        given(trainingScenarioRepository
+                .findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
+                .willReturn(Optional.empty());
+        CreateSessionRequest request =
+                new CreateSessionRequest(TrainingStatus.SCHEDULED, null, adminId);
+
+        assertThatThrownBy(() -> trainingSessionService.create(request, scenarioId, EMAIL))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(TrainingErrorCode.TRAINING_SCENARIO_NOT_FOUND);
+        verify(trainingSessionRepository, never()).save(any());
     }
 
     // === start ===
@@ -115,9 +144,9 @@ class TrainingSessionServiceTest {
     @DisplayName("SCHEDULED 상태의 세션을 시작하면 RUNNING으로 전이하고 이벤트를 발행하며 시나리오도 IN_PROGRESS로 바뀐다")
     void start_fromScheduled_transitionsToRunningAndPublishesEvent() {
         TrainingSession session = sessionWithStatus(TrainingStatus.SCHEDULED);
-        given(trainingSessionRepository.findById(sessionId)).willReturn(Optional.of(session));
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME)).willReturn(Optional.of(session));
 
-        trainingSessionService.start(sessionId);
+        trainingSessionService.start(sessionId, EMAIL);
 
         assertThat(session.getStatus()).isEqualTo(TrainingStatus.RUNNING);
         verify(trainingEventPublisher, times(1)).publishTrainingStatusUpdatedAfterCommit(session);
@@ -128,9 +157,9 @@ class TrainingSessionServiceTest {
     @DisplayName("이미 RUNNING인 세션은 다시 시작할 수 없다")
     void start_alreadyRunning_throwsException() {
         TrainingSession session = sessionWithStatus(TrainingStatus.RUNNING);
-        given(trainingSessionRepository.findById(sessionId)).willReturn(Optional.of(session));
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME)).willReturn(Optional.of(session));
 
-        assertThatThrownBy(() -> trainingSessionService.start(sessionId))
+        assertThatThrownBy(() -> trainingSessionService.start(sessionId, EMAIL))
                 .isInstanceOf(ApiException.class)
                 .extracting(exception -> ((ApiException) exception).getErrorCode())
                 .isEqualTo(TrainingErrorCode.INVALID_STATUS_TRANSITION);
@@ -140,9 +169,9 @@ class TrainingSessionServiceTest {
     @Test
     @DisplayName("존재하지 않는 세션을 시작하려 하면 예외가 발생한다")
     void start_sessionNotFound_throwsException() {
-        given(trainingSessionRepository.findById(sessionId)).willReturn(Optional.empty());
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME)).willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> trainingSessionService.start(sessionId))
+        assertThatThrownBy(() -> trainingSessionService.start(sessionId, EMAIL))
                 .isInstanceOf(ApiException.class)
                 .extracting(exception -> ((ApiException) exception).getErrorCode())
                 .isEqualTo(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND);
@@ -154,9 +183,9 @@ class TrainingSessionServiceTest {
     @DisplayName("RUNNING 상태의 세션을 정상 종료하면 COMPLETED로 전이하고 이벤트를 발행하며 시나리오도 COMPLETED로 바뀐다")
     void end_fromRunning_transitionsToCompletedAndPublishesEvent() {
         TrainingSession session = sessionWithStatus(TrainingStatus.RUNNING);
-        given(trainingSessionRepository.findById(sessionId)).willReturn(Optional.of(session));
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME)).willReturn(Optional.of(session));
 
-        trainingSessionService.end(sessionId);
+        trainingSessionService.end(sessionId, EMAIL);
 
         assertThat(session.getStatus()).isEqualTo(TrainingStatus.COMPLETED);
         assertThat(session.getEndedAt()).isNotNull();
@@ -168,9 +197,9 @@ class TrainingSessionServiceTest {
     @DisplayName("이미 종료된 훈련은 정상 종료할 수 없다")
     void end_alreadyCompleted_throwsException() {
         TrainingSession session = sessionWithStatus(TrainingStatus.COMPLETED);
-        given(trainingSessionRepository.findById(sessionId)).willReturn(Optional.of(session));
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME)).willReturn(Optional.of(session));
 
-        assertThatThrownBy(() -> trainingSessionService.end(sessionId))
+        assertThatThrownBy(() -> trainingSessionService.end(sessionId, EMAIL))
                 .isInstanceOf(ApiException.class)
                 .extracting(exception -> ((ApiException) exception).getErrorCode())
                 .isEqualTo(TrainingErrorCode.INVALID_STATUS_TRANSITION);
@@ -180,9 +209,9 @@ class TrainingSessionServiceTest {
     @Test
     @DisplayName("존재하지 않는 세션을 정상 종료하려 하면 예외가 발생한다")
     void end_sessionNotFound_throwsException() {
-        given(trainingSessionRepository.findById(sessionId)).willReturn(Optional.empty());
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME)).willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> trainingSessionService.end(sessionId))
+        assertThatThrownBy(() -> trainingSessionService.end(sessionId, EMAIL))
                 .isInstanceOf(ApiException.class)
                 .extracting(exception -> ((ApiException) exception).getErrorCode())
                 .isEqualTo(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND);
@@ -195,9 +224,9 @@ class TrainingSessionServiceTest {
     @DisplayName("RUNNING 상태의 세션을 강제 종료하면 STOPPED로 전이하고 이벤트를 발행하며 시나리오는 ERROR로 바뀐다")
     void forceEnd_fromRunning_transitionsToStoppedAndPublishesEvent() {
         TrainingSession session = sessionWithStatus(TrainingStatus.RUNNING);
-        given(trainingSessionRepository.findById(sessionId)).willReturn(Optional.of(session));
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME)).willReturn(Optional.of(session));
 
-        trainingSessionService.forceEnd(sessionId);
+        trainingSessionService.forceEnd(sessionId, EMAIL);
 
         assertThat(session.getStatus()).isEqualTo(TrainingStatus.STOPPED);
         verify(trainingEventPublisher, times(1)).publishTrainingStatusUpdatedAfterCommit(session);
@@ -208,9 +237,9 @@ class TrainingSessionServiceTest {
     @DisplayName("이미 종료된 훈련은 강제종료할 수 없다")
     void forceEnd_alreadyStopped_throwsException() {
         TrainingSession session = sessionWithStatus(TrainingStatus.STOPPED);
-        given(trainingSessionRepository.findById(sessionId)).willReturn(Optional.of(session));
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME)).willReturn(Optional.of(session));
 
-        assertThatThrownBy(() -> trainingSessionService.forceEnd(sessionId))
+        assertThatThrownBy(() -> trainingSessionService.forceEnd(sessionId, EMAIL))
                 .isInstanceOf(ApiException.class)
                 .extracting(exception -> ((ApiException) exception).getErrorCode())
                 .isEqualTo(TrainingErrorCode.INVALID_STATUS_TRANSITION);
@@ -220,9 +249,9 @@ class TrainingSessionServiceTest {
     @Test
     @DisplayName("존재하지 않는 세션을 강제종료하려 하면 예외가 발생한다")
     void forceEnd_sessionNotFound_throwsException() {
-        given(trainingSessionRepository.findById(sessionId)).willReturn(Optional.empty());
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME)).willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> trainingSessionService.forceEnd(sessionId))
+        assertThatThrownBy(() -> trainingSessionService.forceEnd(sessionId, EMAIL))
                 .isInstanceOf(ApiException.class)
                 .extracting(exception -> ((ApiException) exception).getErrorCode())
                 .isEqualTo(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND);

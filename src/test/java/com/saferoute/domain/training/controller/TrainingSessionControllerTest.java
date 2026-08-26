@@ -22,6 +22,8 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -34,7 +36,10 @@ import org.springframework.test.web.servlet.MockMvc;
         )
 )
 @AutoConfigureMockMvc(addFilters = false)
+@WithMockUser(username = "manager@saferoute.com")
 class TrainingSessionControllerTest {
+
+    private static final String EMAIL = "manager@saferoute.com";
 
     @Autowired
     private MockMvc mockMvc;
@@ -58,9 +63,10 @@ class TrainingSessionControllerTest {
     @Test
     @DisplayName("POST /sessions/{sessionId}/start - 훈련을 시작하면 200을 반환한다")
     void startTrainingSession_success() throws Exception {
-        given(trainingSessionService.start(sessionId)).willReturn(sampleResponse(TrainingStatus.RUNNING));
+        given(trainingSessionService.start(sessionId, EMAIL)).willReturn(sampleResponse(TrainingStatus.RUNNING));
 
-        mockMvc.perform(post("/api/v1/sessions/{sessionId}/start", sessionId))
+        mockMvc.perform(post("/api/v1/sessions/{sessionId}/start", sessionId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true))
                 .andExpect(jsonPath("$.result.status").value("RUNNING"));
@@ -69,20 +75,22 @@ class TrainingSessionControllerTest {
     @Test
     @DisplayName("POST /sessions/{sessionId}/start - SCHEDULED가 아닌 세션이면 409를 반환한다")
     void startTrainingSession_invalidTransition_returnsConflict() throws Exception {
-        given(trainingSessionService.start(eq(sessionId)))
+        given(trainingSessionService.start(eq(sessionId), eq(EMAIL)))
                 .willThrow(new ApiException(TrainingErrorCode.INVALID_STATUS_TRANSITION));
 
-        mockMvc.perform(post("/api/v1/sessions/{sessionId}/start", sessionId))
+        mockMvc.perform(post("/api/v1/sessions/{sessionId}/start", sessionId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isConflict());
     }
 
     @Test
     @DisplayName("POST /sessions/{sessionId}/start - 세션이 없으면 404를 반환한다")
     void startTrainingSession_notFound_returns404() throws Exception {
-        given(trainingSessionService.start(eq(sessionId)))
+        given(trainingSessionService.start(eq(sessionId), eq(EMAIL)))
                 .willThrow(new ApiException(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND));
 
-        mockMvc.perform(post("/api/v1/sessions/{sessionId}/start", sessionId))
+        mockMvc.perform(post("/api/v1/sessions/{sessionId}/start", sessionId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isNotFound());
     }
 
@@ -91,9 +99,10 @@ class TrainingSessionControllerTest {
     @Test
     @DisplayName("POST /sessions/{sessionId}/end - 정상 종료하면 200을 반환한다")
     void endTrainingSession_success() throws Exception {
-        given(trainingSessionService.end(sessionId)).willReturn(sampleResponse(TrainingStatus.COMPLETED));
+        given(trainingSessionService.end(sessionId, EMAIL)).willReturn(sampleResponse(TrainingStatus.COMPLETED));
 
-        mockMvc.perform(post("/api/v1/sessions/{sessionId}/end", sessionId))
+        mockMvc.perform(post("/api/v1/sessions/{sessionId}/end", sessionId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.status").value("COMPLETED"));
     }
@@ -101,10 +110,11 @@ class TrainingSessionControllerTest {
     @Test
     @DisplayName("POST /sessions/{sessionId}/end - RUNNING이 아닌 세션이면 409를 반환한다")
     void endTrainingSession_invalidTransition_returnsConflict() throws Exception {
-        given(trainingSessionService.end(eq(sessionId)))
+        given(trainingSessionService.end(eq(sessionId), eq(EMAIL)))
                 .willThrow(new ApiException(TrainingErrorCode.INVALID_STATUS_TRANSITION));
 
-        mockMvc.perform(post("/api/v1/sessions/{sessionId}/end", sessionId))
+        mockMvc.perform(post("/api/v1/sessions/{sessionId}/end", sessionId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isConflict());
     }
 
@@ -113,9 +123,10 @@ class TrainingSessionControllerTest {
     @Test
     @DisplayName("POST /sessions/{sessionId}/force-end - 강제 종료하면 200을 반환한다")
     void forceEndTrainingSession_success() throws Exception {
-        given(trainingSessionService.forceEnd(sessionId)).willReturn(sampleResponse(TrainingStatus.STOPPED));
+        given(trainingSessionService.forceEnd(sessionId, EMAIL)).willReturn(sampleResponse(TrainingStatus.STOPPED));
 
-        mockMvc.perform(post("/api/v1/sessions/{sessionId}/force-end", sessionId))
+        mockMvc.perform(post("/api/v1/sessions/{sessionId}/force-end", sessionId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.status").value("STOPPED"));
     }
@@ -123,10 +134,11 @@ class TrainingSessionControllerTest {
     @Test
     @DisplayName("POST /sessions/{sessionId}/force-end - RUNNING이 아닌 세션이면 409를 반환한다")
     void forceEndTrainingSession_invalidTransition_returnsConflict() throws Exception {
-        given(trainingSessionService.forceEnd(eq(sessionId)))
+        given(trainingSessionService.forceEnd(eq(sessionId), eq(EMAIL)))
                 .willThrow(new ApiException(TrainingErrorCode.INVALID_STATUS_TRANSITION));
 
-        mockMvc.perform(post("/api/v1/sessions/{sessionId}/force-end", sessionId))
+        mockMvc.perform(post("/api/v1/sessions/{sessionId}/force-end", sessionId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isConflict());
     }
 }
