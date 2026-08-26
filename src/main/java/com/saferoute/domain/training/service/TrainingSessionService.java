@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -71,7 +72,14 @@ public class TrainingSessionService {
         scenario
     );
 
-    return TrainingSessionResponse.from(trainingSessionRepository.save(trainingSession));
+    // existsByScenario_Id 체크와 save는 원자적이지 않아 동시 요청이 둘 다 통과할 수 있다.
+    // 이 경우 뒤늦게 실패하는 쪽은 UNIQUE 제약 위반으로 걸러지므로, saveAndFlush로 INSERT를
+    // 즉시 실행시켜 그 예외를 여기서 도메인 에러로 변환한다.
+    try {
+      return TrainingSessionResponse.from(trainingSessionRepository.saveAndFlush(trainingSession));
+    } catch (DataIntegrityViolationException e) {
+      throw new ApiException(TrainingErrorCode.SESSION_ALREADY_EXISTS);
+    }
   }
 
   @Transactional(readOnly = true)
