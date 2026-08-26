@@ -40,8 +40,8 @@ aws:
   s3:
     bucket: ${S3_BUCKET}
     presigned-url-expiration: 1m
-    # 관리자 화면이 이미지를 불러오는 동안 만료되지 않도록 업로드용(1분)보다 넉넉하게 잡는다.
-    presigned-get-url-expiration: 5m
+    # 훈련이 진행되는 동안 도면/관측 이미지를 계속 띄워놔야 하므로 업로드용(1분)보다 넉넉하게 1시간으로 잡는다.
+    presigned-get-url-expiration: 1h
 
   dynamodb:
     table-name: ${DYNAMODB_TABLE:saferoute-telemetry}

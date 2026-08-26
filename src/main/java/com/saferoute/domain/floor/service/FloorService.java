@@ -6,6 +6,7 @@ import com.saferoute.domain.building.repository.BuildingRepository;
 import com.saferoute.domain.floor.dto.request.CreateFloorRequest;
 import com.saferoute.domain.floor.dto.request.UpdateFloorRequest;
 import com.saferoute.domain.floor.dto.request.UploadFloorRequest;
+import com.saferoute.domain.floor.dto.response.FloorImageUrlResponse;
 import com.saferoute.domain.floor.dto.response.FloorResponse;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.floor.entity.SegmentationStatus;
@@ -18,6 +19,7 @@ import com.saferoute.global.api.error.BuildingErrorCode;
 import com.saferoute.global.api.error.FloorErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.s3.dto.S3UploadResponse;
+import com.saferoute.infrastructure.s3.service.S3PresignedUrlService;
 import com.saferoute.infrastructure.s3.service.S3Service;
 import com.saferoute.domain.user.service.SchoolContextService;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +34,7 @@ public class FloorService {
     private final BuildingRepository buildingRepository;
     private final FloorAnalysisService floorAnalysisService;
     private final S3Service s3Service;
+    private final S3PresignedUrlService s3PresignedUrlService;
     private final SchoolContextService schoolContextService;
 
     public List<FloorResponse> getFloors(UUID buildingId, String email) {
@@ -113,6 +116,17 @@ public class FloorService {
     @Transactional(readOnly = true)
     public FloorResponse getFloor(UUID buildingId, UUID floorId, String email) {
         return FloorResponse.from(findFloor(buildingId, floorId, email));
+    }
+
+    @Transactional(readOnly = true)
+    public FloorImageUrlResponse getFloorImageUrl(UUID buildingId, UUID floorId, String email) {
+        Floor floor = findFloor(buildingId, floorId, email);
+
+        if (floor.getMapImageKey() == null) {
+            throw new ApiException(FloorErrorCode.MAP_IMAGE_NOT_FOUND);
+        }
+
+        return FloorImageUrlResponse.from(s3PresignedUrlService.createGetUrl(floor.getMapImageKey()));
     }
 
     @Transactional
