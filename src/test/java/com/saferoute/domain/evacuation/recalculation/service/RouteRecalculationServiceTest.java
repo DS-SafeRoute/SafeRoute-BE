@@ -24,6 +24,7 @@ import com.saferoute.domain.evacuation.service.EvacuationRoute;
 import com.saferoute.domain.evacuation.service.EvacuationRouteService;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.training.entity.TrainingSession;
+import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.user.entity.User;
 import com.saferoute.domain.user.repository.UserRepository;
 import com.saferoute.domain.user.service.SchoolContextService;
@@ -74,6 +75,9 @@ class RouteRecalculationServiceTest {
     @Mock
     private SchoolContextService schoolContextService;
 
+    @Mock
+    private TrainingSessionRepository trainingSessionRepository;
+
     private TrainingSession session;
     private MapEdge triggerEdge;
     private UUID floorId;
@@ -102,6 +106,21 @@ class RouteRecalculationServiceTest {
     private void givenNoExistingPending() {
         given(routeRecalculationRepository.findByTrainingSession_IdAndTriggerEdge_IdAndStatus(
                 any(), any(), any())).willReturn(Optional.empty());
+    }
+
+    @Test
+    @DisplayName("다른 기관의 훈련 세션으로 재탐색 목록을 조회하면 세션 not-found를 반환한다")
+    void getRecalculations_otherSchool_throwsTrainingSessionNotFound() {
+        UUID sessionId = UUID.randomUUID();
+        given(trainingSessionRepository
+                .findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME))
+                .willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> routeRecalculationService
+                .getRecalculations(sessionId, null, MANAGER_EMAIL))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND);
     }
 
     private void givenNoApprovedHistory() {

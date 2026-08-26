@@ -13,6 +13,7 @@ import com.saferoute.domain.evacuation.recalculation.repository.RouteRecalculati
 import com.saferoute.domain.evacuation.service.EvacuationRoute;
 import com.saferoute.domain.evacuation.service.EvacuationRouteService;
 import com.saferoute.domain.training.entity.TrainingSession;
+import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.user.entity.User;
 import com.saferoute.domain.user.repository.UserRepository;
 import com.saferoute.domain.user.service.SchoolContextService;
@@ -50,6 +51,7 @@ public class RouteRecalculationService {
     private final UserRepository userRepository;
     private final TrainingEventPublisher trainingEventPublisher;
     private final SchoolContextService schoolContextService;
+    private final TrainingSessionRepository trainingSessionRepository;
 
     // 혼잡 감지로 트리거되는 우회 경로 재탐색.
     // - 같은 세션+엣지에 이미 PENDING이 있고 레벨이 그대로면 반복 트리거를 무시한다.
@@ -207,6 +209,9 @@ public class RouteRecalculationService {
     public List<RouteRecalculationSummaryResponse> getRecalculations(
             UUID trainingSessionId, RecalculationStatus status, String email) {
         String schoolName = schoolContextService.getSchoolName(email);
+        trainingSessionRepository
+                .findByIdAndScenario_Building_SchoolName(trainingSessionId, schoolName)
+                .orElseThrow(() -> new ApiException(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND));
         List<RouteRecalculation> recalculations = status != null
                 ? routeRecalculationRepository
                         .findAllByTrainingSession_IdAndStatusAndTrainingSession_Scenario_Building_SchoolNameOrderByRequestedAtDesc(
