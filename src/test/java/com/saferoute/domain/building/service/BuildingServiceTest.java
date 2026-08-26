@@ -9,6 +9,7 @@ import com.saferoute.domain.building.dto.request.CreateBuildingRequest;
 import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.building.entity.BuildingType;
 import com.saferoute.domain.building.repository.BuildingRepository;
+import com.saferoute.global.api.error.BuildingErrorCode;
 import com.saferoute.domain.user.entity.User;
 import com.saferoute.domain.user.entity.UserRole;
 import com.saferoute.domain.user.repository.UserRepository;
@@ -74,7 +75,9 @@ class BuildingServiceTest {
                 .willReturn(Optional.empty());
 
         assertThatThrownBy(() -> buildingService.getBuilding(buildingId, EMAIL))
-                .isInstanceOf(ApiException.class);
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(BuildingErrorCode.BUILDING_NOT_FOUND);
     }
 
     private User manager() {
