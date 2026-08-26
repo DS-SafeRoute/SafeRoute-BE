@@ -17,6 +17,11 @@ import com.saferoute.domain.evacuation.graph.repository.MapEdgeJpaRepository;
 import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.floor.repository.FloorRepository;
+import com.saferoute.domain.telemetry.dynamo.entity.LightDirectionEventItem;
+import com.saferoute.domain.telemetry.dynamo.repository.LightDirectionEventRepository;
+import com.saferoute.domain.training.entity.TrainingSession;
+import com.saferoute.domain.training.entity.TrainingStatus;
+import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.global.api.error.FloorErrorCode;
 import com.saferoute.global.api.error.IoTLightErrorCode;
 import com.saferoute.global.api.exception.ApiException;
@@ -24,6 +29,7 @@ import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
 import com.saferoute.domain.user.service.SchoolContextService;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -44,6 +50,8 @@ public class IoTLightService {
     private final IoTLightDirectionStore iotLightDirectionStore;
     private final TrainingEventPublisher trainingEventPublisher;
     private final SchoolContextService schoolContextService;
+    private final TrainingSessionRepository trainingSessionRepository;
+    private final LightDirectionEventRepository lightDirectionEventRepository;
 
     @Transactional
     public IoTLightResponse createLight(CreateIoTLightRequest request, String email) {
@@ -159,8 +167,9 @@ public class IoTLightService {
         mapNodeJpaRepository.delete(customNode);
     }
 
-    // 검증(enabled/guidance) -> Pi 호출 -> 상태 저장 -> 이벤트 발행 순서로 조립한다.
-    // direction은 훈련별 동적 상태라 DB에 저장하지 않고 IoTLightDirectionStore(서버 메모리)에 저장한다 (IoTLight 참고).
+    // 검증(enabled/guidance) -> Pi 호출 -> 상태 저장 -> 이력 기록 -> 이벤트 발행 순서로 조립한다.
+    // 현재 방향은 훈련별 동적 상태라 DB에 저장하지 않고 IoTLightDirectionStore(서버 메모리)에 저장한다 (IoTLight 참고).
+    // 전환 이력만 경로 이탈률 계산을 위해 DynamoDB(LightDirectionEventItem)에 별도로 남긴다.
     public LightDirectionResponse changeDirection(
             UUID lightId, ChangeLightDirectionRequest request, String email) {
         IoTLight light = findLightForSchoolOrThrow(lightId, email);
@@ -183,9 +192,38 @@ public class IoTLightService {
 
         iotLightPiClient.sendDirection(light.getPiEndpoint(), light.getCode(), direction);
         iotLightDirectionStore.update(light.getId(), direction);
+        Instant changedAt = Instant.now();
+        logDirectionChange(light, direction, changedAt);
         trainingEventPublisher.publishIoTLightStatusUpdatedAfterCommit(light, direction);
 
-        return new LightDirectionResponse(light.getId(), direction, Instant.now());
+        return new LightDirectionResponse(light.getId(), direction, changedAt);
+    }
+
+    // 경로 이탈률 계산의 원천 데이터로 쓰기 위해 방향 전환 시점을 훈련 세션 기준으로 DynamoDB에 남긴다.
+    // 실행 중인 훈련 세션이 없으면(설정/점검 중 방향 전환) 남길 이력이 없으므로 조용히 넘어가고,
+    // 로깅 실패가 유도등 명령 자체의 성공 여부에 영향을 주지 않도록 예외를 흡수한다.
+    private void logDirectionChange(IoTLight light, IoTLightDirection direction, Instant changedAt) {
+        try {
+            UUID buildingId = light.getCustomNode().getFloor().getBuilding().getId();
+            Optional<TrainingSession> runningSession = trainingSessionRepository
+                    .findFirstByStatusAndScenario_Building_IdOrderByStartedAtAsc(TrainingStatus.RUNNING, buildingId);
+            if (runningSession.isEmpty()) {
+                return;
+            }
+            LightDirectionEventItem item = LightDirectionEventItem.create(
+                    runningSession.get().getId(),
+                    light.getId(),
+                    light.getCode(),
+                    direction,
+                    light.getDecisionNode() != null ? light.getDecisionNode().getId() : null,
+                    light.getLeftEdge() != null ? light.getLeftEdge().getId() : null,
+                    light.getRightEdge() != null ? light.getRightEdge().getId() : null,
+                    changedAt.toEpochMilli()
+            );
+            lightDirectionEventRepository.save(item);
+        } catch (RuntimeException exception) {
+            log.warn("유도등 방향 전환 이력 기록 실패: lightId={}, direction={}", light.getId(), direction, exception);
+        }
     }
 
     // RouteRecalculation 승인 시 호출한다. 승인된 경로가 지나가는 분기점마다 그 경로를 안내하는
