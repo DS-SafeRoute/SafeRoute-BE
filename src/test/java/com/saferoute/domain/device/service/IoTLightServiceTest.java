@@ -26,11 +26,17 @@ import com.saferoute.domain.evacuation.graph.repository.MapEdgeJpaRepository;
 import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.floor.repository.FloorRepository;
+import com.saferoute.domain.telemetry.dynamo.entity.LightDirectionEventItem;
+import com.saferoute.domain.telemetry.dynamo.repository.LightDirectionEventRepository;
+import com.saferoute.domain.training.entity.TrainingSession;
+import com.saferoute.domain.training.entity.TrainingStatus;
+import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.global.api.error.FloorErrorCode;
 import com.saferoute.global.api.error.IoTLightErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
 import com.saferoute.domain.user.service.SchoolContextService;
+import com.saferoute.domain.building.entity.Building;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -77,12 +83,22 @@ class IoTLightServiceTest {
     @Mock
     private SchoolContextService schoolContextService;
 
+    @Mock
+    private TrainingSessionRepository trainingSessionRepository;
+
+    @Mock
+    private LightDirectionEventRepository lightDirectionEventRepository;
+
     private final UUID floorId = UUID.randomUUID();
+    private final UUID buildingId = UUID.randomUUID();
     private Floor floor;
 
     @BeforeEach
     void setUp() {
         floor = mock(Floor.class);
+        Building building = mock(Building.class);
+        org.mockito.Mockito.lenient().when(floor.getBuilding()).thenReturn(building);
+        org.mockito.Mockito.lenient().when(building.getId()).thenReturn(buildingId);
         org.mockito.Mockito.lenient()
                 .when(schoolContextService.getSchoolName(EMAIL))
                 .thenReturn(SCHOOL_NAME);
@@ -482,6 +498,82 @@ class IoTLightServiceTest {
                 .isInstanceOf(ApiException.class)
                 .hasMessage(IoTLightErrorCode.DEVICE_UNREACHABLE.getMessage());
         verifyNoInteractions(iotLightDirectionStore, trainingEventPublisher);
+    }
+
+    @Test
+    @DisplayName("실행 중인 훈련 세션이 있으면 방향 전환 이력을 DynamoDB에 남긴다")
+    void changeDirection_runningSession_logsDirectionEvent() {
+        // given
+        MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
+        IoTLight light = createLight("LIGHT_001", customNode);
+        light.updatePiEndpoint("http://192.168.0.50:5000");
+        MapNode decisionNode = createNode("HALLWAY1", NodeType.HALLWAY);
+        MapNode leftTarget = createNode("HALLWAY2", NodeType.HALLWAY);
+        MapNode rightTarget = createNode("HALLWAY3", NodeType.HALLWAY);
+        light.configureGuidance(decisionNode, createEdge(decisionNode, leftTarget), createEdge(decisionNode, rightTarget));
+        ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.LEFT);
+
+        TrainingSession session = mock(TrainingSession.class);
+        UUID sessionId = UUID.randomUUID();
+        org.mockito.Mockito.lenient().when(session.getId()).thenReturn(sessionId);
+
+        given(iotLightJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(light.getId(), SCHOOL_NAME)).willReturn(Optional.of(light));
+        given(trainingSessionRepository.findFirstByStatusAndScenario_Building_IdOrderByStartedAtAsc(
+                TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+
+        // when
+        iotLightService.changeDirection(light.getId(), request, EMAIL);
+
+        // then
+        org.mockito.ArgumentCaptor<LightDirectionEventItem> captor =
+                org.mockito.ArgumentCaptor.forClass(LightDirectionEventItem.class);
+        verify(lightDirectionEventRepository).save(captor.capture());
+        assertThat(captor.getValue().getLightCode()).isEqualTo("LIGHT_001");
+        assertThat(captor.getValue().getDirection()).isEqualTo(IoTLightDirection.LEFT);
+        assertThat(captor.getValue().getTrainingSessionId()).isEqualTo(sessionId.toString());
+    }
+
+    @Test
+    @DisplayName("실행 중인 훈련 세션이 없으면 방향 전환 이력을 남기지 않는다")
+    void changeDirection_noRunningSession_skipsLogging() {
+        // given
+        MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
+        IoTLight light = createLight("LIGHT_001", customNode);
+        light.updatePiEndpoint("http://192.168.0.50:5000");
+        ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.OFF);
+
+        given(iotLightJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(light.getId(), SCHOOL_NAME)).willReturn(Optional.of(light));
+        given(trainingSessionRepository.findFirstByStatusAndScenario_Building_IdOrderByStartedAtAsc(
+                TrainingStatus.RUNNING, buildingId)).willReturn(Optional.empty());
+
+        // when
+        LightDirectionResponse response = iotLightService.changeDirection(light.getId(), request, EMAIL);
+
+        // then
+        assertThat(response.direction()).isEqualTo(IoTLightDirection.OFF);
+        verifyNoInteractions(lightDirectionEventRepository);
+    }
+
+    @Test
+    @DisplayName("방향 전환 이력 기록이 실패해도 유도등 명령 자체는 성공한다")
+    void changeDirection_loggingFails_stillSucceeds() {
+        // given
+        MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
+        IoTLight light = createLight("LIGHT_001", customNode);
+        light.updatePiEndpoint("http://192.168.0.50:5000");
+        ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.OFF);
+
+        given(iotLightJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(light.getId(), SCHOOL_NAME)).willReturn(Optional.of(light));
+        given(trainingSessionRepository.findFirstByStatusAndScenario_Building_IdOrderByStartedAtAsc(
+                TrainingStatus.RUNNING, buildingId))
+                .willThrow(new RuntimeException("dynamo unavailable"));
+
+        // when
+        LightDirectionResponse response = iotLightService.changeDirection(light.getId(), request, EMAIL);
+
+        // then
+        assertThat(response.direction()).isEqualTo(IoTLightDirection.OFF);
+        verify(trainingEventPublisher).publishIoTLightStatusUpdatedAfterCommit(light, IoTLightDirection.OFF);
     }
 
     @Test
