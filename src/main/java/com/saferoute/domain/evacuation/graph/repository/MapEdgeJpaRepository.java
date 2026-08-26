@@ -3,12 +3,15 @@ package com.saferoute.domain.evacuation.graph.repository;
 import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.floor.entity.Floor;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface MapEdgeJpaRepository extends JpaRepository<MapEdge, UUID> {
 
     List<MapEdge> findAllByFloor_Id(UUID floorId);
+
+    Optional<MapEdge> findByIdAndFloor_Building_SchoolName(UUID id, String schoolName);
 
     // 특정 노드에 연결된 엣지 (유도등 좌/우 Edge 검증용, 노드 삭제 시 연결 엣지 조회용으로도 사용)
     List<MapEdge> findAllByFromNode_IdOrToNode_Id(UUID fromNodeId, UUID toNodeId);

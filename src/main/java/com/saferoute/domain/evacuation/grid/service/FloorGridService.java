@@ -22,6 +22,7 @@ import com.saferoute.domain.floor.repository.FloorRepository;
 import com.saferoute.global.api.error.FloorErrorCode;
 import com.saferoute.global.api.error.GridErrorCode;
 import com.saferoute.global.api.exception.ApiException;
+import com.saferoute.domain.user.service.SchoolContextService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -45,6 +46,7 @@ public class FloorGridService {
     private final MapEdgeGridCellRepository mapEdgeGridCellRepository;
     private final MapNodeJpaRepository mapNodeRepository;
     private final MapEdgeJpaRepository mapEdgeRepository;
+    private final SchoolContextService schoolContextService;
 
     public FloorGridCellPageResponse getGridCells(UUID floorId, int page, int size) {
         if (!floorRepository.existsById(floorId)) {
@@ -59,6 +61,26 @@ public class FloorGridService {
                 floorGridCellRepository.findAllByFloor_Id(floorId, pageable)
                         .map(FloorGridCellResponse::from)
         );
+    }
+
+    public FloorGridCellPageResponse getGridCells(
+            UUID floorId, int page, int size, String email) {
+        validateFloorForSchool(floorId, email);
+        return getGridCells(floorId, page, size);
+    }
+
+    @Transactional
+    public FloorGridResponse createOrRegenerateGrid(
+            UUID floorId, CreateOrUpdateFloorGridRequest request, String email) {
+        validateFloorForSchool(floorId, email);
+        return createOrRegenerateGrid(floorId, request);
+    }
+
+    private void validateFloorForSchool(UUID floorId, String email) {
+        String schoolName = schoolContextService.getSchoolName(email);
+        if (floorRepository.findByIdAndBuilding_SchoolName(floorId, schoolName).isEmpty()) {
+            throw new ApiException(FloorErrorCode.FLOOR_NOT_FOUND);
+        }
     }
 
     // 그리드 생성/재생성 - 최초 생성이든 N번째 수정이든 동일 로직

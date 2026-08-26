@@ -14,6 +14,7 @@ import com.saferoute.domain.floor.repository.FloorRepository;
 import com.saferoute.global.api.error.EvacuationErrorCode;
 import com.saferoute.global.api.error.FloorErrorCode;
 import com.saferoute.global.api.exception.ApiException;
+import com.saferoute.domain.user.service.SchoolContextService;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +28,7 @@ public class MapGraphService {
 
     private final MapGraphRepository mapGraphRepository;
     private final FloorRepository floorRepository;
+    private final SchoolContextService schoolContextService;
 
     // 커스텀 편집 UI 초기 로딩용 - 층의 노드/엣지 전체 조회
     public FloorGraphResponse getFloorGraph(UUID floorId) {
@@ -34,6 +36,20 @@ public class MapGraphService {
         List<MapNode> nodes = mapGraphRepository.findNodesByFloor(floorId);
         List<MapEdge> edges = mapGraphRepository.findEdgesByFloor(floorId);
         return FloorGraphResponse.of(nodes, edges);
+    }
+
+    public FloorGraphResponse getFloorGraph(UUID floorId, String email) {
+        validateFloorForSchool(floorId, email);
+        List<MapNode> nodes = mapGraphRepository.findNodesByFloor(floorId);
+        List<MapEdge> edges = mapGraphRepository.findEdgesByFloor(floorId);
+        return FloorGraphResponse.of(nodes, edges);
+    }
+
+    private void validateFloorForSchool(UUID floorId, String email) {
+        String schoolName = schoolContextService.getSchoolName(email);
+        if (floorRepository.findByIdAndBuilding_SchoolName(floorId, schoolName).isEmpty()) {
+            throw new ApiException(FloorErrorCode.FLOOR_NOT_FOUND);
+        }
     }
 
     // 노드 추가

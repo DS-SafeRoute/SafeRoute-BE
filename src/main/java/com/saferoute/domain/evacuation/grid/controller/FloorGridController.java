@@ -11,6 +11,7 @@ import jakarta.validation.constraints.Min;
 import java.util.UUID;
 import org.springframework.validation.annotation.Validated;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -25,16 +26,20 @@ public class FloorGridController {
     public ApiResponse<FloorGridCellPageResponse> getGridCells(
             @PathVariable UUID floorId,
             @RequestParam(defaultValue = "0") @Min(0) int page,
-            @RequestParam(defaultValue = "500") @Min(1) @Max(2000) int size
+            @RequestParam(defaultValue = "500") @Min(1) @Max(2000) int size,
+            Authentication authentication
     ) {
-        return ApiResponse.success(floorGridService.getGridCells(floorId, page, size));
+        return ApiResponse.success(floorGridService.getGridCells(
+                floorId, page, size, authentication.getName()));
     }
 
     @PutMapping
     public ApiResponse<FloorGridResponse> createOrRegenerateGrid(
             @PathVariable UUID floorId,
-            @Valid @RequestBody CreateOrUpdateFloorGridRequest request
+            @Valid @RequestBody CreateOrUpdateFloorGridRequest request,
+            Authentication authentication
     ) {
-        return ApiResponse.success(floorGridService.createOrRegenerateGrid(floorId, request));
+        return ApiResponse.success(floorGridService.createOrRegenerateGrid(
+                floorId, request, authentication.getName()));
     }
 }

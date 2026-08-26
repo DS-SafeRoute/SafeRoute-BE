@@ -18,6 +18,7 @@ import com.saferoute.global.api.error.CctvErrorCode;
 import com.saferoute.global.api.error.DeviceErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.global.security.DeviceTokenService;
+import com.saferoute.domain.user.service.SchoolContextService;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Map;
@@ -40,6 +41,7 @@ public class CctvService {
     private final CctvRegistrationService cctvRegistrationService;
     private final DeviceTokenService deviceTokenService;
     private final CongestionConfigService congestionConfigService;
+    private final SchoolContextService schoolContextService;
 
     public CctvRegistrationResponse createCctv(CreateCctvRequest request) {
         return cctvRegistrationService.register(request, cctvCodeAllocator.allocate());
@@ -58,10 +60,17 @@ public class CctvService {
         return new DeviceTokenIssueResponse(issuedToken.rawToken());
     }
 
-    public List<CctvResponse> getCctvs(UUID floorId) {
+    public List<CctvResponse> getCctvs(UUID floorId, String email) {
+        String schoolName = schoolContextService.getSchoolName(email);
         List<Cctv> cctvs = floorId == null
-                ? cctvJpaRepository.findAllWithLocation()
-                : cctvJpaRepository.findAllByCustomNode_Floor_Id(floorId);
+                ? cctvJpaRepository.findAllByCustomNode_Floor_Building_SchoolName(schoolName)
+                : cctvJpaRepository
+                        .findAllByCustomNode_Floor_IdAndCustomNode_Floor_Building_SchoolName(
+                                floorId, schoolName);
+        return toResponses(cctvs);
+    }
+
+    private List<CctvResponse> toResponses(List<Cctv> cctvs) {
         if (cctvs.isEmpty()) {
             return List.of();
         }
@@ -82,20 +91,21 @@ public class CctvService {
                 .toList();
     }
 
-    public CctvResponse getCctv(UUID cctvId) {
-        return toResponse(findCctvOrThrow(cctvId));
+    public CctvResponse getCctv(UUID cctvId, String email) {
+        return toResponse(findCctvForSchoolOrThrow(cctvId, email));
     }
 
-    public CctvResponse getGridCells(UUID cctvId) {
-        return getCctv(cctvId);
+    public CctvResponse getGridCells(UUID cctvId, String email) {
+        return getCctv(cctvId, email);
     }
 
     @Transactional
     public CctvResponse configureGridCells(
             UUID cctvId,
-            ConfigureCctvGridCellsRequest request
+            ConfigureCctvGridCellsRequest request,
+            String email
     ) {
-        Cctv cctv = findCctvOrThrow(cctvId);
+        Cctv cctv = findCctvForSchoolOrThrow(cctvId, email);
         Floor floor = cctv.getCustomNode().getFloor();
         validateGridConfigured(floor);
         List<FloorGridCell> gridCells = findAndValidateGridCells(
@@ -108,23 +118,23 @@ public class CctvService {
     }
 
     @Transactional
-    public CctvResponse updateCctv(UUID cctvId, UpdateCctvRequest request) {
-        Cctv cctv = findCctvOrThrow(cctvId);
+    public CctvResponse updateCctv(UUID cctvId, UpdateCctvRequest request, String email) {
+        Cctv cctv = findCctvForSchoolOrThrow(cctvId, email);
         cctv.rename(request.name());
         cctv.getCustomNode().moveTo(request.x(), request.y());
         return toResponse(cctv);
     }
 
     @Transactional
-    public CctvResponse enableCctv(UUID cctvId) {
-        Cctv cctv = findCctvOrThrow(cctvId);
+    public CctvResponse enableCctv(UUID cctvId, String email) {
+        Cctv cctv = findCctvForSchoolOrThrow(cctvId, email);
         cctv.enable();
         return toResponse(cctv);
     }
 
     @Transactional
-    public CctvResponse disableCctv(UUID cctvId) {
-        Cctv cctv = findCctvOrThrow(cctvId);
+    public CctvResponse disableCctv(UUID cctvId, String email) {
+        Cctv cctv = findCctvForSchoolOrThrow(cctvId, email);
         cctv.disable();
         return toResponse(cctv);
     }
@@ -178,8 +188,10 @@ public class CctvService {
         }
     }
 
-    private Cctv findCctvOrThrow(UUID cctvId) {
-        return cctvJpaRepository.findByIdWithLocation(cctvId)
+    private Cctv findCctvForSchoolOrThrow(UUID cctvId, String email) {
+        String schoolName = schoolContextService.getSchoolName(email);
+        return cctvJpaRepository
+                .findByIdAndCustomNode_Floor_Building_SchoolName(cctvId, schoolName)
                 .orElseThrow(() -> new ApiException(CctvErrorCode.CCTV_NOT_FOUND));
     }
 

@@ -35,6 +35,8 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -50,7 +52,10 @@ import org.springframework.test.web.servlet.MockMvc;
         )
 )
 @AutoConfigureMockMvc(addFilters = false)
+@WithMockUser(username = "manager@saferoute.com")
 class IoTLightControllerTest {
+
+    private static final String EMAIL = "manager@saferoute.com";
 
     @Autowired
     private MockMvc mockMvc;
@@ -75,9 +80,10 @@ class IoTLightControllerTest {
     @DisplayName("POST /lights - 유도등을 등록하면 201을 반환한다")
     void createLight_success() throws Exception {
         CreateIoTLightRequest request = new CreateIoTLightRequest(floorId, "복도1 유도등", 0.3, 0.4);
-        given(iotLightService.createLight(any())).willReturn(sampleResponse());
+        given(iotLightService.createLight(any(), eq(EMAIL))).willReturn(sampleResponse());
 
         mockMvc.perform(post("/api/v1/lights")
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
@@ -89,10 +95,11 @@ class IoTLightControllerTest {
     @DisplayName("POST /lights - 층이 없으면 404를 반환한다")
     void createLight_floorNotFound() throws Exception {
         CreateIoTLightRequest request = new CreateIoTLightRequest(floorId, "복도1 유도등", 0.3, 0.4);
-        given(iotLightService.createLight(any()))
+        given(iotLightService.createLight(any(), eq(EMAIL)))
                 .willThrow(new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
 
         mockMvc.perform(post("/api/v1/lights")
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isNotFound())
@@ -107,6 +114,7 @@ class IoTLightControllerTest {
                 """.formatted(floorId);
 
         mockMvc.perform(post("/api/v1/lights")
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null))
                         .contentType("application/json")
                         .content(invalidJson))
                 .andExpect(status().isBadRequest());
@@ -117,9 +125,11 @@ class IoTLightControllerTest {
     @Test
     @DisplayName("GET /lights - 층별로 유도등 목록을 조회한다")
     void getLights_success() throws Exception {
-        given(iotLightService.getLights(floorId)).willReturn(List.of(sampleResponse()));
+        given(iotLightService.getLights(floorId, EMAIL)).willReturn(List.of(sampleResponse()));
 
-        mockMvc.perform(get("/api/v1/lights").param("floorId", floorId.toString()))
+        mockMvc.perform(get("/api/v1/lights")
+                        .param("floorId", floorId.toString())
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.length()").value(1));
     }
@@ -127,10 +137,11 @@ class IoTLightControllerTest {
     @Test
     @DisplayName("GET /lights/{lightId} - 유도등이 없으면 404를 반환한다")
     void getLight_notFound() throws Exception {
-        given(iotLightService.getLight(lightId))
+        given(iotLightService.getLight(lightId, EMAIL))
                 .willThrow(new ApiException(IoTLightErrorCode.IOT_LIGHT_NOT_FOUND));
 
-        mockMvc.perform(get("/api/v1/lights/{lightId}", lightId))
+        mockMvc.perform(get("/api/v1/lights/{lightId}", lightId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isNotFound());
     }
 
@@ -141,9 +152,10 @@ class IoTLightControllerTest {
     void configureGuidance_success() throws Exception {
         ConfigureGuidanceRequest request =
                 new ConfigureGuidanceRequest(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
-        given(iotLightService.configureGuidance(eq(lightId), any())).willReturn(sampleResponse());
+        given(iotLightService.configureGuidance(eq(lightId), any(), eq(EMAIL))).willReturn(sampleResponse());
 
         mockMvc.perform(patch("/api/v1/lights/{lightId}/guidance", lightId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk());
@@ -154,10 +166,11 @@ class IoTLightControllerTest {
     void configureGuidance_invalidEdge_returnsBadRequest() throws Exception {
         ConfigureGuidanceRequest request =
                 new ConfigureGuidanceRequest(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
-        given(iotLightService.configureGuidance(eq(lightId), any()))
+        given(iotLightService.configureGuidance(eq(lightId), any(), eq(EMAIL)))
                 .willThrow(new ApiException(IoTLightErrorCode.INVALID_GUIDANCE_EDGE));
 
         mockMvc.perform(patch("/api/v1/lights/{lightId}/guidance", lightId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -169,9 +182,10 @@ class IoTLightControllerTest {
     @DisplayName("PATCH /lights/{lightId} - 이름/위치를 수정하면 200을 반환한다")
     void updateLight_success() throws Exception {
         UpdateIoTLightRequest request = new UpdateIoTLightRequest("변경된 이름", 0.7, 0.8);
-        given(iotLightService.updateLight(eq(lightId), any())).willReturn(sampleResponse());
+        given(iotLightService.updateLight(eq(lightId), any(), eq(EMAIL))).willReturn(sampleResponse());
 
         mockMvc.perform(patch("/api/v1/lights/{lightId}", lightId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk());
@@ -182,18 +196,20 @@ class IoTLightControllerTest {
     @Test
     @DisplayName("PATCH /lights/{lightId}/enable - 활성화하면 200을 반환한다")
     void enableLight_success() throws Exception {
-        given(iotLightService.enableLight(lightId)).willReturn(sampleResponse());
+        given(iotLightService.enableLight(lightId, EMAIL)).willReturn(sampleResponse());
 
-        mockMvc.perform(patch("/api/v1/lights/{lightId}/enable", lightId))
+        mockMvc.perform(patch("/api/v1/lights/{lightId}/enable", lightId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isOk());
     }
 
     @Test
     @DisplayName("PATCH /lights/{lightId}/disable - 비활성화하면 200을 반환한다")
     void disableLight_success() throws Exception {
-        given(iotLightService.disableLight(lightId)).willReturn(sampleResponse());
+        given(iotLightService.disableLight(lightId, EMAIL)).willReturn(sampleResponse());
 
-        mockMvc.perform(patch("/api/v1/lights/{lightId}/disable", lightId))
+        mockMvc.perform(patch("/api/v1/lights/{lightId}/disable", lightId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isOk());
     }
 
@@ -203,9 +219,10 @@ class IoTLightControllerTest {
     @DisplayName("PATCH /lights/{lightId}/pi-endpoint - 라즈베리파이 주소를 설정하면 200을 반환한다")
     void updatePiEndpoint_success() throws Exception {
         UpdatePiEndpointRequest request = new UpdatePiEndpointRequest("http://192.168.0.50:5000");
-        given(iotLightService.updatePiEndpoint(eq(lightId), any())).willReturn(sampleResponse());
+        given(iotLightService.updatePiEndpoint(eq(lightId), any(), eq(EMAIL))).willReturn(sampleResponse());
 
         mockMvc.perform(patch("/api/v1/lights/{lightId}/pi-endpoint", lightId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk());
@@ -219,6 +236,7 @@ class IoTLightControllerTest {
                 """;
 
         mockMvc.perform(patch("/api/v1/lights/{lightId}/pi-endpoint", lightId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null))
                         .contentType("application/json")
                         .content(invalidJson))
                 .andExpect(status().isBadRequest());
@@ -230,10 +248,11 @@ class IoTLightControllerTest {
     @DisplayName("PATCH /lights/{lightId}/direction - 방향 명령을 보내면 200을 반환한다")
     void changeDirection_success() throws Exception {
         ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.LEFT);
-        given(iotLightService.changeDirection(eq(lightId), any()))
+        given(iotLightService.changeDirection(eq(lightId), any(), eq(EMAIL)))
                 .willReturn(new LightDirectionResponse(lightId, IoTLightDirection.LEFT, java.time.Instant.now()));
 
         mockMvc.perform(patch("/api/v1/lights/{lightId}/direction", lightId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -244,10 +263,11 @@ class IoTLightControllerTest {
     @DisplayName("PATCH /lights/{lightId}/direction - 경로 안내가 없으면 400을 반환한다")
     void changeDirection_guidanceNotConfigured_returnsBadRequest() throws Exception {
         ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.LEFT);
-        given(iotLightService.changeDirection(eq(lightId), any()))
+        given(iotLightService.changeDirection(eq(lightId), any(), eq(EMAIL)))
                 .willThrow(new ApiException(IoTLightErrorCode.GUIDANCE_NOT_CONFIGURED));
 
         mockMvc.perform(patch("/api/v1/lights/{lightId}/direction", lightId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -257,10 +277,11 @@ class IoTLightControllerTest {
     @DisplayName("PATCH /lights/{lightId}/direction - 비활성화된 유도등이면 400을 반환한다")
     void changeDirection_lightDisabled_returnsBadRequest() throws Exception {
         ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.OFF);
-        given(iotLightService.changeDirection(eq(lightId), any()))
+        given(iotLightService.changeDirection(eq(lightId), any(), eq(EMAIL)))
                 .willThrow(new ApiException(IoTLightErrorCode.LIGHT_DISABLED));
 
         mockMvc.perform(patch("/api/v1/lights/{lightId}/direction", lightId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -270,10 +291,11 @@ class IoTLightControllerTest {
     @DisplayName("PATCH /lights/{lightId}/direction - Pi와 통신 실패 시 502를 반환한다")
     void changeDirection_deviceUnreachable_returnsBadGateway() throws Exception {
         ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.OFF);
-        given(iotLightService.changeDirection(eq(lightId), any()))
+        given(iotLightService.changeDirection(eq(lightId), any(), eq(EMAIL)))
                 .willThrow(new ApiException(IoTLightErrorCode.DEVICE_UNREACHABLE));
 
         mockMvc.perform(patch("/api/v1/lights/{lightId}/direction", lightId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadGateway());
@@ -283,6 +305,7 @@ class IoTLightControllerTest {
     @DisplayName("PATCH /lights/{lightId}/direction - direction이 없으면 400을 반환한다")
     void changeDirection_missingDirection_returnsBadRequest() throws Exception {
         mockMvc.perform(patch("/api/v1/lights/{lightId}/direction", lightId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null))
                         .contentType("application/json")
                         .content("{}"))
                 .andExpect(status().isBadRequest());
@@ -293,7 +316,8 @@ class IoTLightControllerTest {
     @Test
     @DisplayName("DELETE /lights/{lightId} - 유도등을 삭제하면 200을 반환한다")
     void deleteLight_success() throws Exception {
-        mockMvc.perform(delete("/api/v1/lights/{lightId}", lightId))
+        mockMvc.perform(delete("/api/v1/lights/{lightId}", lightId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true));
     }
@@ -302,9 +326,10 @@ class IoTLightControllerTest {
     @DisplayName("DELETE /lights/{lightId} - 유도등이 없으면 404를 반환한다")
     void deleteLight_notFound() throws Exception {
         org.mockito.BDDMockito.willThrow(new ApiException(IoTLightErrorCode.IOT_LIGHT_NOT_FOUND))
-                .given(iotLightService).deleteLight(lightId);
+                .given(iotLightService).deleteLight(lightId, EMAIL);
 
-        mockMvc.perform(delete("/api/v1/lights/{lightId}", lightId))
+        mockMvc.perform(delete("/api/v1/lights/{lightId}", lightId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isNotFound());
     }
 }

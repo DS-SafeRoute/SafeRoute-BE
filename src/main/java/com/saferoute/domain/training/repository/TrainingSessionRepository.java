@@ -26,6 +26,10 @@ public interface TrainingSessionRepository extends JpaRepository<TrainingSession
   Optional<TrainingSession> findFirstByStatusAndScenario_Building_IdOrderByStartedAtAsc(
       TrainingStatus status, UUID buildingId);
 
+  Optional<TrainingSession> findByIdAndScenario_Building_SchoolName(UUID id, String schoolName);
+
+  long countByScenario_Building_SchoolName(String schoolName);
+
   boolean existsByScenario_Id(UUID scenarioId);
 
   // 목록 조회에서 시나리오별로 deletable을 N+1 없이 계산하기 위해, 세션이 하나라도 있는 시나리오 id만 모아서 가져온다.

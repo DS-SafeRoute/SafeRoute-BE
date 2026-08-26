@@ -8,6 +8,7 @@ import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.report.repository.TrainingReportRepository;
 import com.saferoute.domain.report.dto.CreateReportRequest;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
+import com.saferoute.domain.user.service.SchoolContextService;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.UUID;
@@ -21,6 +22,7 @@ public class TrainingReportService {
 
   private final TrainingReportRepository trainingReportRepository;
   private final TrainingSessionRepository trainingSessionRepository;
+  private final SchoolContextService schoolContextService;
 
   public ReportResponse create(CreateReportRequest request, UUID sessionId) {
     TrainingSession session = trainingSessionRepository.findById(sessionId).orElseThrow(
@@ -37,9 +39,11 @@ public class TrainingReportService {
     return ReportResponse.from(trainingReportRepository.save(report));
   }
 
-  public List<RecentTrainingReportResponse> getRecentTrainingReport() {
+  public List<RecentTrainingReportResponse> getRecentTrainingReport(String email) {
+    String schoolName = schoolContextService.getSchoolName(email);
     List<TrainingReport> reports =
-        trainingReportRepository.findRecentReports(
+        trainingReportRepository.findRecentReportsBySchoolName(
+            schoolName,
             PageRequest.of(0, 5)
         );
     return reports.stream()
@@ -57,11 +61,12 @@ public class TrainingReportService {
         .toList();
   }
 
-  public DashboardStatsResponse getStats() {
+  public DashboardStatsResponse getStats(String email) {
+    String schoolName = schoolContextService.getSchoolName(email);
 
-    long totalSessions = trainingSessionRepository.count();
+    long totalSessions = trainingSessionRepository.countByScenario_Building_SchoolName(schoolName);
 
-    Object[] result = trainingReportRepository.getStatistics().get(0);
+    Object[] result = trainingReportRepository.getStatisticsBySchoolName(schoolName).get(0);
     Double avgSurvivalRate = result[0] != null ? ((Number) result[0]).doubleValue() : 0.0;
     Double avgEvacuationSec = result[1] != null ? ((Number) result[1]).doubleValue() : 0.0;
     Long totalParticipants = result[2] != null ? ((Number) result[2]).longValue() : 0L;

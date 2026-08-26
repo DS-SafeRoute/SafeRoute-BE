@@ -5,6 +5,9 @@ import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.evacuation.graph.repository.MapGraphRepository;
 import com.saferoute.global.api.error.EvacuationErrorCode;
 import com.saferoute.global.api.exception.ApiException;
+import com.saferoute.domain.floor.repository.FloorRepository;
+import com.saferoute.domain.user.service.SchoolContextService;
+import com.saferoute.global.api.error.FloorErrorCode;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -30,10 +33,20 @@ public class EvacuationRouteService {
     private static final double DANGER_WEIGHT = 1.0; // β
 
     private final MapGraphRepository mapGraphRepository;
+    private final FloorRepository floorRepository;
+    private final SchoolContextService schoolContextService;
 
     // 시작 노드에서 가장 가까운 EXIT 대상 노드까지 최단 경로 계산 (mock data 기준, congestion/danger는 0 고정)
     public EvacuationRoute findShortestRoute(UUID floorId, UUID startNodeId) {
         return findShortestRoute(floorId, startNodeId, Set.of());
+    }
+
+    public EvacuationRoute findShortestRoute(UUID floorId, UUID startNodeId, String email) {
+        String schoolName = schoolContextService.getSchoolName(email);
+        if (floorRepository.findByIdAndBuilding_SchoolName(floorId, schoolName).isEmpty()) {
+            throw new ApiException(FloorErrorCode.FLOOR_NOT_FOUND);
+        }
+        return findShortestRoute(floorId, startNodeId);
     }
 
     // 혼잡 재탐색용 - 지정된 엣지를 그래프에서 제외하고 우회 경로를 계산한다 (VERY_CROWDED처럼 완전히 막힌 경우).

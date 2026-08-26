@@ -10,6 +10,7 @@ import java.util.UUID;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -27,28 +28,32 @@ public class TrainingSessionController {
   @PostMapping("/{scenarioId}")
   public ResponseEntity<TrainingSessionResponse> createTrainingSession(
       @RequestBody CreateSessionRequest request,
-      @PathVariable("scenarioId") UUID scenarioId) {
-    return ResponseEntity.ok(trainingSessionService.create(request, scenarioId));
+      @PathVariable("scenarioId") UUID scenarioId,
+      Authentication authentication) {
+    return ResponseEntity.ok(trainingSessionService.create(request, scenarioId, authentication.getName()));
   }
 
   @PostMapping("/{sessionId}/start")
   public ResponseEntity<ApiResponse<TrainingSessionResponse>> startTrainingSession(
-      @PathVariable("sessionId") UUID sessionId) {
-    TrainingSessionResponse response = trainingSessionService.start(sessionId);
+      @PathVariable("sessionId") UUID sessionId,
+      Authentication authentication) {
+    TrainingSessionResponse response = trainingSessionService.start(sessionId, authentication.getName());
     return ResponseEntity.ok(ApiResponse.success(TrainingSuccessCode.TRAINING_STARTED, response));
   }
 
   @PostMapping("/{sessionId}/end")
   public ResponseEntity<ApiResponse<TrainingSessionResponse>> endTrainingSession(
-      @PathVariable("sessionId") UUID sessionId) {
-    TrainingSessionResponse response = trainingSessionService.end(sessionId);
+      @PathVariable("sessionId") UUID sessionId,
+      Authentication authentication) {
+    TrainingSessionResponse response = trainingSessionService.end(sessionId, authentication.getName());
     return ResponseEntity.ok(ApiResponse.success(TrainingSuccessCode.TRAINING_ENDED, response));
   }
 
   @PostMapping("/{sessionId}/force-end")
   public ResponseEntity<ApiResponse<TrainingSessionResponse>> forceEndTrainingSession(
-      @PathVariable("sessionId") UUID sessionId) {
-    TrainingSessionResponse response = trainingSessionService.forceEnd(sessionId);
+      @PathVariable("sessionId") UUID sessionId,
+      Authentication authentication) {
+    TrainingSessionResponse response = trainingSessionService.forceEnd(sessionId, authentication.getName());
     return ResponseEntity.ok(ApiResponse.success(TrainingSuccessCode.TRAINING_FORCE_ENDED, response));
   }
 }

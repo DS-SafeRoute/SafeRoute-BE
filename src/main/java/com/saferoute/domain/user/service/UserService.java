@@ -10,6 +10,7 @@ import com.saferoute.domain.user.entity.User;
 import com.saferoute.domain.user.entity.UserRole;
 import com.saferoute.domain.user.repository.UserRepository;
 import com.saferoute.global.api.error.UserErrorCode;
+import com.saferoute.global.api.code.ErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.global.security.JwtTokenProvider;
 import lombok.RequiredArgsConstructor;
@@ -79,6 +80,11 @@ public class UserService {
     ) {
         User user = findUserByEmail(email);
 
+        if (request.schoolName() != null
+                && !request.schoolName().equals(user.getSchoolName())) {
+            throw new ApiException(ErrorCode.FORBIDDEN);
+        }
+
         if (request.username() != null
                 && userRepository.existsByUsernameAndIdNot(request.username(), user.getId())) {
             throw new ApiException(UserErrorCode.DUPLICATE_USERNAME);
@@ -91,8 +97,7 @@ public class UserService {
         user.updateProfile(
                 request.username(),
                 request.phoneNumber(),
-                request.email(),
-                request.schoolName()
+                request.email()
         );
 
         try {

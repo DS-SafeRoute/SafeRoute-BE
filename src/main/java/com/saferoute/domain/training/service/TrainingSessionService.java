@@ -15,6 +15,7 @@ import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.user.entity.User;
 import com.saferoute.domain.user.entity.UserRole;
 import com.saferoute.domain.user.repository.UserRepository;
+import com.saferoute.domain.user.service.SchoolContextService;
 import com.saferoute.global.api.code.ErrorCode;
 import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
@@ -43,14 +44,16 @@ public class TrainingSessionService {
   private final TrainingScenarioRepository trainingScenarioRepository;
   private final RouteRecalculationService routeRecalculationService;
   private final TrainingEventPublisher trainingEventPublisher;
+  private final SchoolContextService schoolContextService;
 
-  public TrainingSessionResponse create(CreateSessionRequest request, UUID scenarioId) {
-    User user = userRepository.findById(request.getAdminId())
+  public TrainingSessionResponse create(CreateSessionRequest request, UUID scenarioId, String email) {
+    String schoolName = schoolContextService.getSchoolName(email);
+    User user = userRepository.findByIdAndSchoolName(request.getAdminId(), schoolName)
         .orElseThrow(() -> new ApiException(TrainingErrorCode.ADMIN_NOT_FOUND));
     if (user.getRole() != UserRole.MANAGER) {
       throw new ApiException(ErrorCode.FORBIDDEN);
     }
-    TrainingScenario scenario = trainingScenarioRepository.findById(scenarioId)
+    TrainingScenario scenario = trainingScenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, schoolName)
         .orElseThrow(() -> new ApiException(TrainingErrorCode.TRAINING_SCENARIO_NOT_FOUND));
 
     if (request.getStatus() == TrainingStatus.RUNNING && request.getStartedAt() == null) {
@@ -68,8 +71,11 @@ public class TrainingSessionService {
   }
 
   @Transactional(readOnly = true)
-  public TrainingStatusResponse getTrainingStatus(UUID sessionId) {
-    TrainingSession session = findSession(sessionId);
+  public TrainingStatusResponse getTrainingStatus(UUID sessionId, String email) {
+    String schoolName = schoolContextService.getSchoolName(email);
+    TrainingSession session = trainingSessionRepository
+        .findByIdAndScenario_Building_SchoolName(sessionId, schoolName)
+        .orElseThrow(() -> new ApiException(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND));
 
     TrainingScenario scenario = session.getScenario();
     Building building = scenario.getBuilding();
@@ -94,8 +100,8 @@ public class TrainingSessionService {
   }
 
   @Transactional
-  public TrainingSessionResponse start(UUID sessionId) {
-    TrainingSession session = findSession(sessionId);
+  public TrainingSessionResponse start(UUID sessionId, String email) {
+    TrainingSession session = findSession(sessionId, email);
 
     if (session.getStatus() != TrainingStatus.SCHEDULED) {
       throw new ApiException(TrainingErrorCode.INVALID_STATUS_TRANSITION);
@@ -109,8 +115,8 @@ public class TrainingSessionService {
   }
 
   @Transactional
-  public TrainingSessionResponse end(UUID sessionId) {
-    TrainingSession session = findSession(sessionId);
+  public TrainingSessionResponse end(UUID sessionId, String email) {
+    TrainingSession session = findSession(sessionId, email);
 
     if (session.getStatus() != TrainingStatus.RUNNING) {
       throw new ApiException(TrainingErrorCode.INVALID_STATUS_TRANSITION);
@@ -126,8 +132,8 @@ public class TrainingSessionService {
 
   // 관리자가 훈련을 중간에 강제로 끊는 경우로, 정상 종료(COMPLETED)와 구분해 시나리오도 ERROR로 표시한다.
   @Transactional
-  public TrainingSessionResponse forceEnd(UUID sessionId) {
-    TrainingSession session = findSession(sessionId);
+  public TrainingSessionResponse forceEnd(UUID sessionId, String email) {
+    TrainingSession session = findSession(sessionId, email);
 
     if (session.getStatus() != TrainingStatus.RUNNING) {
       throw new ApiException(TrainingErrorCode.INVALID_STATUS_TRANSITION);
@@ -157,8 +163,9 @@ public class TrainingSessionService {
     }
   }
 
-  private TrainingSession findSession(UUID sessionId) {
-    return trainingSessionRepository.findById(sessionId)
+  private TrainingSession findSession(UUID sessionId, String email) {
+    String schoolName = schoolContextService.getSchoolName(email);
+    return trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, schoolName)
         .orElseThrow(() -> new ApiException(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND));
   }
 }

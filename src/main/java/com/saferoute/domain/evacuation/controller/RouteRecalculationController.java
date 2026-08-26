@@ -33,18 +33,23 @@ public class RouteRecalculationController {
     @GetMapping
     public ResponseEntity<ApiResponse<List<RouteRecalculationSummaryResponse>>> getRecalculations(
             @RequestParam UUID trainingSessionId,
-            @RequestParam(required = false) RecalculationStatus status
+            @RequestParam(required = false) RecalculationStatus status,
+            Authentication authentication
     ) {
         List<RouteRecalculationSummaryResponse> response =
-                routeRecalculationService.getRecalculations(trainingSessionId, status);
+                routeRecalculationService.getRecalculations(
+                        trainingSessionId, status, authentication.getName());
         return ResponseEntity.ok(ApiResponse.success(EvacuationSuccessCode.ROUTE_RECALCULATION_LIST_FOUND, response));
     }
 
     @GetMapping("/{recalculationId}")
     public ResponseEntity<ApiResponse<RouteRecalculationDetailResponse>> getRecalculationDetail(
-            @PathVariable UUID recalculationId
+            @PathVariable UUID recalculationId,
+            Authentication authentication
     ) {
-        RouteRecalculationDetailResponse response = routeRecalculationService.getRecalculationDetail(recalculationId);
+        RouteRecalculationDetailResponse response =
+                routeRecalculationService.getRecalculationDetail(
+                        recalculationId, authentication.getName());
         return ResponseEntity.ok(ApiResponse.success(EvacuationSuccessCode.ROUTE_RECALCULATION_DETAIL_FOUND, response));
     }
 

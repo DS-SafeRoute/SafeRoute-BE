@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -51,65 +52,76 @@ public class CctvController {
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<CctvResponse>>> getCctvs(
-            @RequestParam(required = false) UUID floorId
+            @RequestParam(required = false) UUID floorId,
+            Authentication authentication
     ) {
         return ResponseEntity.ok(ApiResponse.success(
                 CctvSuccessCode.CCTV_LIST_FOUND,
-                cctvService.getCctvs(floorId)
+                cctvService.getCctvs(floorId, authentication.getName())
         ));
     }
 
     @GetMapping("/{cctvId}")
-    public ResponseEntity<ApiResponse<CctvResponse>> getCctv(@PathVariable UUID cctvId) {
+    public ResponseEntity<ApiResponse<CctvResponse>> getCctv(
+            @PathVariable UUID cctvId,
+            Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success(
                 CctvSuccessCode.CCTV_DETAIL_FOUND,
-                cctvService.getCctv(cctvId)
+                cctvService.getCctv(cctvId, authentication.getName())
         ));
     }
 
     @GetMapping("/{cctvId}/grid-cells")
-    public ResponseEntity<ApiResponse<CctvResponse>> getGridCells(@PathVariable UUID cctvId) {
+    public ResponseEntity<ApiResponse<CctvResponse>> getGridCells(
+            @PathVariable UUID cctvId,
+            Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success(
                 CctvSuccessCode.CCTV_GRID_CELLS_FOUND,
-                cctvService.getGridCells(cctvId)
+                cctvService.getGridCells(cctvId, authentication.getName())
         ));
     }
 
     @PutMapping("/{cctvId}/grid-cells")
     public ResponseEntity<ApiResponse<CctvResponse>> configureGridCells(
             @PathVariable UUID cctvId,
-            @Valid @RequestBody ConfigureCctvGridCellsRequest request
+            @Valid @RequestBody ConfigureCctvGridCellsRequest request,
+            Authentication authentication
     ) {
         return ResponseEntity.ok(ApiResponse.success(
                 CctvSuccessCode.CCTV_GRID_CELLS_CONFIGURED,
-                cctvService.configureGridCells(cctvId, request)
+                cctvService.configureGridCells(cctvId, request, authentication.getName())
         ));
     }
 
     @PatchMapping("/{cctvId}")
     public ResponseEntity<ApiResponse<CctvResponse>> updateCctv(
             @PathVariable UUID cctvId,
-            @Valid @RequestBody UpdateCctvRequest request
+            @Valid @RequestBody UpdateCctvRequest request,
+            Authentication authentication
     ) {
         return ResponseEntity.ok(ApiResponse.success(
                 CctvSuccessCode.CCTV_UPDATED,
-                cctvService.updateCctv(cctvId, request)
+                cctvService.updateCctv(cctvId, request, authentication.getName())
         ));
     }
 
     @PatchMapping("/{cctvId}/enable")
-    public ResponseEntity<ApiResponse<CctvResponse>> enableCctv(@PathVariable UUID cctvId) {
+    public ResponseEntity<ApiResponse<CctvResponse>> enableCctv(
+            @PathVariable UUID cctvId,
+            Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success(
                 CctvSuccessCode.CCTV_ENABLED,
-                cctvService.enableCctv(cctvId)
+                cctvService.enableCctv(cctvId, authentication.getName())
         ));
     }
 
     @PatchMapping("/{cctvId}/disable")
-    public ResponseEntity<ApiResponse<CctvResponse>> disableCctv(@PathVariable UUID cctvId) {
+    public ResponseEntity<ApiResponse<CctvResponse>> disableCctv(
+            @PathVariable UUID cctvId,
+            Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success(
                 CctvSuccessCode.CCTV_DISABLED,
-                cctvService.disableCctv(cctvId)
+                cctvService.disableCctv(cctvId, authentication.getName())
         ));
     }
 }

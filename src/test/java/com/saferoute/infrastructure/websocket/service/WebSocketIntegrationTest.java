@@ -128,7 +128,7 @@ class WebSocketIntegrationTest {
         userRepository.save(managerUser);
         userRepository.save(normalUser);
 
-        building = Building.create("공학관", "서울특별시 성북구 안전로 1", BuildingType.CLASSROOM);
+        building = Building.create("공학관", "서울특별시 성북구 안전로 1", BuildingType.CLASSROOM, "SafeRoute School");
         buildingRepository.save(building);
 
         trainingScenario = TrainingScenario.create(
@@ -209,7 +209,7 @@ class WebSocketIntegrationTest {
             StompSession session = connect(managerToken);
             BlockingQueue<String> received = subscribeAndCollect(session, scheduledSession.getId());
 
-            trainingSessionService.start(scheduledSession.getId());
+            trainingSessionService.start(scheduledSession.getId(), managerUser.getEmail());
 
             JsonNode json = objectMapper.readTree(received.poll(5, TimeUnit.SECONDS));
             assertThat(json.get("eventType").asText()).isEqualTo("TRAINING_STATUS_UPDATED");
@@ -232,7 +232,7 @@ class WebSocketIntegrationTest {
             StompSession session = connect(managerToken);
             BlockingQueue<String> received = subscribeAndCollect(session, runningSession.getId());
 
-            trainingSessionService.end(runningSession.getId());
+            trainingSessionService.end(runningSession.getId(), managerUser.getEmail());
 
             JsonNode json = objectMapper.readTree(received.poll(5, TimeUnit.SECONDS));
             assertThat(json.get("data").get("status").asText()).isEqualTo("COMPLETED");
@@ -254,7 +254,7 @@ class WebSocketIntegrationTest {
             StompSession session = connect(managerToken);
             BlockingQueue<String> received = subscribeAndCollect(session, runningSession.getId());
 
-            trainingSessionService.forceEnd(runningSession.getId());
+            trainingSessionService.forceEnd(runningSession.getId(), managerUser.getEmail());
 
             JsonNode json = objectMapper.readTree(received.poll(5, TimeUnit.SECONDS));
             assertThat(json.get("data").get("status").asText()).isEqualTo("STOPPED");
