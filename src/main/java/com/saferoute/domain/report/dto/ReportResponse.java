@@ -9,6 +9,7 @@ import lombok.Getter;
 @Getter
 @Builder
 public class ReportResponse {
+  private String reportId;
   private Grade grade;
   private BigDecimal survivalRate;
   private Integer avgEvacuationSec;
@@ -19,6 +20,7 @@ public class ReportResponse {
 
   public static ReportResponse from(TrainingReport report) {
     return ReportResponse.builder()
+        .reportId(report.getShortId())
         .grade(report.getGrade())
         .survivalRate(report.getSurvivalRate())
         .avgEvacuationSec(report.getAvgEvacuationSec())

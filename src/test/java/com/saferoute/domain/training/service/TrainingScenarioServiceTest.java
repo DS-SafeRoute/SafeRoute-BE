@@ -117,7 +117,7 @@ class TrainingScenarioServiceTest {
     @DisplayName("리포트가 생성된 시나리오는 목록에서 reportId를 함께 응답한다")
     void getScenarios_scenarioWithReport_returnsReportId() {
         UUID scenarioId = UUID.randomUUID();
-        UUID reportId = UUID.randomUUID();
+        String reportId = "abc123XYZ0";
         TrainingScenario scenario = scenarioWithId(scenarioId);
         given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
         given(scenarioRepository.findAllByBuilding_SchoolNameOrderByCreatedAtDesc(SCHOOL_NAME))
@@ -152,7 +152,7 @@ class TrainingScenarioServiceTest {
         assertThat(responses.get(0).getReportId()).isNull();
     }
 
-    private TrainingReportRepository.ScenarioReportId scenarioReportId(UUID scenarioId, UUID reportId) {
+    private TrainingReportRepository.ScenarioReportId scenarioReportId(UUID scenarioId, String reportId) {
         return new TrainingReportRepository.ScenarioReportId() {
             @Override
             public UUID getScenarioId() {
@@ -160,7 +160,7 @@ class TrainingScenarioServiceTest {
             }
 
             @Override
-            public UUID getReportId() {
+            public String getReportId() {
                 return reportId;
             }
         };
