@@ -48,7 +48,7 @@ public class TrainingScenarioService {
 
         List<UUID> scenarioIds = scenarios.stream().map(TrainingScenario::getId).toList();
         Set<UUID> scenarioIdsWithSession = trainingSessionRepository.findScenarioIdsWithAnySession(scenarioIds);
-        Map<UUID, UUID> reportIdsByScenarioId = trainingReportRepository.findReportIdsByScenarioIds(scenarioIds)
+        Map<UUID, String> reportIdsByScenarioId = trainingReportRepository.findReportIdsByScenarioIds(scenarioIds)
                 .stream()
                 .collect(Collectors.toMap(
                         TrainingReportRepository.ScenarioReportId::getScenarioId,

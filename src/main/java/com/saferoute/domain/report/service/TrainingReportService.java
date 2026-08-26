@@ -9,6 +9,8 @@ import com.saferoute.domain.report.repository.TrainingReportRepository;
 import com.saferoute.domain.report.dto.CreateReportRequest;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.user.service.SchoolContextService;
+import com.saferoute.global.api.error.ReportErrorCode;
+import com.saferoute.global.api.exception.ApiException;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.UUID;
@@ -37,6 +39,14 @@ public class TrainingReportService {
         request.getPdfUrl(),
         session);
     return ReportResponse.from(trainingReportRepository.save(report));
+  }
+
+  public ReportResponse getReport(String reportId, String email) {
+    String schoolName = schoolContextService.getSchoolName(email);
+    TrainingReport report = trainingReportRepository
+        .findByShortIdAndTrainingSession_Scenario_Building_SchoolName(reportId, schoolName)
+        .orElseThrow(() -> new ApiException(ReportErrorCode.REPORT_NOT_FOUND));
+    return ReportResponse.from(report);
   }
 
   public List<RecentTrainingReportResponse> getRecentTrainingReport(String email) {
