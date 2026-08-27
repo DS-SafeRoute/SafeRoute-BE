@@ -173,7 +173,14 @@ public class TrainingSessionService {
     for (TrainingSession session : timedOutSessions) {
       session.fail(Instant.now());
       session.getScenario().markError();
-      fireZoneRepository.resetFiredCellsByScenarioId(session.getScenario().getId());
+    }
+
+    timedOutSessions.stream()
+        .map(session -> session.getScenario().getId())
+        .distinct()
+        .forEach(fireZoneRepository::resetFiredCellsByScenarioId);
+
+    for (TrainingSession session : timedOutSessions) {
       routeRecalculationService.cancelAllPendingForSession(session.getId(), "훈련 타임아웃으로 무효화됨");
       trainingEventPublisher.publishTrainingStatusUpdatedAfterCommit(session);
       log.info("훈련 세션 타임아웃 처리: sessionId={}", session.getId());

@@ -307,6 +307,17 @@ public class TrainingEventPublisher {
         );
     }
 
+    // DB 트랜잭션이 실제로 커밋된 이후에만 발행
+    public void publishFireSpreadUpdatedAfterCommit(UUID sessionId, int spreadGeneration, List<FireZone> newlyFired) {
+        if (newlyFired.isEmpty()) {
+            return;
+        }
+        publishAfterCommit(
+                () -> publishFireSpreadUpdated(sessionId, spreadGeneration, newlyFired),
+                "커밋 후 화재 확산 이벤트 발행 실패: sessionId=" + sessionId
+        );
+    }
+
     // FireSpreadService가 확산을 1스텝 진행시킬 때마다 호출한다. 새로 옮겨붙은 셀이 없으면 발행하지 않는다.
     public void publishFireSpreadUpdated(UUID sessionId, int spreadGeneration, List<FireZone> newlyFired) {
         if (newlyFired.isEmpty()) {
