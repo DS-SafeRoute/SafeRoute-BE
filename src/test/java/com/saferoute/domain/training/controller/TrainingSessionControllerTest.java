@@ -2,11 +2,14 @@ package com.saferoute.domain.training.controller;
 
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.saferoute.domain.training.dto.TrainingSessionListResponse;
 import com.saferoute.domain.training.dto.TrainingSessionResponse;
+import com.saferoute.domain.training.dto.TrainingSessionSummaryResponse;
 import com.saferoute.domain.training.entity.TrainingStatus;
 import com.saferoute.domain.training.service.TrainingSessionService;
 import com.saferoute.global.api.error.TrainingErrorCode;
@@ -14,6 +17,7 @@ import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.global.config.SecurityConfig;
 import com.saferoute.global.security.JwtAuthenticationFilter;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -56,6 +60,68 @@ class TrainingSessionControllerTest {
                 .adminName("박현지")
                 .scenarioName("정기 훈련")
                 .build();
+    }
+
+    // === getSessions ===
+
+    @Test
+    @DisplayName("GET /sessions?status=RUNNING - 세션 목록을 공통 응답으로 반환한다")
+    void getSessions_success() throws Exception {
+        UUID buildingId = UUID.randomUUID();
+        TrainingSessionSummaryResponse summary = new TrainingSessionSummaryResponse(
+                sessionId,
+                "3학년 A동 화재 대피 훈련",
+                buildingId,
+                "A동",
+                TrainingStatus.RUNNING,
+                Instant.parse("2026-08-26T05:26:00Z")
+        );
+        given(trainingSessionService.getSessions(TrainingStatus.RUNNING, EMAIL))
+                .willReturn(new TrainingSessionListResponse(List.of(summary)));
+
+        mockMvc.perform(get("/api/v1/sessions")
+                        .param("status", "RUNNING")
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.code").value("TRAINING_SUCCESS_008"))
+                .andExpect(jsonPath("$.result.sessions[0].sessionId").value(sessionId.toString()))
+                .andExpect(jsonPath("$.result.sessions[0].scenarioName").value("3학년 A동 화재 대피 훈련"))
+                .andExpect(jsonPath("$.result.sessions[0].buildingId").value(buildingId.toString()))
+                .andExpect(jsonPath("$.result.sessions[0].buildingName").value("A동"))
+                .andExpect(jsonPath("$.result.sessions[0].status").value("RUNNING"));
+    }
+
+    @Test
+    @DisplayName("GET /sessions?status=RUNNING - 해당 상태의 세션이 없으면 빈 배열을 반환한다")
+    void getSessions_empty_returnsEmptyArray() throws Exception {
+        given(trainingSessionService.getSessions(TrainingStatus.RUNNING, EMAIL))
+                .willReturn(new TrainingSessionListResponse(List.of()));
+
+        mockMvc.perform(get("/api/v1/sessions")
+                        .param("status", "RUNNING")
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.sessions").isEmpty());
+    }
+
+    @Test
+    @DisplayName("GET /sessions - status 파라미터가 없으면 400을 반환한다")
+    void getSessions_missingStatus_returnsBadRequest() throws Exception {
+        mockMvc.perform(get("/api/v1/sessions")
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON400"));
+    }
+
+    @Test
+    @DisplayName("GET /sessions - status 값이 올바르지 않으면 400을 반환한다")
+    void getSessions_invalidStatus_returnsBadRequest() throws Exception {
+        mockMvc.perform(get("/api/v1/sessions")
+                        .param("status", "NOT_A_STATUS")
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON400"));
     }
 
     // === start ===

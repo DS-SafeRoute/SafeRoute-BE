@@ -130,6 +130,109 @@ class SecurityAuthorizationIntegrationTest {
     }
 
     @Test
+    @DisplayName("일반 사용자는 훈련 모니터링 카메라 목록을 조회할 수 없다")
+    void normalUserCannotReadTrainingMonitoringCameras() throws Exception {
+        String token = signupAndLogin(UserRole.NORMAL);
+
+        mockMvc.perform(
+                        get("/api/v1/sessions/{sessionId}/monitoring/cameras", UUID.randomUUID())
+                                .header("Authorization", "Bearer " + token)
+                )
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMMON403"));
+    }
+
+    @Test
+    @DisplayName("관리자는 훈련 모니터링 카메라 목록 엔드포인트에 접근할 수 있다")
+    void managerCanReadTrainingMonitoringCameras() throws Exception {
+        String token = signupAndLogin(UserRole.MANAGER);
+
+        mockMvc.perform(
+                        get("/api/v1/sessions/{sessionId}/monitoring/cameras", UUID.randomUUID())
+                                .header("Authorization", "Bearer " + token)
+                )
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("TRAINING001"));
+    }
+
+    @Test
+    @DisplayName("일반 사용자는 훈련 모니터링 프레임 목록을 조회할 수 없다")
+    void normalUserCannotReadTrainingMonitoringFrames() throws Exception {
+        String token = signupAndLogin(UserRole.NORMAL);
+
+        mockMvc.perform(
+                        get("/api/v1/sessions/{sessionId}/monitoring/cameras/{cctvId}/frames",
+                                UUID.randomUUID(), UUID.randomUUID())
+                                .header("Authorization", "Bearer " + token)
+                )
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMMON403"));
+    }
+
+    @Test
+    @DisplayName("관리자는 훈련 모니터링 프레임 목록 엔드포인트에 접근할 수 있다")
+    void managerCanReadTrainingMonitoringFrames() throws Exception {
+        String token = signupAndLogin(UserRole.MANAGER);
+
+        mockMvc.perform(
+                        get("/api/v1/sessions/{sessionId}/monitoring/cameras/{cctvId}/frames",
+                                UUID.randomUUID(), UUID.randomUUID())
+                                .header("Authorization", "Bearer " + token)
+                )
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("TRAINING001"));
+    }
+
+    @Test
+    @DisplayName("일반 사용자는 훈련 세션 목록을 조회할 수 없다")
+    void normalUserCannotReadTrainingSessions() throws Exception {
+        String token = signupAndLogin(UserRole.NORMAL);
+
+        mockMvc.perform(
+                        get("/api/v1/sessions")
+                                .param("status", "RUNNING")
+                                .header("Authorization", "Bearer " + token)
+                )
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMMON403"));
+    }
+
+    @Test
+    @DisplayName("관리자는 훈련 세션 목록 엔드포인트에 접근할 수 있다")
+    void managerCanReadTrainingSessions() throws Exception {
+        String token = signupAndLogin(UserRole.MANAGER);
+
+        mockMvc.perform(
+                        get("/api/v1/sessions")
+                                .param("status", "RUNNING")
+                                .header("Authorization", "Bearer " + token)
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.sessions").isEmpty());
+    }
+
+    @Test
+    @DisplayName("Swagger에 훈련 모니터링 카메라 API와 응답 예시가 노출된다")
+    void trainingMonitoringApiIsDocumented() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(
+                        "$.paths['/api/v1/sessions/{sessionId}/monitoring/cameras'].get.summary"
+                ).value("카메라별 최신 캡처 목록 조회"))
+                .andExpect(jsonPath(
+                        "$.paths['/api/v1/sessions/{sessionId}/monitoring/cameras']"
+                                + ".get.responses['200'].content['application/json'].examples"
+                                + ".['최신 캡처가 있는 카메라'].value.result.cameras[0].capturedAt"
+                ).value(1_787_722_095_000L))
+                .andExpect(jsonPath(
+                        "$.components.schemas.MonitoringCameraResponse.properties.thumbnailUrl.description"
+                ).value(org.hamcrest.Matchers.containsString("presigned GET URL")))
+                .andExpect(jsonPath(
+                        "$.components.schemas.MonitoringCameraResponse.properties.capturedAt.description"
+                ).value(org.hamcrest.Matchers.containsString("epoch milliseconds")));
+    }
+
+    @Test
     @DisplayName("관리자는 건물을 등록할 수 있다")
     void managerCanWrite() throws Exception {
         String token =
