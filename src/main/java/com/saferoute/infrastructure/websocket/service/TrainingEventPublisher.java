@@ -5,11 +5,13 @@ import com.saferoute.domain.device.entity.IoTLightDirection;
 import com.saferoute.domain.evacuation.recalculation.entity.RouteRecalculation;
 import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventItem;
 import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
+import com.saferoute.domain.training.entity.FireZone;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.infrastructure.websocket.dto.CongestionEventData;
 import com.saferoute.infrastructure.websocket.dto.CongestionEventImageUpdatedData;
 import com.saferoute.infrastructure.websocket.dto.CongestionEventReceivedData;
 import com.saferoute.infrastructure.websocket.dto.CongestionImageUpdatedData;
+import com.saferoute.infrastructure.websocket.dto.FireSpreadEventData;
 import com.saferoute.infrastructure.websocket.dto.IoTLightEventMessage;
 import com.saferoute.infrastructure.websocket.dto.IoTLightStatusEventData;
 import com.saferoute.infrastructure.websocket.dto.RouteRecalculationEventData;
@@ -17,6 +19,7 @@ import com.saferoute.infrastructure.websocket.dto.TrainingEventMessage;
 import com.saferoute.infrastructure.websocket.dto.TrainingEventType;
 import com.saferoute.infrastructure.websocket.dto.TrainingStatusEventData;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -301,6 +304,28 @@ public class TrainingEventPublisher {
                 "재탐색 취소 이벤트 발행: sessionId={}, recalculationId={}",
                 sessionId,
                 recalculation.getId()
+        );
+    }
+
+    // FireSpreadService가 확산을 1스텝 진행시킬 때마다 호출한다. 새로 옮겨붙은 셀이 없으면 발행하지 않는다.
+    public void publishFireSpreadUpdated(UUID sessionId, int spreadGeneration, List<FireZone> newlyFired) {
+        if (newlyFired.isEmpty()) {
+            return;
+        }
+
+        TrainingEventMessage<FireSpreadEventData> message = TrainingEventMessage.of(
+                TrainingEventType.FIRE_SPREAD_UPDATED,
+                sessionId,
+                FireSpreadEventData.from(spreadGeneration, newlyFired)
+        );
+
+        messagingTemplate.convertAndSend(SESSION_TOPIC_PREFIX + sessionId, message);
+
+        log.debug(
+                "화재 확산 이벤트 발행: sessionId={}, generation={}, newlyFiredCount={}",
+                sessionId,
+                spreadGeneration,
+                newlyFired.size()
         );
     }
 

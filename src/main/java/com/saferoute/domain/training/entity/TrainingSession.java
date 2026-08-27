@@ -80,6 +80,7 @@ public class TrainingSession {
     private TrainingSession(TrainingStatus status, Instant startedAt, User admin, TrainingScenario scenario) {
         this.status = status;
         this.startedAt = startedAt;
+        this.lastSpreadAt = startedAt;
         this.admin = admin;
         this.scenario = scenario;
     }

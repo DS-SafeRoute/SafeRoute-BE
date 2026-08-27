@@ -16,6 +16,8 @@ public interface TrainingSessionRepository extends JpaRepository<TrainingSession
 
   List<TrainingSession> findByStatusAndStartedAtBefore(TrainingStatus status, Instant threshold);
 
+  List<TrainingSession> findAllByStatus(TrainingStatus status);
+
   // Pi가 보낸 UUID 세션이 실행 중이고, 혼잡 엣지와 같은 건물에 속하는지 한 번에 검증한다.
   Optional<TrainingSession> findByIdAndStatusAndScenario_Building_Id(
       UUID id, TrainingStatus status, UUID buildingId);

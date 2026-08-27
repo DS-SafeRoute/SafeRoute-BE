@@ -64,11 +64,6 @@ public class FireZone {
         this.spreadGeneration = spreadGeneration;
     }
 
-    // 화재구역 등록용 정적 팩토리 메서드
-    public static FireZone create(TrainingScenario scenario, Floor floor, FloorGridCell gridCell, Boolean isManualAdd,  Integer spreadGeneration) {
-        return new FireZone(scenario, floor, gridCell, isManualAdd, spreadGeneration);
-    }
-
     // 관리자가 지정한 최초 발화점 등록용
     public static FireZone createOrigin(TrainingScenario scenario, Floor floor, FloorGridCell gridCell) {
         return new FireZone(scenario, floor, gridCell, true, 0);

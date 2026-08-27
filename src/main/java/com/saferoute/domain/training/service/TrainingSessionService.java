@@ -10,6 +10,7 @@ import com.saferoute.domain.training.entity.TrainingScenario;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
 import com.saferoute.domain.evacuation.recalculation.service.RouteRecalculationService;
+import com.saferoute.domain.training.repository.FireZoneRepository;
 import com.saferoute.domain.training.repository.TrainingScenarioRepository;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.user.entity.User;
@@ -43,6 +44,7 @@ public class TrainingSessionService {
   private final UserRepository userRepository;
   private final TrainingSessionRepository trainingSessionRepository;
   private final TrainingScenarioRepository trainingScenarioRepository;
+  private final FireZoneRepository fireZoneRepository;
   private final RouteRecalculationService routeRecalculationService;
   private final TrainingEventPublisher trainingEventPublisher;
   private final SchoolContextService schoolContextService;
@@ -136,6 +138,7 @@ public class TrainingSessionService {
 
     session.complete(Instant.now());
     session.getScenario().markCompleted();
+    fireZoneRepository.resetFiredCellsByScenarioId(session.getScenario().getId());
     routeRecalculationService.cancelAllPendingForSession(session.getId(), "훈련 종료로 무효화됨");
     trainingEventPublisher.publishTrainingStatusUpdatedAfterCommit(session);
 
@@ -153,6 +156,7 @@ public class TrainingSessionService {
 
     session.stop(Instant.now());
     session.getScenario().markError();
+    fireZoneRepository.resetFiredCellsByScenarioId(session.getScenario().getId());
     routeRecalculationService.cancelAllPendingForSession(session.getId(), "훈련 강제 종료로 무효화됨");
     trainingEventPublisher.publishTrainingStatusUpdatedAfterCommit(session);
 
@@ -169,6 +173,7 @@ public class TrainingSessionService {
     for (TrainingSession session : timedOutSessions) {
       session.fail(Instant.now());
       session.getScenario().markError();
+      fireZoneRepository.resetFiredCellsByScenarioId(session.getScenario().getId());
       routeRecalculationService.cancelAllPendingForSession(session.getId(), "훈련 타임아웃으로 무효화됨");
       trainingEventPublisher.publishTrainingStatusUpdatedAfterCommit(session);
       log.info("훈련 세션 타임아웃 처리: sessionId={}", session.getId());

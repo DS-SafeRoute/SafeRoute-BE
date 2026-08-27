@@ -35,4 +35,19 @@ public interface FloorGridCellRepository extends JpaRepository<FloorGridCell, UU
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("delete from FloorGridCell c where c.floor.id = :floorId")
     int deleteAllByFloorId(@Param("floorId") UUID floorId);
+
+    // 4방향(상하좌우) 인접 셀. 대각선까지 필요하면 조건 추가.
+    @Query("""
+        SELECT c FROM FloorGridCell c
+        WHERE c.floor.id = :floorId
+          AND (
+            (c.rowIndex = :row - 1 AND c.columnIndex = :column) OR
+            (c.rowIndex = :row + 1 AND c.columnIndex = :column) OR
+            (c.rowIndex = :row AND c.columnIndex = :column - 1) OR
+            (c.rowIndex = :row AND c.columnIndex = :column + 1)
+          )
+        """)
+    List<FloorGridCell> findAdjacent(@Param("floorId") UUID floorId,
+                                     @Param("row") int row,
+                                     @Param("column") int column);
 }
