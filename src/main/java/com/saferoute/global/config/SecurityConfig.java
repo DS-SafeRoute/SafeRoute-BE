@@ -134,6 +134,12 @@ public class SecurityConfig {
                                 "/api/v1/sessions/*/monitoring/cameras/**"
                         ).hasRole("MANAGER")
 
+                        // 세션 목록은 모니터링 화면 진입점으로 쓰이므로 카메라 조회와 동일하게 관리자 전용이다.
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/sessions"
+                        ).hasRole("MANAGER")
+
                         // 경로 이탈률은 훈련 결과 분석용 관리자 화면 전용이다.
                         .requestMatchers(
                                 HttpMethod.GET,
