@@ -9,8 +9,11 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.evacuation.recalculation.service.RouteRecalculationService;
 import com.saferoute.domain.training.dto.CreateSessionRequest;
+import com.saferoute.domain.training.dto.TrainingSessionListResponse;
+import com.saferoute.domain.training.dto.TrainingSessionSummaryResponse;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
 import com.saferoute.domain.training.entity.TrainingScenario;
@@ -92,6 +95,52 @@ class TrainingSessionServiceTest {
                 .isInstanceOf(ApiException.class)
                 .extracting(exception -> ((ApiException) exception).getErrorCode())
                 .isEqualTo(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND);
+    }
+
+    // === getSessions ===
+
+    @Test
+    @DisplayName("요청자 학교의 상태별 세션 목록을 최신순으로 반환한다")
+    void getSessions_returnsSummariesForRequesterSchool() {
+        UUID buildingId = UUID.randomUUID();
+        Building building = mock(Building.class);
+        given(building.getId()).willReturn(buildingId);
+        given(building.getName()).willReturn("A동");
+        TrainingScenario scenario = mock(TrainingScenario.class);
+        given(scenario.getName()).willReturn("3학년 A동 화재 대피 훈련");
+        given(scenario.getBuilding()).willReturn(building);
+        Instant startedAt = Instant.parse("2026-08-26T05:26:00Z");
+        TrainingSession session =
+                TrainingSession.create(TrainingStatus.RUNNING, startedAt, mock(User.class), scenario);
+        ReflectionTestUtils.setField(session, "id", sessionId);
+        given(trainingSessionRepository
+                .findAllByStatusAndScenario_Building_SchoolNameOrderByStartedAtDesc(
+                        TrainingStatus.RUNNING, SCHOOL_NAME))
+                .willReturn(List.of(session));
+
+        TrainingSessionListResponse response = trainingSessionService.getSessions(TrainingStatus.RUNNING, EMAIL);
+
+        assertThat(response.sessions()).hasSize(1);
+        TrainingSessionSummaryResponse summary = response.sessions().get(0);
+        assertThat(summary.sessionId()).isEqualTo(sessionId);
+        assertThat(summary.scenarioName()).isEqualTo("3학년 A동 화재 대피 훈련");
+        assertThat(summary.buildingId()).isEqualTo(buildingId);
+        assertThat(summary.buildingName()).isEqualTo("A동");
+        assertThat(summary.status()).isEqualTo(TrainingStatus.RUNNING);
+        assertThat(summary.startedAt()).isEqualTo(startedAt);
+    }
+
+    @Test
+    @DisplayName("해당 상태의 세션이 없으면 빈 목록을 반환한다")
+    void getSessions_noMatchingSessions_returnsEmptyList() {
+        given(trainingSessionRepository
+                .findAllByStatusAndScenario_Building_SchoolNameOrderByStartedAtDesc(
+                        TrainingStatus.RUNNING, SCHOOL_NAME))
+                .willReturn(List.of());
+
+        TrainingSessionListResponse response = trainingSessionService.getSessions(TrainingStatus.RUNNING, EMAIL);
+
+        assertThat(response.sessions()).isEmpty();
     }
 
     // === create ===

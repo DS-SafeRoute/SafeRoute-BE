@@ -23,6 +23,11 @@ public enum TrainingSuccessCode implements BaseCode {
             HttpStatus.OK,
             "TRAINING_SUCCESS_007",
             "카메라별 프레임 목록 조회에 성공했습니다."
+    ),
+    TRAINING_SESSION_LIST_FOUND(
+            HttpStatus.OK,
+            "TRAINING_SUCCESS_008",
+            "훈련 세션 목록 조회에 성공했습니다."
     );
 
     private final HttpStatus httpStatus;
