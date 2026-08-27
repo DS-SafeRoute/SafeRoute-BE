@@ -184,6 +184,34 @@ class SecurityAuthorizationIntegrationTest {
     }
 
     @Test
+    @DisplayName("일반 사용자는 훈련 세션 목록을 조회할 수 없다")
+    void normalUserCannotReadTrainingSessions() throws Exception {
+        String token = signupAndLogin(UserRole.NORMAL);
+
+        mockMvc.perform(
+                        get("/api/v1/sessions")
+                                .param("status", "RUNNING")
+                                .header("Authorization", "Bearer " + token)
+                )
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMMON403"));
+    }
+
+    @Test
+    @DisplayName("관리자는 훈련 세션 목록 엔드포인트에 접근할 수 있다")
+    void managerCanReadTrainingSessions() throws Exception {
+        String token = signupAndLogin(UserRole.MANAGER);
+
+        mockMvc.perform(
+                        get("/api/v1/sessions")
+                                .param("status", "RUNNING")
+                                .header("Authorization", "Bearer " + token)
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.sessions").isEmpty());
+    }
+
+    @Test
     @DisplayName("Swagger에 훈련 모니터링 카메라 API와 응답 예시가 노출된다")
     void trainingMonitoringApiIsDocumented() throws Exception {
         mockMvc.perform(get("/v3/api-docs"))
