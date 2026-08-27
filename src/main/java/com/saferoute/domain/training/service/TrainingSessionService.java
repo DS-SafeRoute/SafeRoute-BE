@@ -4,7 +4,9 @@ import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.training.dto.CreateSessionRequest;
 import com.saferoute.domain.training.dto.RunningSessionResponse;
 import com.saferoute.domain.training.dto.ScheduledSessionResponse;
+import com.saferoute.domain.training.dto.TrainingSessionListResponse;
 import com.saferoute.domain.training.dto.TrainingSessionResponse;
+import com.saferoute.domain.training.dto.TrainingSessionSummaryResponse;
 import com.saferoute.domain.training.dto.TrainingStatusResponse;
 import com.saferoute.domain.training.entity.TrainingScenario;
 import com.saferoute.domain.training.entity.TrainingSession;
@@ -80,6 +82,18 @@ public class TrainingSessionService {
     } catch (DataIntegrityViolationException e) {
       throw new ApiException(TrainingErrorCode.SESSION_ALREADY_EXISTS);
     }
+  }
+
+  // 모니터링 화면 진입점: 프론트가 이 목록에서 sessionId를 얻어 모니터링 화면으로 이동한다.
+  @Transactional(readOnly = true)
+  public TrainingSessionListResponse getSessions(TrainingStatus status, String email) {
+    String schoolName = schoolContextService.getSchoolName(email);
+    List<TrainingSessionSummaryResponse> sessions = trainingSessionRepository
+        .findAllByStatusAndScenario_Building_SchoolNameOrderByStartedAtDesc(status, schoolName)
+        .stream()
+        .map(TrainingSessionSummaryResponse::from)
+        .toList();
+    return new TrainingSessionListResponse(sessions);
   }
 
   @Transactional(readOnly = true)
