@@ -4,6 +4,7 @@ import com.saferoute.domain.report.entity.TrainingReport;
 import com.saferoute.domain.user.entity.User;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotNull;
+
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
@@ -22,86 +23,100 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class TrainingSession {
 
-  @Id
-  @GeneratedValue
-  private UUID id;
+    @Id
+    @GeneratedValue
+    private UUID id;
 
-  @Version
-  private Long version;
+    @Version
+    private Long version;
 
-  //훈련 상태 (RUNNING, STOPPED 등)
-  @NotNull
-  @Enumerated(EnumType.STRING)
-  @Column(name = "training_status", nullable = false, length = 20)
-  private TrainingStatus status;
+    //훈련 상태 (RUNNING, STOPPED 등)
+    @NotNull
+    @Enumerated(EnumType.STRING)
+    @Column(name = "training_status", nullable = false, length = 20)
+    private TrainingStatus status;
 
-  @Column(name = "started_at", nullable = false)
-  private Instant startedAt;
+    @Column(name = "started_at", nullable = false)
+    private Instant startedAt;
 
-  @Column(name = "ended_at")
-  private Instant endedAt;
+    @Column(name = "ended_at")
+    private Instant endedAt;
 
-  @Column(name = "act_participants")
-  private Integer actualParticipants;
+    @Column(name = "act_participants")
+    private Integer actualParticipants;
 
-  @Column(name = "survival_rate")
-  private BigDecimal currentSurvivalRate;
+    @Column(name = "survival_rate")
+    private BigDecimal currentSurvivalRate;
 
-  @Column(name = "avg_evacuation_sec")
-  private Integer currentAvgEvacuationSec;
+    @Column(name = "avg_evacuation_sec")
+    private Integer currentAvgEvacuationSec;
 
-  @CreatedDate
-  @Column(name = "created_at", nullable = false, updatable = false)
-  private Instant createdAt;
+    @CreatedDate
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
 
-  @LastModifiedDate
-  @Column(name = "updated_at", nullable = false)
-  private Instant updatedAt;
+    @LastModifiedDate
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt;
 
-  @ManyToOne(fetch = FetchType.LAZY)
-  @JoinColumn(name = "user_id", nullable = false)
-  private User admin;
+    @Column(name = "last_spread_at")
+    private Instant lastSpreadAt;
 
-  // 시나리오당 세션은 1개만 존재한다. 재훈련이 필요하면 시나리오를 새로 만든다.
-  @ManyToOne(fetch = FetchType.LAZY)
-  @JoinColumn(name = "training_scenario_id", nullable = false, unique = true)
-  private TrainingScenario scenario;
+    @Column(name = "current_generation", nullable = false)
+    private int currentGeneration = 0;
 
-  @OneToOne(mappedBy = "trainingSession", cascade = CascadeType.ALL)
-  private TrainingReport trainingReport;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User admin;
 
-  private TrainingSession(TrainingStatus status, Instant startedAt, User admin, TrainingScenario scenario) {
-    this.status = status;
-    this.startedAt = startedAt;
-    this.admin = admin;
-    this.scenario = scenario;
-  }
+    // 시나리오당 세션은 1개만 존재한다. 재훈련이 필요하면 시나리오를 새로 만든다.
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "training_scenario_id", nullable = false, unique = true)
+    private TrainingScenario scenario;
 
-  // 훈련 세션 생성용 정적 팩토리 메서드
-  public static TrainingSession create(TrainingStatus status, Instant startedAt, User admin, TrainingScenario scenario) {
-    return new TrainingSession(status, startedAt, admin, scenario);
-  }
+    @OneToOne(mappedBy = "trainingSession", cascade = CascadeType.ALL)
+    private TrainingReport trainingReport;
 
-  // 관리자가 훈련 시작 버튼을 누른 시각으로 실제 시작 시각을 갱신하며 RUNNING으로 전이한다.
-  public void start(Instant startedAt) {
-    this.status = TrainingStatus.RUNNING;
-    this.startedAt = startedAt;
-  }
+    private TrainingSession(TrainingStatus status, Instant startedAt, User admin, TrainingScenario scenario) {
+        this.status = status;
+        this.startedAt = startedAt;
+        this.lastSpreadAt = startedAt;
+        this.admin = admin;
+        this.scenario = scenario;
+    }
 
-  // 훈련 정상 종료
-  public void complete(Instant endedAt) {
-    this.status = TrainingStatus.COMPLETED;
-    this.endedAt = endedAt;
-  }
+    // 훈련 세션 생성용 정적 팩토리 메서드
+    public static TrainingSession create(TrainingStatus status, Instant startedAt, User admin, TrainingScenario scenario) {
+        return new TrainingSession(status, startedAt, admin, scenario);
+    }
 
-  // 관리자에 의한 강제 종료
-  public void stop(Instant endedAt) {
-    this.status = TrainingStatus.STOPPED;
-    this.endedAt = endedAt;
-  }
+    // 관리자가 훈련 시작 버튼을 누른 시각으로 실제 시작 시각을 갱신하며 RUNNING으로 전이한다.
+    public void start(Instant startedAt) {
+        this.status = TrainingStatus.RUNNING;
+        this.startedAt = startedAt;
+        this.lastSpreadAt = startedAt;
+        this.currentGeneration = 0;
+    }
 
-  public void fail(Instant endedAt) {
-    this.status = TrainingStatus.FAILED;
-    this.endedAt = endedAt;
-  }
+    public void advanceSpread(int nextGeneration, Instant spreadAt) {
+        this.currentGeneration = nextGeneration;
+        this.lastSpreadAt = spreadAt;
+    }
+
+    // 훈련 정상 종료
+    public void complete(Instant endedAt) {
+        this.status = TrainingStatus.COMPLETED;
+        this.endedAt = endedAt;
+    }
+
+    // 관리자에 의한 강제 종료
+    public void stop(Instant endedAt) {
+        this.status = TrainingStatus.STOPPED;
+        this.endedAt = endedAt;
+    }
+
+    public void fail(Instant endedAt) {
+        this.status = TrainingStatus.FAILED;
+        this.endedAt = endedAt;
+    }
 }

@@ -17,6 +17,7 @@ public interface TrainingSessionRepository extends JpaRepository<TrainingSession
 
   List<TrainingSession> findByStatusAndStartedAtBefore(TrainingStatus status, Instant threshold);
 
+  List<TrainingSession> findAllByStatus(TrainingStatus status);
   // 모니터링 화면 진입점: 요청자 학교 소속 세션 중 상태로 필터링해 최신 시작 순으로 반환한다.
   @EntityGraph(attributePaths = {"scenario", "scenario.building"})
   List<TrainingSession> findAllByStatusAndScenario_Building_SchoolNameOrderByStartedAtDesc(

@@ -17,6 +17,7 @@ import com.saferoute.domain.training.dto.TrainingSessionSummaryResponse;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
 import com.saferoute.domain.training.entity.TrainingScenario;
+import com.saferoute.domain.training.repository.FireZoneRepository;
 import com.saferoute.domain.training.repository.TrainingScenarioRepository;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.user.entity.User;
@@ -58,6 +59,9 @@ class TrainingSessionServiceTest {
 
     @Mock
     private TrainingScenarioRepository trainingScenarioRepository;
+
+    @Mock
+    private FireZoneRepository fireZoneRepository;
 
     @Mock
     private RouteRecalculationService routeRecalculationService;
