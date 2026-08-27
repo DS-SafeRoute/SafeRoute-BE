@@ -126,6 +126,20 @@ public class SecurityConfig {
                                 "/api/v1/congestion-observations/*/image-url"
                         ).hasRole("MANAGER")
 
+                        // 훈련 모니터링 카메라와 캡처 이미지는 관리자 화면에서만 조회한다.
+                        // 카메라 카드 목록(/cameras)과 프레임 목록(/cameras/{cctvId}/frames)을 모두 포함해야 한다.
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/sessions/*/monitoring/cameras",
+                                "/api/v1/sessions/*/monitoring/cameras/**"
+                        ).hasRole("MANAGER")
+
+                        // 세션 목록은 모니터링 화면 진입점으로 쓰이므로 카메라 조회와 동일하게 관리자 전용이다.
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/sessions"
+                        ).hasRole("MANAGER")
+
                         // 경로 이탈률은 훈련 결과 분석용 관리자 화면 전용이다.
                         .requestMatchers(
                                 HttpMethod.GET,
