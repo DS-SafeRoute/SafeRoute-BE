@@ -118,8 +118,7 @@ public class User {
     public void updateProfile(
             String username,
             String phoneNumber,
-            String email,
-            String schoolName
+            String email
     ) {
         if (username != null) {
             this.username = username;
@@ -129,9 +128,6 @@ public class User {
         }
         if (email != null) {
             this.email = email;
-        }
-        if (schoolName != null) {
-            this.schoolName = schoolName;
         }
     }
 }

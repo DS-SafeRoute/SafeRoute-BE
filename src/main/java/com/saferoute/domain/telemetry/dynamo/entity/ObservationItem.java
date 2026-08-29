@@ -1,6 +1,7 @@
 package com.saferoute.domain.telemetry.dynamo.entity;
 
 import com.saferoute.domain.congestion.entity.CongestionLevel;
+import java.util.Locale;
 import java.util.UUID;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbAttribute;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
@@ -14,6 +15,7 @@ public class ObservationItem {
 
     public static final String GSI1_NAME = "GSI1";
     public static final long TTL_SECONDS = 30L * 24 * 60 * 60;
+    private static final int GSI1_TIMESTAMP_WIDTH = 19;
 
     private String pk;
     private String sk;
@@ -84,7 +86,7 @@ public class ObservationItem {
         item.pk = buildPk(item.eventId);
         item.sk = "META";
         item.gsi1Pk = buildGsi1Pk(item.trainingSessionId, cctvCode);
-        item.gsi1Sk = buildGsi1Sk(capturedAt);
+        item.gsi1Sk = buildGsi1Sk(capturedAt, item.eventId);
         return item;
     }
 
@@ -96,8 +98,15 @@ public class ObservationItem {
         return "SESSION#" + trainingSessionId + "#CCTV#" + cctvCode;
     }
 
-    public static String buildGsi1Sk(long capturedAt) {
-        return "TIME#" + capturedAt;
+    // capturedAt만으로는 같은 캡처 시각을 가진 프레임이 같은 정렬 키를 갖게 되어
+    // 페이지 경계에서 sortLessThan 커서 조회 시 프레임이 누락될 수 있다.
+    // eventId를 tie-breaker로 덧붙여 정렬 키를 항상 고유하게 만든다.
+    public static String buildGsi1Sk(long capturedAt, String eventId) {
+        return "TIME#" + String.format(
+                Locale.ROOT,
+                "%0" + GSI1_TIMESTAMP_WIDTH + "d",
+                capturedAt
+        ) + "#" + eventId;
     }
 
     @DynamoDbPartitionKey

@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -15,6 +16,12 @@ import org.springframework.data.repository.query.Param;
 public interface TrainingSessionRepository extends JpaRepository<TrainingSession, UUID> {
 
   List<TrainingSession> findByStatusAndStartedAtBefore(TrainingStatus status, Instant threshold);
+
+  List<TrainingSession> findAllByStatus(TrainingStatus status);
+  // 모니터링 화면 진입점: 요청자 학교 소속 세션 중 상태로 필터링해 최신 시작 순으로 반환한다.
+  @EntityGraph(attributePaths = {"scenario", "scenario.building"})
+  List<TrainingSession> findAllByStatusAndScenario_Building_SchoolNameOrderByStartedAtDesc(
+      TrainingStatus status, String schoolName);
 
   // Pi가 보낸 UUID 세션이 실행 중이고, 혼잡 엣지와 같은 건물에 속하는지 한 번에 검증한다.
   Optional<TrainingSession> findByIdAndStatusAndScenario_Building_Id(
@@ -25,6 +32,10 @@ public interface TrainingSessionRepository extends JpaRepository<TrainingSession
   // 이 가정이 DB 제약으로 강제되진 않으므로 예외적으로 여러 개가 있어도 결과가 흔들리지 않도록 시작 시각 기준으로 정렬한다.
   Optional<TrainingSession> findFirstByStatusAndScenario_Building_IdOrderByStartedAtAsc(
       TrainingStatus status, UUID buildingId);
+
+  Optional<TrainingSession> findByIdAndScenario_Building_SchoolName(UUID id, String schoolName);
+
+  long countByScenario_Building_SchoolName(String schoolName);
 
   boolean existsByScenario_Id(UUID scenarioId);
 

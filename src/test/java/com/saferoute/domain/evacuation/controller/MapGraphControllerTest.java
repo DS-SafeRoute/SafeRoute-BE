@@ -36,6 +36,8 @@ import org.springframework.test.web.servlet.MockMvc;
 )
 class MapGraphControllerTest {
 
+    private static final String EMAIL = "normal@test.com";
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -107,7 +109,7 @@ class MapGraphControllerTest {
         MapEdge edge = createEdge(room1, door1, 2);
 
         given(
-                mapGraphService.getFloorGraph(floorId)
+                mapGraphService.getFloorGraph(floorId, EMAIL)
         ).willReturn(
                 FloorGraphResponse.of(
                         List.of(room1, door1),
@@ -133,7 +135,7 @@ class MapGraphControllerTest {
     @DisplayName("GET /graph - 층이 없으면 404를 반환한다")
     void getGraph_floorNotFound() throws Exception {
         given(
-                mapGraphService.getFloorGraph(floorId)
+                mapGraphService.getFloorGraph(floorId, EMAIL)
         ).willThrow(
                 new ApiException(
                         FloorErrorCode.FLOOR_NOT_FOUND

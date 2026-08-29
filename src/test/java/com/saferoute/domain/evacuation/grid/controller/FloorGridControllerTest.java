@@ -20,6 +20,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -33,6 +34,8 @@ import org.springframework.test.web.servlet.MockMvc;
 @AutoConfigureMockMvc(addFilters = false)
 class FloorGridControllerTest {
 
+    private static final String EMAIL = "manager@saferoute.com";
+
     @Autowired MockMvc mockMvc;
     @MockitoBean FloorGridService floorGridService;
 
@@ -41,16 +44,17 @@ class FloorGridControllerTest {
         UUID floorId = UUID.randomUUID();
         FloorGridCellResponse cell = new FloorGridCellResponse(
                 UUID.randomUUID(), 0, 0, true, false, 0.1, 0.1);
-        given(floorGridService.getGridCells(floorId, 0, 500))
+        given(floorGridService.getGridCells(floorId, 0, 500, EMAIL))
                 .willReturn(new FloorGridCellPageResponse(
                         List.of(cell), 0, 500, 1, 1, true, true));
 
-        mockMvc.perform(get("/api/v1/floors/{floorId}/grid/cells", floorId))
+        mockMvc.perform(get("/api/v1/floors/{floorId}/grid/cells", floorId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.content.length()").value(1))
                 .andExpect(jsonPath("$.result.page").value(0))
                 .andExpect(jsonPath("$.result.size").value(500));
-        verify(floorGridService).getGridCells(floorId, 0, 500);
+        verify(floorGridService).getGridCells(floorId, 0, 500, EMAIL);
     }
 
     @Test
@@ -63,7 +67,8 @@ class FloorGridControllerTest {
         verify(floorGridService, never()).getGridCells(
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.anyInt(),
-                org.mockito.ArgumentMatchers.anyInt()
+                org.mockito.ArgumentMatchers.anyInt(),
+                org.mockito.ArgumentMatchers.anyString()
         );
     }
 }

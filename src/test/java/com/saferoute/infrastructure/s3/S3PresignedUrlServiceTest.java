@@ -124,7 +124,7 @@ class S3PresignedUrlServiceTest {
                 .isInstanceOf(ApiException.class)
                 .hasFieldOrPropertyWithValue(
                         "errorCode",
-                        S3ErrorCode.PRESIGNED_URL_GENERATION_FAILED
+                        S3ErrorCode.PRESIGNED_GET_URL_GENERATION_FAILED
                 );
     }
 }

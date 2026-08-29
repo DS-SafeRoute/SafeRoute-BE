@@ -32,5 +32,8 @@ public enum TrainingEventType {
     ROUTE_RECALCULATION_CANCELLED,
 
     // IoTLightService.changeDirection() 호출 시 TrainingEventPublisher.publishIoTLightStatusUpdated()가 발행한다.
-    IOT_LIGHT_STATUS_UPDATED
+    IOT_LIGHT_STATUS_UPDATED,
+
+    // FireSpreadService가 화재 확산을 1스텝 진행시켜 새로 옮겨붙은 셀이 생겼을 때 발행된다.
+    FIRE_SPREAD_UPDATED
 }

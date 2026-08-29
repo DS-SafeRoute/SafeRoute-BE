@@ -47,20 +47,31 @@ public class FireZone {
     @Column(name = "is_manual_add", nullable = false)
     private Boolean isManualAdd = false;
 
+    @NotNull
+    @Column(name = "spread_generation", nullable = false)
+    private Integer spreadGeneration;
+
     @CreatedDate
     @Column(name = "added_at", nullable = false, updatable = false)
     private Instant addedAt;
 
-    private FireZone(TrainingScenario scenario, Floor floor, FloorGridCell gridCell, Boolean isManualAdd) {
+    private FireZone(TrainingScenario scenario, Floor floor, FloorGridCell gridCell,
+                     Boolean isManualAdd, Integer spreadGeneration) {
         this.scenario = scenario;
         this.floor = floor;
         this.gridCell = gridCell;
         this.isManualAdd = isManualAdd != null ? isManualAdd : false;
+        this.spreadGeneration = spreadGeneration;
     }
 
-    // 화재구역 등록용 정적 팩토리 메서드
-    public static FireZone create(TrainingScenario scenario, Floor floor, FloorGridCell gridCell, Boolean isManualAdd) {
-        return new FireZone(scenario, floor, gridCell, isManualAdd);
+    // 관리자가 지정한 최초 발화점 등록용
+    public static FireZone createOrigin(TrainingScenario scenario, Floor floor, FloorGridCell gridCell) {
+        return new FireZone(scenario, floor, gridCell, true, 0);
+    }
+
+    // 확산 시뮬레이션이 새로 옮겨붙인 셀 등록용
+    public static FireZone createSpread(TrainingScenario scenario, Floor floor, FloorGridCell gridCell, int generation) {
+        return new FireZone(scenario, floor, gridCell, false, generation);
     }
 
     public UUID getScenarioId() { return scenario != null ? scenario.getId() : null; }

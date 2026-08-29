@@ -71,6 +71,23 @@ public class ObservationRepository {
         return Optional.ofNullable(table.getItem(request));
     }
 
+    public Optional<ObservationItem> findLatestBySessionIdAndCctvCode(
+            String trainingSessionId,
+            String cctvCode
+    ) {
+        QueryEnhancedRequest request = QueryEnhancedRequest.builder()
+                .queryConditional(QueryConditional.keyEqualTo(Key.builder()
+                        .partitionValue(ObservationItem.buildGsi1Pk(trainingSessionId, cctvCode))
+                        .build()))
+                .scanIndexForward(false)
+                .limit(1)
+                .build();
+
+        return gsi1.query(request).stream()
+                .flatMap(page -> page.items().stream())
+                .findFirst();
+    }
+
     public boolean claimProcessing(
             String eventId,
             String processingOwner,
@@ -153,6 +170,34 @@ public class ObservationRepository {
                         .partitionValue(ObservationItem.buildGsi1Pk(trainingSessionId, cctvCode))
                         .build()))
                 .scanIndexForward(true)
+                .limit(limit)
+                .build();
+
+        return gsi1.query(request).stream()
+                .flatMap(page -> page.items().stream())
+                .limit(limit)
+                .toList();
+    }
+
+    public List<ObservationItem> findPageBySessionIdAndCctvCode(
+            String trainingSessionId,
+            String cctvCode,
+            int limit,
+            Long beforeCapturedAt,
+            String beforeEventId
+    ) {
+        validateLimit(limit);
+        QueryConditional queryConditional = beforeCapturedAt == null
+                ? QueryConditional.keyEqualTo(Key.builder()
+                        .partitionValue(ObservationItem.buildGsi1Pk(trainingSessionId, cctvCode))
+                        .build())
+                : QueryConditional.sortLessThan(Key.builder()
+                        .partitionValue(ObservationItem.buildGsi1Pk(trainingSessionId, cctvCode))
+                        .sortValue(ObservationItem.buildGsi1Sk(beforeCapturedAt, beforeEventId))
+                        .build());
+        QueryEnhancedRequest request = QueryEnhancedRequest.builder()
+                .queryConditional(queryConditional)
+                .scanIndexForward(false)
                 .limit(limit)
                 .build();
 

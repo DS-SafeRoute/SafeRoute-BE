@@ -87,12 +87,14 @@ class RouteRecalculationControllerTest {
     @Test
     @DisplayName("목록 조회 시 200과 요약 목록을 반환한다")
     void getRecalculations_returnsOk() throws Exception {
-        given(routeRecalculationService.getRecalculations(sessionId, RecalculationStatus.PENDING))
+        given(routeRecalculationService.getRecalculations(
+                sessionId, RecalculationStatus.PENDING, MANAGER_EMAIL))
                 .willReturn(List.of(summary(RecalculationStatus.PENDING)));
 
         mockMvc.perform(get("/api/v1/route-recalculations")
                         .param("trainingSessionId", sessionId.toString())
-                        .param("status", "PENDING"))
+                        .param("status", "PENDING")
+                        .with(asManager()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result[0].recalculationId").value(recalculationId.toString()));
     }
@@ -100,11 +102,12 @@ class RouteRecalculationControllerTest {
     @Test
     @DisplayName("상태 필터 없이 목록을 조회할 수 있다")
     void getRecalculations_withoutStatusFilter_returnsOk() throws Exception {
-        given(routeRecalculationService.getRecalculations(sessionId, null))
+        given(routeRecalculationService.getRecalculations(sessionId, null, MANAGER_EMAIL))
                 .willReturn(List.of(summary(RecalculationStatus.APPROVED)));
 
         mockMvc.perform(get("/api/v1/route-recalculations")
-                        .param("trainingSessionId", sessionId.toString()))
+                        .param("trainingSessionId", sessionId.toString())
+                        .with(asManager()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result[0].status").value("APPROVED"));
     }
@@ -112,10 +115,11 @@ class RouteRecalculationControllerTest {
     @Test
     @DisplayName("상세 조회 시 200과 previousRoute/candidateRoute를 반환한다")
     void getRecalculationDetail_returnsOk() throws Exception {
-        given(routeRecalculationService.getRecalculationDetail(recalculationId))
+        given(routeRecalculationService.getRecalculationDetail(recalculationId, MANAGER_EMAIL))
                 .willReturn(detail(RecalculationStatus.PENDING));
 
-        mockMvc.perform(get("/api/v1/route-recalculations/{id}", recalculationId))
+        mockMvc.perform(get("/api/v1/route-recalculations/{id}", recalculationId)
+                        .with(asManager()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.previousRoute.totalWeight").value(15.0))
                 .andExpect(jsonPath("$.result.candidateRoute.totalWeight").value(22.0));
@@ -125,9 +129,11 @@ class RouteRecalculationControllerTest {
     @DisplayName("상세 조회에서 존재하지 않으면 404를 반환한다")
     void getRecalculationDetail_returnsNotFoundWhenMissing() throws Exception {
         willThrow(new ApiException(EvacuationErrorCode.ROUTE_RECALCULATION_NOT_FOUND))
-                .given(routeRecalculationService).getRecalculationDetail(recalculationId);
+                .given(routeRecalculationService)
+                .getRecalculationDetail(recalculationId, MANAGER_EMAIL);
 
-        mockMvc.perform(get("/api/v1/route-recalculations/{id}", recalculationId))
+        mockMvc.perform(get("/api/v1/route-recalculations/{id}", recalculationId)
+                        .with(asManager()))
                 .andExpect(status().isNotFound());
     }
 

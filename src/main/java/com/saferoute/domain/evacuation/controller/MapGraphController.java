@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -22,7 +23,10 @@ public class MapGraphController {
 
     // 커스텀 편집 UI 캔버스 초기 로딩용 - 노드/엣지 전체 조회
     @GetMapping("/graph")
-    public ResponseEntity<ApiResponse<FloorGraphResponse>> getGraph(@PathVariable UUID floorId) {
-        return ResponseEntity.ok(ApiResponse.success(mapGraphService.getFloorGraph(floorId)));
+    public ResponseEntity<ApiResponse<FloorGraphResponse>> getGraph(
+            @PathVariable UUID floorId,
+            Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success(
+                mapGraphService.getFloorGraph(floorId, authentication.getName())));
     }
 }

@@ -13,6 +13,16 @@ public interface IoTLightJpaRepository extends JpaRepository<IoTLight, UUID> {
 
     List<IoTLight> findAllByCustomNode_Floor_Id(UUID floorId);
 
+    List<IoTLight> findAllByCustomNode_Floor_Building_SchoolName(String schoolName);
+
+    // 훈련 종료 시 평상시 상태로 되돌릴 대상 조회용 (건물 전체 유도등)
+    List<IoTLight> findAllByCustomNode_Floor_Building_Id(UUID buildingId);
+
+    List<IoTLight> findAllByCustomNode_Floor_IdAndCustomNode_Floor_Building_SchoolName(
+            UUID floorId, String schoolName);
+
+    Optional<IoTLight> findByIdAndCustomNode_Floor_Building_SchoolName(UUID id, String schoolName);
+
     Optional<IoTLight> findByCode(String code);
 
     Optional<IoTLight> findByCustomNode_Id(UUID customNodeId);

@@ -11,7 +11,10 @@ import com.saferoute.domain.building.repository.BuildingRepository;
 import com.saferoute.domain.device.entity.IoTLight;
 import com.saferoute.domain.device.entity.IoTLightDirection;
 import com.saferoute.domain.device.repository.IoTLightJpaRepository;
+import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
+import com.saferoute.domain.evacuation.graph.entity.NodeType;
+import com.saferoute.domain.evacuation.graph.repository.MapEdgeJpaRepository;
 import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.floor.repository.FloorRepository;
@@ -88,6 +91,9 @@ class WebSocketIntegrationTest {
     private MapNodeJpaRepository mapNodeJpaRepository;
 
     @Autowired
+    private MapEdgeJpaRepository mapEdgeJpaRepository;
+
+    @Autowired
     private IoTLightJpaRepository iotLightJpaRepository;
 
     @Autowired
@@ -104,6 +110,9 @@ class WebSocketIntegrationTest {
     private User normalUser;
     private String managerToken;
     private String normalToken;
+    // newScenario()가 만드는 Floor는 building FK를 갖고 있어, tearDown의 building 삭제보다
+    // 먼저 정리해야 한다 (연결된 MapNode/MapEdge는 Floor 삭제에 cascade로 함께 지워진다).
+    private final java.util.List<Floor> scenarioFloors = new java.util.ArrayList<>();
 
     @BeforeEach
     void setUp() {
@@ -128,7 +137,7 @@ class WebSocketIntegrationTest {
         userRepository.save(managerUser);
         userRepository.save(normalUser);
 
-        building = Building.create("공학관", "서울특별시 성북구 안전로 1", 5, BuildingType.CLASSROOM);
+        building = Building.create("공학관", "서울특별시 성북구 안전로 1", BuildingType.CLASSROOM, "SafeRoute School");
         buildingRepository.save(building);
 
         trainingScenario = TrainingScenario.create(
@@ -138,7 +147,8 @@ class WebSocketIntegrationTest {
                 false,
                 FireSpreadSpeed.MEDIUM,
                 building,
-                managerUser
+                managerUser,
+                null
         );
         trainingScenarioRepository.save(trainingScenario);
 
@@ -156,6 +166,7 @@ class WebSocketIntegrationTest {
         // @Transactional을 쓰지 않으므로 테스트가 만든 데이터를 직접 정리한다.
         trainingSessionRepository.deleteById(trainingSession.getId());
         trainingScenarioRepository.delete(trainingScenario);
+        scenarioFloors.forEach(floorRepository::delete);
         buildingRepository.delete(building);
         userRepository.delete(managerUser);
         userRepository.delete(normalUser);
@@ -198,18 +209,37 @@ class WebSocketIntegrationTest {
         session.disconnect();
     }
 
+    // 시나리오당 세션은 1개만 허용되므로(UNIQUE 제약), setUp()의 trainingScenario를 재사용하지 않고
+    // 테스트마다 별도 시나리오를 만들어 추가 세션을 붙인다.
+    // start() 통합 테스트가 최초 경로 계산을 실제로 성공시킬 수 있도록, 출발 노드에서
+    // EXIT 노드까지 이어지는 최소 그래프(노드 2개 + 엣지 1개)를 함께 만든다.
+    private TrainingScenario newScenario() {
+        Floor floor = floorRepository.save(Floor.create(building, 1));
+        scenarioFloors.add(floor);
+        MapNode startNode = mapNodeJpaRepository.save(
+                MapNode.create(floor, "START", NodeType.ROOM, "출발 지점", 0.1, 0.1, false));
+        MapNode exitNode = mapNodeJpaRepository.save(
+                MapNode.create(floor, "EXIT", NodeType.EXIT, "출구", 0.9, 0.9, true));
+        mapEdgeJpaRepository.save(MapEdge.create(floor, startNode, exitNode, 3.0, true));
+
+        TrainingScenario scenario = TrainingScenario.create(
+                "정기 훈련", 50, Instant.now(), false, FireSpreadSpeed.MEDIUM, building, managerUser, startNode);
+        return trainingScenarioRepository.save(scenario);
+    }
+
     @Test
     @DisplayName("훈련을 시작하면 구독자가 TRAINING_STATUS_UPDATED(RUNNING) 이벤트를 수신한다")
     void startingTrainingPublishesRunningEvent() throws Exception {
+        TrainingScenario scenario = newScenario();
         TrainingSession scheduledSession = TrainingSession.create(
-                TrainingStatus.SCHEDULED, Instant.now(), managerUser, trainingScenario);
+                TrainingStatus.SCHEDULED, Instant.now(), managerUser, scenario);
         trainingSessionRepository.save(scheduledSession);
 
         try {
             StompSession session = connect(managerToken);
             BlockingQueue<String> received = subscribeAndCollect(session, scheduledSession.getId());
 
-            trainingSessionService.start(scheduledSession.getId());
+            trainingSessionService.start(scheduledSession.getId(), managerUser.getEmail());
 
             JsonNode json = objectMapper.readTree(received.poll(5, TimeUnit.SECONDS));
             assertThat(json.get("eventType").asText()).isEqualTo("TRAINING_STATUS_UPDATED");
@@ -218,21 +248,23 @@ class WebSocketIntegrationTest {
             session.disconnect();
         } finally {
             trainingSessionRepository.deleteById(scheduledSession.getId());
+            trainingScenarioRepository.delete(scenario);
         }
     }
 
     @Test
     @DisplayName("훈련을 정상 종료하면 구독자가 TRAINING_STATUS_UPDATED(COMPLETED) 이벤트를 수신한다")
     void endingTrainingPublishesCompletedEvent() throws Exception {
+        TrainingScenario scenario = newScenario();
         TrainingSession runningSession = TrainingSession.create(
-                TrainingStatus.RUNNING, Instant.now(), managerUser, trainingScenario);
+                TrainingStatus.RUNNING, Instant.now(), managerUser, scenario);
         trainingSessionRepository.save(runningSession);
 
         try {
             StompSession session = connect(managerToken);
             BlockingQueue<String> received = subscribeAndCollect(session, runningSession.getId());
 
-            trainingSessionService.end(runningSession.getId());
+            trainingSessionService.end(runningSession.getId(), managerUser.getEmail());
 
             JsonNode json = objectMapper.readTree(received.poll(5, TimeUnit.SECONDS));
             assertThat(json.get("data").get("status").asText()).isEqualTo("COMPLETED");
@@ -240,21 +272,23 @@ class WebSocketIntegrationTest {
             session.disconnect();
         } finally {
             trainingSessionRepository.deleteById(runningSession.getId());
+            trainingScenarioRepository.delete(scenario);
         }
     }
 
     @Test
     @DisplayName("훈련을 강제 종료하면 구독자가 TRAINING_STATUS_UPDATED(STOPPED) 이벤트를 수신한다")
     void forceEndingTrainingPublishesStoppedEvent() throws Exception {
+        TrainingScenario scenario = newScenario();
         TrainingSession runningSession = TrainingSession.create(
-                TrainingStatus.RUNNING, Instant.now(), managerUser, trainingScenario);
+                TrainingStatus.RUNNING, Instant.now(), managerUser, scenario);
         trainingSessionRepository.save(runningSession);
 
         try {
             StompSession session = connect(managerToken);
             BlockingQueue<String> received = subscribeAndCollect(session, runningSession.getId());
 
-            trainingSessionService.forceEnd(runningSession.getId());
+            trainingSessionService.forceEnd(runningSession.getId(), managerUser.getEmail());
 
             JsonNode json = objectMapper.readTree(received.poll(5, TimeUnit.SECONDS));
             assertThat(json.get("data").get("status").asText()).isEqualTo("STOPPED");
@@ -262,6 +296,7 @@ class WebSocketIntegrationTest {
             session.disconnect();
         } finally {
             trainingSessionRepository.deleteById(runningSession.getId());
+            trainingScenarioRepository.delete(scenario);
         }
     }
 

@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.saferoute.domain.device.dto.request.ConfigureCctvGridCellsRequest;
 import com.saferoute.domain.device.dto.request.CreateCctvRequest;
+import com.saferoute.domain.device.dto.request.UpdateCctvRequest;
 import com.saferoute.domain.device.dto.response.CctvGridCellResponse;
 import com.saferoute.domain.device.dto.response.CctvResponse;
 import com.saferoute.domain.device.dto.response.CctvRegistrationResponse;
@@ -28,6 +29,8 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -39,7 +42,10 @@ import org.springframework.test.web.servlet.MockMvc;
         )
 )
 @AutoConfigureMockMvc(addFilters = false)
+@WithMockUser(username = "manager@saferoute.com")
 class CctvControllerTest {
+
+    private static final String EMAIL = "manager@saferoute.com";
 
     @Autowired MockMvc mockMvc;
     @Autowired ObjectMapper objectMapper;
@@ -102,9 +108,11 @@ class CctvControllerTest {
 
     @Test
     void getCctvs_returnsList() throws Exception {
-        given(cctvService.getCctvs(floorId)).willReturn(List.of(response(true)));
+        given(cctvService.getCctvs(floorId, EMAIL)).willReturn(List.of(response(true)));
 
-        mockMvc.perform(get("/api/v1/cctvs").param("floorId", floorId.toString()))
+        mockMvc.perform(get("/api/v1/cctvs")
+                        .param("floorId", floorId.toString())
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.length()").value(1));
     }
@@ -113,9 +121,10 @@ class CctvControllerTest {
     void configureGridCells_returnsUpdatedCoverage() throws Exception {
         ConfigureCctvGridCellsRequest request =
                 new ConfigureCctvGridCellsRequest(List.of(cellId));
-        given(cctvService.configureGridCells(eq(cctvId), any())).willReturn(response(true));
+        given(cctvService.configureGridCells(eq(cctvId), any(), eq(EMAIL))).willReturn(response(true));
 
         mockMvc.perform(put("/api/v1/cctvs/{cctvId}/grid-cells", cctvId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -123,23 +132,81 @@ class CctvControllerTest {
     }
 
     @Test
-    void disableCctv_returnsDisabledState() throws Exception {
-        given(cctvService.disableCctv(cctvId)).willReturn(response(false));
+    void updateCctv_returnsUpdatedNameAndPosition() throws Exception {
+        UpdateCctvRequest request = new UpdateCctvRequest("1층 출입구 CCTV", 0.4, 0.6);
+        given(cctvService.updateCctv(eq(cctvId), any(), eq(EMAIL)))
+                .willReturn(response(true, request.name(), request.x(), request.y()));
 
-        mockMvc.perform(patch("/api/v1/cctvs/{cctvId}/disable", cctvId))
+        mockMvc.perform(patch("/api/v1/cctvs/{cctvId}", cctvId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null))
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("CCTV_SUCCESS_008"))
+                .andExpect(jsonPath("$.result.name").value(request.name()))
+                .andExpect(jsonPath("$.result.x").value(request.x()))
+                .andExpect(jsonPath("$.result.y").value(request.y()));
+    }
+
+    @Test
+    void updateCctv_rejectsBlankName() throws Exception {
+        UpdateCctvRequest request = new UpdateCctvRequest(" ", 0.4, 0.6);
+
+        performInvalidUpdate(request);
+    }
+
+    @Test
+    void updateCctv_rejectsNameLongerThan100Characters() throws Exception {
+        UpdateCctvRequest request = new UpdateCctvRequest("a".repeat(101), 0.4, 0.6);
+
+        performInvalidUpdate(request);
+    }
+
+    @Test
+    void updateCctv_rejectsXBelowMinimum() throws Exception {
+        UpdateCctvRequest request = new UpdateCctvRequest("1층 출입구 CCTV", -0.1, 0.6);
+
+        performInvalidUpdate(request);
+    }
+
+    @Test
+    void updateCctv_rejectsYAboveMaximum() throws Exception {
+        UpdateCctvRequest request = new UpdateCctvRequest("1층 출입구 CCTV", 0.4, 1.1);
+
+        performInvalidUpdate(request);
+    }
+
+    private void performInvalidUpdate(UpdateCctvRequest request) throws Exception {
+        mockMvc.perform(patch("/api/v1/cctvs/{cctvId}", cctvId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null))
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void disableCctv_returnsDisabledState() throws Exception {
+        given(cctvService.disableCctv(cctvId, EMAIL)).willReturn(response(false));
+
+        mockMvc.perform(patch("/api/v1/cctvs/{cctvId}/disable", cctvId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.enabled").value(false));
     }
 
     private CctvResponse response(boolean enabled) {
+        return response(enabled, "3층 복도 CCTV", 0.6, 0.4);
+    }
+
+    private CctvResponse response(boolean enabled, String name, double x, double y) {
         return new CctvResponse(
                 cctvId,
                 "CCTV_001",
-                "3층 복도 CCTV",
+                name,
                 floorId,
                 UUID.randomUUID(),
-                0.6,
-                0.4,
+                x,
+                y,
                 enabled,
                 0.5,
                 1,

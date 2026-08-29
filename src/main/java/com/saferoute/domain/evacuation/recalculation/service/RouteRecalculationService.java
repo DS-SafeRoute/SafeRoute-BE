@@ -13,8 +13,10 @@ import com.saferoute.domain.evacuation.recalculation.repository.RouteRecalculati
 import com.saferoute.domain.evacuation.service.EvacuationRoute;
 import com.saferoute.domain.evacuation.service.EvacuationRouteService;
 import com.saferoute.domain.training.entity.TrainingSession;
+import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.user.entity.User;
 import com.saferoute.domain.user.repository.UserRepository;
+import com.saferoute.domain.user.service.SchoolContextService;
 import com.saferoute.global.api.error.EvacuationErrorCode;
 import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
@@ -48,6 +50,8 @@ public class RouteRecalculationService {
     private final IoTLightService ioTLightService;
     private final UserRepository userRepository;
     private final TrainingEventPublisher trainingEventPublisher;
+    private final SchoolContextService schoolContextService;
+    private final TrainingSessionRepository trainingSessionRepository;
 
     // 혼잡 감지로 트리거되는 우회 경로 재탐색.
     // - 같은 세션+엣지에 이미 PENDING이 있고 레벨이 그대로면 반복 트리거를 무시한다.
@@ -202,22 +206,30 @@ public class RouteRecalculationService {
     }
 
     @Transactional(readOnly = true)
-    public List<RouteRecalculationSummaryResponse> getRecalculations(UUID trainingSessionId, RecalculationStatus status) {
+    public List<RouteRecalculationSummaryResponse> getRecalculations(
+            UUID trainingSessionId, RecalculationStatus status, String email) {
+        String schoolName = schoolContextService.getSchoolName(email);
+        trainingSessionRepository
+                .findByIdAndScenario_Building_SchoolName(trainingSessionId, schoolName)
+                .orElseThrow(() -> new ApiException(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND));
         List<RouteRecalculation> recalculations = status != null
-                ? routeRecalculationRepository.findAllByTrainingSession_IdAndStatusOrderByRequestedAtDesc(
-                        trainingSessionId, status)
-                : routeRecalculationRepository.findAllByTrainingSession_IdOrderByRequestedAtDesc(trainingSessionId);
+                ? routeRecalculationRepository
+                        .findAllByTrainingSession_IdAndStatusAndTrainingSession_Scenario_Building_SchoolNameOrderByRequestedAtDesc(
+                                trainingSessionId, status, schoolName)
+                : routeRecalculationRepository
+                        .findAllByTrainingSession_IdAndTrainingSession_Scenario_Building_SchoolNameOrderByRequestedAtDesc(
+                                trainingSessionId, schoolName);
         return recalculations.stream().map(RouteRecalculationSummaryResponse::from).toList();
     }
 
     @Transactional(readOnly = true)
-    public RouteRecalculationDetailResponse getRecalculationDetail(UUID recalculationId) {
-        return RouteRecalculationDetailResponse.from(findOrThrow(recalculationId));
+    public RouteRecalculationDetailResponse getRecalculationDetail(UUID recalculationId, String email) {
+        return RouteRecalculationDetailResponse.from(findOrThrow(recalculationId, email));
     }
 
     @Transactional
     public RouteRecalculationResponse approve(UUID recalculationId, String approverEmail) {
-        RouteRecalculation recalculation = findOrThrow(recalculationId);
+        RouteRecalculation recalculation = findOrThrow(recalculationId, approverEmail);
         validatePending(recalculation);
         User approver = findUserOrThrow(approverEmail);
 
@@ -230,7 +242,7 @@ public class RouteRecalculationService {
 
     @Transactional
     public RouteRecalculationResponse reject(UUID recalculationId, String rejecterEmail, String reason) {
-        RouteRecalculation recalculation = findOrThrow(recalculationId);
+        RouteRecalculation recalculation = findOrThrow(recalculationId, rejecterEmail);
         validatePending(recalculation);
         User rejecter = findUserOrThrow(rejecterEmail);
 
@@ -240,8 +252,10 @@ public class RouteRecalculationService {
         return RouteRecalculationResponse.from(recalculation);
     }
 
-    private RouteRecalculation findOrThrow(UUID recalculationId) {
-        return routeRecalculationRepository.findById(recalculationId)
+    private RouteRecalculation findOrThrow(UUID recalculationId, String email) {
+        String schoolName = schoolContextService.getSchoolName(email);
+        return routeRecalculationRepository
+                .findByIdAndTrainingSession_Scenario_Building_SchoolName(recalculationId, schoolName)
                 .orElseThrow(() -> new ApiException(EvacuationErrorCode.ROUTE_RECALCULATION_NOT_FOUND));
     }
 

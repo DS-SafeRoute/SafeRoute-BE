@@ -190,7 +190,8 @@ class MapGraphEditControllerTest {
         UpdateMapNodePositionRequest request =
                 new UpdateMapNodePositionRequest(
                         10.0,
-                        20.0
+                        20.0,
+                        true
                 );
 
         MapNodeResponse response = new MapNodeResponse(
@@ -200,7 +201,7 @@ class MapGraphEditControllerTest {
                 "방1",
                 10.0,
                 20.0,
-                false
+                true
         );
 
         given(
@@ -222,7 +223,8 @@ class MapGraphEditControllerTest {
                 )
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.x").value(10.0))
-                .andExpect(jsonPath("$.result.y").value(20.0));
+                .andExpect(jsonPath("$.result.y").value(20.0))
+                .andExpect(jsonPath("$.result.isExitTarget").value(true));
     }
 
     @Test
@@ -231,7 +233,8 @@ class MapGraphEditControllerTest {
         UpdateMapNodePositionRequest request =
                 new UpdateMapNodePositionRequest(
                         10.0,
-                        20.0
+                        20.0,
+                        true
                 );
 
         given(

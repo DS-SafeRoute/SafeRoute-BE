@@ -55,8 +55,7 @@ class UserProfileIntegrationTest {
                                 {
                                   "username": "updatedManager",
                                   "phoneNumber": "010-9999-8888",
-                                  "email": "%s",
-                                  "schoolName": "Updated School"
+                                  "email": "%s"
                                 }
                                 """.formatted(updatedEmail)))
                 .andExpect(status().isOk())
@@ -64,7 +63,7 @@ class UserProfileIntegrationTest {
                 .andExpect(jsonPath("$.result.username").value("updatedManager"))
                 .andExpect(jsonPath("$.result.email").value(updatedEmail))
                 .andExpect(jsonPath("$.result.phoneNumber").value("010-9999-8888"))
-                .andExpect(jsonPath("$.result.schoolName").value("Updated School"));
+                .andExpect(jsonPath("$.result.schoolName").value("SafeRoute School"));
 
         mockMvc.perform(get("/api/v1/users/me")
                         .header("Authorization", "Bearer " + account.accessToken()))
@@ -72,7 +71,7 @@ class UserProfileIntegrationTest {
                 .andExpect(jsonPath("$.result.username").value("updatedManager"))
                 .andExpect(jsonPath("$.result.email").value(updatedEmail))
                 .andExpect(jsonPath("$.result.phoneNumber").value("010-9999-8888"))
-                .andExpect(jsonPath("$.result.schoolName").value("Updated School"));
+                .andExpect(jsonPath("$.result.schoolName").value("SafeRoute School"));
 
         String partiallyUpdatedEmail = "partial-" + account.email();
 
@@ -86,7 +85,7 @@ class UserProfileIntegrationTest {
                 .andExpect(jsonPath("$.result.username").value("updatedManager"))
                 .andExpect(jsonPath("$.result.email").value(partiallyUpdatedEmail))
                 .andExpect(jsonPath("$.result.phoneNumber").value("010-9999-8888"))
-                .andExpect(jsonPath("$.result.schoolName").value("Updated School"));
+                .andExpect(jsonPath("$.result.schoolName").value("SafeRoute School"));
 
         mockMvc.perform(get("/api/v1/users/me")
                         .header("Authorization", "Bearer " + account.accessToken()))
@@ -94,7 +93,21 @@ class UserProfileIntegrationTest {
                 .andExpect(jsonPath("$.result.username").value("updatedManager"))
                 .andExpect(jsonPath("$.result.email").value(partiallyUpdatedEmail))
                 .andExpect(jsonPath("$.result.phoneNumber").value("010-9999-8888"))
-                .andExpect(jsonPath("$.result.schoolName").value("Updated School"));
+                .andExpect(jsonPath("$.result.schoolName").value("SafeRoute School"));
+    }
+
+    @Test
+    @DisplayName("사용자는 프로필 수정으로 소속 기관을 변경할 수 없다")
+    void rejectSchoolNameChange() throws Exception {
+        TestAccount account = signupAndLogin(UserRole.MANAGER);
+
+        mockMvc.perform(patch("/api/v1/users/me")
+                        .header("Authorization", "Bearer " + account.accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"schoolName":"Another School"}
+                                """))
+                .andExpect(status().isForbidden());
     }
 
     @Test

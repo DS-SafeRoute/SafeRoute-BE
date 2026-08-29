@@ -1,6 +1,7 @@
 package com.saferoute.domain.device.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.BDDMockito.given;
@@ -9,6 +10,7 @@ import static org.mockito.Mockito.verify;
 
 import com.saferoute.domain.device.dto.request.ConfigureCctvGridCellsRequest;
 import com.saferoute.domain.device.dto.request.CreateCctvRequest;
+import com.saferoute.domain.device.dto.request.UpdateCctvRequest;
 import com.saferoute.domain.device.dto.response.CctvResponse;
 import com.saferoute.domain.device.dto.response.CctvRegistrationResponse;
 import com.saferoute.domain.device.dto.response.DeviceTokenIssueResponse;
@@ -22,8 +24,10 @@ import com.saferoute.domain.evacuation.grid.entity.FloorGridCell;
 import com.saferoute.domain.evacuation.grid.repository.FloorGridCellRepository;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.global.api.error.DeviceErrorCode;
+import com.saferoute.global.api.error.CctvErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.global.security.DeviceTokenService;
+import com.saferoute.domain.user.service.SchoolContextService;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -33,9 +37,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 
 @ExtendWith(MockitoExtension.class)
 class CctvServiceTest {
+
+    private static final String EMAIL = "manager@saferoute.com";
+    private static final String SCHOOL_NAME = "SafeRoute School";
 
     @Mock CctvJpaRepository cctvJpaRepository;
     @Mock CctvGridCellRepository cctvGridCellRepository;
@@ -44,6 +52,7 @@ class CctvServiceTest {
     @Mock CctvRegistrationService cctvRegistrationService;
     @Mock DeviceTokenService deviceTokenService;
     @Mock CongestionConfigService congestionConfigService;
+    @Mock SchoolContextService schoolContextService;
 
     private CctvService cctvService;
 
@@ -56,8 +65,12 @@ class CctvServiceTest {
                 cctvCodeAllocator,
                 cctvRegistrationService,
                 deviceTokenService,
-                congestionConfigService
+                congestionConfigService,
+                schoolContextService
         );
+        org.mockito.Mockito.lenient()
+                .when(schoolContextService.getSchoolName(EMAIL))
+                .thenReturn(SCHOOL_NAME);
     }
 
     @Test
@@ -123,11 +136,13 @@ class CctvServiceTest {
         Cctv secondCctv = cctv(secondId);
         CctvGridCell firstMapping = mapping(firstCctv, cell(0, 0));
         CctvGridCell secondMapping = mapping(secondCctv, cell(0, 1));
-        given(cctvJpaRepository.findAllWithLocation()).willReturn(List.of(firstCctv, secondCctv));
+        given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
+        given(cctvJpaRepository.findAllByCustomNode_Floor_Building_SchoolName(SCHOOL_NAME))
+                .willReturn(List.of(firstCctv, secondCctv));
         given(cctvGridCellRepository.findAllByCctvIdsWithGridCell(anyList()))
                 .willReturn(List.of(firstMapping, secondMapping));
 
-        List<CctvResponse> responses = cctvService.getCctvs(null);
+        List<CctvResponse> responses = cctvService.getCctvs(null, EMAIL);
 
         assertThat(responses).hasSize(2);
         verify(cctvGridCellRepository).findAllByCctvIdsWithGridCell(List.of(firstId, secondId));
@@ -152,17 +167,65 @@ class CctvServiceTest {
         given(cell.getId()).willReturn(cellId);
         given(cell.getFloor()).willReturn(floor);
         given(cell.isWalkable()).willReturn(true);
-        given(cctvJpaRepository.findByIdWithLocation(cctvId)).willReturn(Optional.of(cctv));
+        given(cctvJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(cctvId, SCHOOL_NAME))
+                .willReturn(Optional.of(cctv));
         given(floorGridCellRepository.findAllById(List.of(cellId))).willReturn(List.of(cell));
 
         cctvService.configureGridCells(
                 cctvId,
-                new ConfigureCctvGridCellsRequest(List.of(cellId))
+                new ConfigureCctvGridCellsRequest(List.of(cellId)),
+                EMAIL
         );
 
         verify(cctvGridCellRepository).deleteAllByCctvId(cctvId);
         verify(cctvGridCellRepository).saveAll(any());
         verify(congestionConfigService).incrementVersionForGridChange();
+    }
+
+    @Test
+    @DisplayName("CCTV 정보 수정 시 이름과 연결 노드 위치를 함께 변경한다")
+    void updateCctv_success() {
+        UUID cctvId = UUID.randomUUID();
+        Cctv cctv = cctv(cctvId);
+        MapNode node = cctv.getCustomNode();
+        given(cctvJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(cctvId, SCHOOL_NAME))
+                .willReturn(Optional.of(cctv));
+
+        cctvService.updateCctv(
+                cctvId,
+                new UpdateCctvRequest("1층 출입구 CCTV", 0.4, 0.6),
+                EMAIL
+        );
+        verify(cctv).rename("1층 출입구 CCTV");
+        verify(node).moveTo(0.4, 0.6);
+    }
+
+    @Test
+    @DisplayName("다른 기관 CCTV의 모든 변경 요청은 not-found로 거부한다")
+    void mutations_otherSchool_throwNotFound() {
+        UUID cctvId = UUID.randomUUID();
+        List<ThrowingCallable> operations = List.of(
+                () -> cctvService.configureGridCells(
+                        cctvId,
+                        new ConfigureCctvGridCellsRequest(List.of(UUID.randomUUID())),
+                        EMAIL),
+                () -> cctvService.updateCctv(
+                        cctvId,
+                        new UpdateCctvRequest("변경 이름", 0.4, 0.6),
+                        EMAIL),
+                () -> cctvService.enableCctv(cctvId, EMAIL),
+                () -> cctvService.disableCctv(cctvId, EMAIL)
+        );
+
+        for (ThrowingCallable operation : operations) {
+            assertThatThrownBy(operation)
+                    .isInstanceOf(ApiException.class)
+                    .extracting(exception -> ((ApiException) exception).getErrorCode())
+                    .isEqualTo(CctvErrorCode.CCTV_NOT_FOUND);
+        }
+
+        verify(cctvGridCellRepository, never()).deleteAllByCctvId(any());
+        verify(congestionConfigService, never()).incrementVersionForGridChange();
     }
 
     private CreateCctvRequest request() {

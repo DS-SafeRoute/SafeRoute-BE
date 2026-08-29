@@ -113,6 +113,13 @@ public class CongestionEventService {
             // ENDED는 레벨이 NORMAL이라 requiresRouteRecalculation()이 false지만, 정상 경로로의
             // 복구 후보를 제시해야 하므로(RouteRecalculationService.trigger 참고) 별도로 포함한다.
             if (savedLevel.requiresRouteRecalculation() || triggerType == RecalculationTriggerType.ENDED) {
+                if (affectedEdges.isEmpty()) {
+                    log.warn(
+                            "재계산 기준을 충족했지만 감시 중인 MapEdge가 없어 재계산을 건너뜀: "
+                                    + "sessionId={}, cctvCode={}, level={}, triggerType={}",
+                            session.getId(), cctv.getCode(), savedLevel, triggerType
+                    );
+                }
                 for (MapEdge edge : affectedEdges) {
                     routeRecalculationService.trigger(
                             session, edge, savedLevel, triggerType, cctv.getCode(), density);
