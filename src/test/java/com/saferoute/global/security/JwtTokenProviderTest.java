@@ -23,7 +23,8 @@ class JwtTokenProviderTest {
                     new JwtProperties(
                             SECRET,
                             "saferoute",
-                            Duration.ofHours(1)
+                            Duration.ofHours(1),
+                            Duration.ofDays(14)
                     )
             );
 
@@ -78,13 +79,39 @@ class JwtTokenProviderTest {
     }
 
     @Test
+    @DisplayName("발급한 refresh token은 type claim이 refresh이고 access token으로는 통과되지 않는다")
+    void createAndValidateRefreshToken() {
+        User user = mock(User.class);
+
+        given(user.getId()).willReturn(UUID.randomUUID());
+        given(user.getEmail())
+                .willReturn("normal@saferoute.com");
+        given(user.getRole())
+                .willReturn(UserRole.NORMAL);
+
+        String refreshToken = jwtTokenProvider.createRefreshToken(user);
+        String accessToken = jwtTokenProvider.createAccessToken(user);
+
+        jwtTokenProvider.validateRefreshToken(refreshToken);
+
+        assertThatThrownBy(
+                () -> jwtTokenProvider.validateRefreshToken(accessToken)
+        ).isInstanceOf(JwtException.class);
+
+        assertThat(
+                jwtTokenProvider.getRefreshTokenExpirationSeconds()
+        ).isEqualTo(Duration.ofDays(14).toSeconds());
+    }
+
+    @Test
     @DisplayName("JWT secret이 비어 있으면 시작 단계에서 실패한다")
     void rejectBlankSecret() {
         JwtProperties properties =
                 new JwtProperties(
                         "",
                         "saferoute",
-                        Duration.ofHours(1)
+                        Duration.ofHours(1),
+                        Duration.ofDays(14)
                 );
 
         assertThatThrownBy(

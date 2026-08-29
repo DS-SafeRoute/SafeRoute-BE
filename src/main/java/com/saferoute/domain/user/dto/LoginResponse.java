@@ -13,13 +13,15 @@ public record LoginResponse(
         String schoolName,
         String tokenType,
         String accessToken,
-        long expiresIn
+        long expiresIn,
+        String refreshToken
 ) {
 
     public static LoginResponse of(
             User user,
             String accessToken,
-            long expiresIn
+            long expiresIn,
+            String refreshToken
     ) {
         return new LoginResponse(
                 user.getId(),
@@ -30,7 +32,8 @@ public record LoginResponse(
                 user.getSchoolName(),
                 "Bearer",
                 accessToken,
-                expiresIn
+                expiresIn,
+                refreshToken
         );
     }
 }
