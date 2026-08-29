@@ -12,7 +12,8 @@ public enum UserErrorCode implements BaseErrorCode {
     DUPLICATE_EMAIL(HttpStatus.CONFLICT, "USER001", "이미 사용 중인 이메일입니다."),
     DUPLICATE_USERNAME(HttpStatus.CONFLICT, "USER002", "이미 사용 중인 아이디입니다."),
     INVALID_CREDENTIAL(HttpStatus.UNAUTHORIZED, "USER003", "이메일 또는 비밀번호가 올바르지 않습니다."),
-    USER_NOT_FOUND(HttpStatus.NOT_FOUND, "USER004", "사용자를 찾을 수 없습니다.");
+    USER_NOT_FOUND(HttpStatus.NOT_FOUND, "USER004", "사용자를 찾을 수 없습니다."),
+    INVALID_REFRESH_TOKEN(HttpStatus.UNAUTHORIZED, "USER005", "리프레시 토큰이 유효하지 않습니다.");
 
     private final HttpStatus httpStatus;
     private final String code;
