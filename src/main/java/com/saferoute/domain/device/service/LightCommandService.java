@@ -13,21 +13,28 @@ import com.saferoute.domain.device.repository.LightCommandJpaRepository;
 import com.saferoute.global.api.error.IoTLightErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.global.security.DevicePrincipal;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 // BE는 Pi를 직접 호출하지 않고(EC2->사설 Pi 직접 호출 금지) 명령을 큐에
 // 적재만 하면, 같은 Pi가 이미 갖고 있는 CCTV 디바이스 토큰으로 폴링해가서 실행하고
 // ACK로 결과를 보고하는 구조. IoTLightService는 이 서비스를 통해 명령을 적재한다.
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class LightCommandService {
+
+    // Pi가 짧은 주기로 폴링해가는 명령이라 훈련 세션 타임아웃(10분)보다 훨씬 짧게 잡는다.
+    // 이 시간 안에 ACK가 없으면 Pi가 오프라인이거나 릴레이 통신에 실패한 것으로 본다.
+    private static final Duration ACK_TIMEOUT = Duration.ofSeconds(15);
 
     private final IoTLightJpaRepository iotLightJpaRepository;
     private final LightCommandJpaRepository lightCommandJpaRepository;
@@ -73,5 +80,22 @@ public class LightCommandService {
             }
         }
         return new LightCommandAckResponse(command.getId(), command.getStatus());
+    }
+
+    // SENT 상태로 ACK_TIMEOUT을 넘긴 명령을 주기적으로 스캔해 TIMED_OUT 처리한다
+    // (TrainingTimeoutScheduler.failTimedOutSessions()와 동일한 컨벤션).
+    // Pi가 오프라인이거나 릴레이 통신에 실패해 ACK를 못 보낸 경우, 이 명령이 영원히
+    // SENT로 남아 있지 않도록 하는 안전장치다.
+    @Transactional
+    public void timeoutStaleCommands() {
+        Instant threshold = Instant.now().minus(ACK_TIMEOUT);
+        List<LightCommand> staleCommands = lightCommandJpaRepository
+                .findAllByStatusAndSentAtBefore(LightCommandStatus.SENT, threshold);
+
+        for (LightCommand command : staleCommands) {
+            command.timeout();
+            log.warn("유도등 명령 ACK 타임아웃: commandId={}, lightId={}, direction={}",
+                    command.getId(), command.getLight().getId(), command.getDirection());
+        }
     }
 }

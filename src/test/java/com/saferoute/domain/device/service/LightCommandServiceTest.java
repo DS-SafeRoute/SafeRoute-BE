@@ -191,6 +191,39 @@ class LightCommandServiceTest {
                 .hasMessage(IoTLightErrorCode.LIGHT_COMMAND_NOT_FOUND.getMessage());
     }
 
+    // === timeoutStaleCommands ===
+
+    @Test
+    @DisplayName("SENT 상태로 타임아웃을 넘긴 명령을 TIMED_OUT으로 전환한다")
+    void timeoutStaleCommands_marksStaleCommandsAsTimedOut() {
+        // given
+        IoTLight light = lightWithCctv("LIGHT_001", cctv);
+        LightCommand staleCommand = pendingCommand(light, IoTLightDirection.LEFT);
+        staleCommand.markSent(java.time.Instant.now().minus(1, java.time.temporal.ChronoUnit.MINUTES));
+        given(lightCommandJpaRepository.findAllByStatusAndSentAtBefore(
+                org.mockito.ArgumentMatchers.eq(LightCommandStatus.SENT), org.mockito.ArgumentMatchers.any()))
+                .willReturn(List.of(staleCommand));
+
+        // when
+        lightCommandService.timeoutStaleCommands();
+
+        // then
+        assertThat(staleCommand.getStatus()).isEqualTo(LightCommandStatus.TIMED_OUT);
+    }
+
+    @Test
+    @DisplayName("타임아웃 대상이 없으면 아무 것도 바꾸지 않는다")
+    void timeoutStaleCommands_noStaleCommands_doesNothing() {
+        // given
+        given(lightCommandJpaRepository.findAllByStatusAndSentAtBefore(
+                org.mockito.ArgumentMatchers.eq(LightCommandStatus.SENT), org.mockito.ArgumentMatchers.any()))
+                .willReturn(List.of());
+
+        // when & then
+        org.assertj.core.api.Assertions.assertThatCode(() -> lightCommandService.timeoutStaleCommands())
+                .doesNotThrowAnyException();
+    }
+
     @Test
     @DisplayName("다른 CCTV(Pi)가 ACK를 보내면 예외가 발생한다")
     void ack_cctvMismatch_throws() {
