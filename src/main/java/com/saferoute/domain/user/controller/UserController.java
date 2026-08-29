@@ -2,6 +2,8 @@ package com.saferoute.domain.user.controller;
 
 import com.saferoute.domain.user.dto.LoginRequest;
 import com.saferoute.domain.user.dto.LoginResponse;
+import com.saferoute.domain.user.dto.ReissueRequest;
+import com.saferoute.domain.user.dto.ReissueResponse;
 import com.saferoute.domain.user.dto.SignupRequest;
 import com.saferoute.domain.user.dto.SignupResponse;
 import com.saferoute.domain.user.dto.UpdateUserProfileRequest;
@@ -10,6 +12,8 @@ import com.saferoute.domain.user.service.UserService;
 import com.saferoute.global.api.response.ApiResponse;
 import com.saferoute.global.api.response.UserSuccessCode;
 import com.saferoute.global.security.AccessTokenRevocationService;
+import com.saferoute.global.security.JwtTokenProvider;
+import com.saferoute.global.security.RefreshTokenService;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +37,8 @@ public class UserController {
 
     private final UserService userService;
     private final AccessTokenRevocationService accessTokenRevocationService;
+    private final RefreshTokenService refreshTokenService;
+    private final JwtTokenProvider jwtTokenProvider;
 
     // 회원가입
     @PostMapping("/auth/signup")
@@ -64,6 +70,18 @@ public class UserController {
     ) {
         UserProfileResponse response = userService.updateProfile(authentication.getName(), request);
         return ResponseEntity.ok(ApiResponse.success(UserSuccessCode.PROFILE_UPDATED, response));
+    }
+
+    // 토큰 재발급: refresh token을 검증하고 새 access/refresh token을 발급한다.
+    @PostMapping("/auth/reissue")
+    public ResponseEntity<ApiResponse<ReissueResponse>> reissue(@Valid @RequestBody ReissueRequest request) {
+        RefreshTokenService.ReissuedTokens tokens = refreshTokenService.reissue(request.refreshToken());
+        ReissueResponse response = ReissueResponse.of(
+                tokens.accessToken(),
+                jwtTokenProvider.getAccessTokenExpirationSeconds(),
+                tokens.refreshToken()
+        );
+        return ResponseEntity.ok(ApiResponse.success(UserSuccessCode.REISSUE_COMPLETED, response));
     }
 
     @PostMapping("/auth/logout")
