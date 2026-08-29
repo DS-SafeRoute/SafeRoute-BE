@@ -17,7 +17,10 @@ public enum IoTLightErrorCode implements BaseErrorCode {
     LIGHT_DISABLED(HttpStatus.BAD_REQUEST, "IOTLIGHT007", "비활성화된 유도등에는 명령을 보낼 수 없습니다."),
     DEVICE_UNREACHABLE(HttpStatus.BAD_GATEWAY, "IOTLIGHT008", "라즈베리파이 기기와 통신에 실패했습니다."),
     DEVIATION_CCTV_MAPPING_NOT_FOUND(HttpStatus.BAD_REQUEST, "IOTLIGHT009",
-            "경로 이탈률을 계산하려면 좌/우 통로를 각각 감시하는 CCTV가 매핑되어 있어야 합니다.");
+            "경로 이탈률을 계산하려면 좌/우 통로를 각각 감시하는 CCTV가 매핑되어 있어야 합니다."),
+    LIGHT_COMMAND_NOT_FOUND(HttpStatus.NOT_FOUND, "IOTLIGHT010", "유도등 명령을 찾을 수 없습니다."),
+    LIGHT_COMMAND_CCTV_MISMATCH(HttpStatus.FORBIDDEN, "IOTLIGHT011",
+            "인증된 CCTV가 담당하는 유도등의 명령이 아닙니다.");
 
     private final HttpStatus httpStatus;
     private final String code;
