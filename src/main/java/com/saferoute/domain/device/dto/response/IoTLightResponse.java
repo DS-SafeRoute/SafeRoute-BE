@@ -15,7 +15,8 @@ public record IoTLightResponse(
         UUID rightEdgeId,
         boolean guidanceConfigured,
         boolean enabled,
-        String piEndpoint
+        String piEndpoint,
+        UUID cctvId
 ) {
     public static IoTLightResponse from(IoTLight light) {
         return new IoTLightResponse(
@@ -30,7 +31,8 @@ public record IoTLightResponse(
                 light.getRightEdge() != null ? light.getRightEdge().getId() : null,
                 light.isGuidanceConfigured(),
                 light.isEnabled(),
-                light.getPiEndpoint()
+                light.getPiEndpoint(),
+                light.getCctv() != null ? light.getCctv().getId() : null
         );
     }
 }

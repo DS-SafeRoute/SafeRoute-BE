@@ -1,6 +1,7 @@
 package com.saferoute.domain.device.service;
 
 import com.saferoute.domain.device.client.IoTLightPiClient;
+import com.saferoute.domain.device.dto.request.AssignCctvRequest;
 import com.saferoute.domain.device.dto.request.ChangeLightDirectionRequest;
 import com.saferoute.domain.device.dto.request.ConfigureGuidanceRequest;
 import com.saferoute.domain.device.dto.request.CreateIoTLightRequest;
@@ -8,9 +9,12 @@ import com.saferoute.domain.device.dto.request.UpdateIoTLightRequest;
 import com.saferoute.domain.device.dto.request.UpdatePiEndpointRequest;
 import com.saferoute.domain.device.dto.response.IoTLightResponse;
 import com.saferoute.domain.device.dto.response.LightDirectionResponse;
+import com.saferoute.domain.device.entity.Cctv;
 import com.saferoute.domain.device.entity.IoTLight;
 import com.saferoute.domain.device.entity.IoTLightDirection;
+import com.saferoute.domain.device.repository.CctvJpaRepository;
 import com.saferoute.domain.device.repository.IoTLightJpaRepository;
+import com.saferoute.global.api.error.CctvErrorCode;
 import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.evacuation.graph.repository.MapEdgeJpaRepository;
@@ -43,6 +47,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class IoTLightService {
 
     private final IoTLightJpaRepository iotLightJpaRepository;
+    private final CctvJpaRepository cctvJpaRepository;
     private final MapNodeJpaRepository mapNodeJpaRepository;
     private final MapEdgeJpaRepository mapEdgeJpaRepository;
     private final FloorRepository floorRepository;
@@ -140,6 +145,19 @@ public class IoTLightService {
             UUID lightId, UpdatePiEndpointRequest request, String email) {
         IoTLight light = findLightForSchoolOrThrow(lightId, email);
         light.updatePiEndpoint(request.piEndpoint());
+        return IoTLightResponse.from(light);
+    }
+
+    // 하드웨어 배치 시 관리자가 이 유도등의 릴레이를 제어하는 Pi(=그 Pi가 감시하는 CCTV)를 지정한다.
+    // 유도등 명령 폴링(GET /device/light-commands?cctvCode=...)이 이 연결로 담당 유도등을 찾는다.
+    @Transactional
+    public IoTLightResponse assignCctv(UUID lightId, AssignCctvRequest request, String email) {
+        String schoolName = schoolContextService.getSchoolName(email);
+        IoTLight light = findLightForSchoolNameOrThrow(lightId, schoolName);
+        Cctv cctv = cctvJpaRepository
+                .findByIdAndCustomNode_Floor_Building_SchoolName(request.cctvId(), schoolName)
+                .orElseThrow(() -> new ApiException(CctvErrorCode.CCTV_NOT_FOUND));
+        light.assignCctv(cctv);
         return IoTLightResponse.from(light);
     }
 

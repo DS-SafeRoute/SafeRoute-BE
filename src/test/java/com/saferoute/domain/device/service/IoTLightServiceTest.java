@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.saferoute.domain.device.client.IoTLightPiClient;
+import com.saferoute.domain.device.dto.request.AssignCctvRequest;
 import com.saferoute.domain.device.dto.request.ChangeLightDirectionRequest;
 import com.saferoute.domain.device.dto.request.ConfigureGuidanceRequest;
 import com.saferoute.domain.device.dto.request.CreateIoTLightRequest;
@@ -16,9 +17,12 @@ import com.saferoute.domain.device.dto.request.UpdateIoTLightRequest;
 import com.saferoute.domain.device.dto.request.UpdatePiEndpointRequest;
 import com.saferoute.domain.device.dto.response.IoTLightResponse;
 import com.saferoute.domain.device.dto.response.LightDirectionResponse;
+import com.saferoute.domain.device.entity.Cctv;
 import com.saferoute.domain.device.entity.IoTLight;
 import com.saferoute.domain.device.entity.IoTLightDirection;
+import com.saferoute.domain.device.repository.CctvJpaRepository;
 import com.saferoute.domain.device.repository.IoTLightJpaRepository;
+import com.saferoute.global.api.error.CctvErrorCode;
 import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.evacuation.graph.entity.NodeType;
@@ -61,6 +65,9 @@ class IoTLightServiceTest {
 
     @Mock
     private IoTLightJpaRepository iotLightJpaRepository;
+
+    @Mock
+    private CctvJpaRepository cctvJpaRepository;
 
     @Mock
     private MapNodeJpaRepository mapNodeJpaRepository;
@@ -329,6 +336,49 @@ class IoTLightServiceTest {
         assertThat(response.name()).isEqualTo("변경된 이름");
         assertThat(response.x()).isEqualTo(0.7);
         assertThat(response.y()).isEqualTo(0.8);
+    }
+
+    // === assignCctv ===
+
+    @Test
+    @DisplayName("유도등에 CCTV(릴레이 담당 Pi)를 연결한다")
+    void assignCctv_success() {
+        // given
+        MapNode lightNode = createNode("LIGHT_001", NodeType.CUSTOM);
+        IoTLight light = createLight("LIGHT_001", lightNode);
+        MapNode cctvNode = createNode("CCTV_001", NodeType.CUSTOM);
+        Cctv cctv = Cctv.create("CCTV_001", "CCTV_001", cctvNode);
+        ReflectionTestUtils.setField(cctv, "id", UUID.randomUUID());
+        given(iotLightJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(light.getId(), SCHOOL_NAME))
+                .willReturn(Optional.of(light));
+        given(cctvJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(cctv.getId(), SCHOOL_NAME))
+                .willReturn(Optional.of(cctv));
+
+        // when
+        IoTLightResponse response = iotLightService.assignCctv(
+                light.getId(), new AssignCctvRequest(cctv.getId()), EMAIL);
+
+        // then
+        assertThat(response.cctvId()).isEqualTo(cctv.getId());
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 CCTV를 연결하려 하면 예외가 발생한다")
+    void assignCctv_cctvNotFound_throws() {
+        // given
+        MapNode lightNode = createNode("LIGHT_001", NodeType.CUSTOM);
+        IoTLight light = createLight("LIGHT_001", lightNode);
+        UUID unknownCctvId = UUID.randomUUID();
+        given(iotLightJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(light.getId(), SCHOOL_NAME))
+                .willReturn(Optional.of(light));
+        given(cctvJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(unknownCctvId, SCHOOL_NAME))
+                .willReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> iotLightService.assignCctv(
+                light.getId(), new AssignCctvRequest(unknownCctvId), EMAIL))
+                .isInstanceOf(ApiException.class)
+                .hasMessage(CctvErrorCode.CCTV_NOT_FOUND.getMessage());
     }
 
     // === enable / disable ===

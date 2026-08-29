@@ -18,7 +18,8 @@ public enum IoTLightSuccessCode implements BaseCode {
     IOT_LIGHT_DISABLED(HttpStatus.OK, "IOTLIGHT_SUCCESS_007", "유도등이 비활성화되었습니다."),
     IOT_LIGHT_PI_ENDPOINT_UPDATED(HttpStatus.OK, "IOTLIGHT_SUCCESS_008", "라즈베리파이 주소가 설정되었습니다."),
     IOT_LIGHT_DIRECTION_CHANGED(HttpStatus.OK, "IOTLIGHT_SUCCESS_009", "유도등 방향이 변경되었습니다."),
-    IOT_LIGHT_DELETED(HttpStatus.OK, "IOTLIGHT_SUCCESS_010", "유도등이 삭제되었습니다.");
+    IOT_LIGHT_DELETED(HttpStatus.OK, "IOTLIGHT_SUCCESS_010", "유도등이 삭제되었습니다."),
+    IOT_LIGHT_CCTV_ASSIGNED(HttpStatus.OK, "IOTLIGHT_SUCCESS_011", "유도등에 CCTV(릴레이 담당 Pi)가 연결되었습니다.");
 
     private final HttpStatus httpStatus;
     private final String code;
