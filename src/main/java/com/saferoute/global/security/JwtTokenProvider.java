@@ -33,6 +33,21 @@ public class JwtTokenProvider {
                 .subject(user.getId().toString())
                 .claim("email", user.getEmail())
                 .claim("role", user.getRole().name())
+                .claim("type", "access")
+                .issuedAt(Date.from(issuedAt))
+                .expiration(Date.from(expiresAt))
+                .signWith(signingKey)
+                .compact();
+    }
+
+    public String createRefreshToken(User user) {
+        Instant issuedAt = Instant.now();
+        Instant expiresAt = issuedAt.plus(properties.refreshTokenExpiration());
+
+        return Jwts.builder()
+                .issuer(properties.issuer())
+                .subject(user.getId().toString())
+                .claim("type", "refresh")
                 .issuedAt(Date.from(issuedAt))
                 .expiration(Date.from(expiresAt))
                 .signWith(signingKey)
@@ -69,6 +84,18 @@ public class JwtTokenProvider {
 
     public long getAccessTokenExpirationSeconds() {
         return properties.accessTokenExpiration().toSeconds();
+    }
+
+    public long getRefreshTokenExpirationSeconds() {
+        return properties.refreshTokenExpiration().toSeconds();
+    }
+
+    public void validateRefreshToken(String token) {
+        String type = parseClaims(token).get("type", String.class);
+
+        if (!"refresh".equals(type)) {
+            throw new JwtException("refresh token이 아닙니다.");
+        }
     }
 
     private Claims parseClaims(String token) {
@@ -109,6 +136,14 @@ public class JwtTokenProvider {
                 || properties.accessTokenExpiration().isNegative()) {
             throw new IllegalStateException(
                     "JWT access token 만료 시간은 0보다 커야 합니다."
+            );
+        }
+
+        if (properties.refreshTokenExpiration() == null
+                || properties.refreshTokenExpiration().isZero()
+                || properties.refreshTokenExpiration().isNegative()) {
+            throw new IllegalStateException(
+                    "JWT refresh token 만료 시간은 0보다 커야 합니다."
             );
         }
     }

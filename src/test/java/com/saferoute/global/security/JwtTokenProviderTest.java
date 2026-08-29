@@ -23,7 +23,8 @@ class JwtTokenProviderTest {
                     new JwtProperties(
                             SECRET,
                             "saferoute",
-                            Duration.ofHours(1)
+                            Duration.ofHours(1),
+                            Duration.ofDays(14)
                     )
             );
 
@@ -84,7 +85,8 @@ class JwtTokenProviderTest {
                 new JwtProperties(
                         "",
                         "saferoute",
-                        Duration.ofHours(1)
+                        Duration.ofHours(1),
+                        Duration.ofDays(14)
                 );
 
         assertThatThrownBy(

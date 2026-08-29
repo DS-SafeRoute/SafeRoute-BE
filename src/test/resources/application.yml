@@ -15,6 +15,7 @@ jwt:
   secret: c2FmZXJvdXRlLXRlc3Qtand0LXNlY3JldC1rZXktMzItYnl0ZXM=
   issuer: saferoute
   access-token-expiration: 1h
+  refresh-token-expiration: 14d
 
 # AiAnalysisClient 는 컨텍스트 로딩 시점에 값이 필요하므로 더미값을 넣는다.
 # src/test/resources/application.yml이 클래스패스에서 src/main/resources/application.yml과
