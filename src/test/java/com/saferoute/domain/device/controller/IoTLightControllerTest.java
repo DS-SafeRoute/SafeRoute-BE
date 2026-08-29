@@ -333,17 +333,17 @@ class IoTLightControllerTest {
     }
 
     @Test
-    @DisplayName("PATCH /lights/{lightId}/direction - Pi와 통신 실패 시 502를 반환한다")
-    void changeDirection_deviceUnreachable_returnsBadGateway() throws Exception {
+    @DisplayName("PATCH /lights/{lightId}/direction - 담당 CCTV(Pi)가 연결되지 않으면 400을 반환한다")
+    void changeDirection_cctvNotAssigned_returnsBadRequest() throws Exception {
         ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.OFF);
         given(iotLightService.changeDirection(eq(lightId), any(), eq(EMAIL)))
-                .willThrow(new ApiException(IoTLightErrorCode.DEVICE_UNREACHABLE));
+                .willThrow(new ApiException(IoTLightErrorCode.CCTV_NOT_ASSIGNED));
 
         mockMvc.perform(patch("/api/v1/lights/{lightId}/direction", lightId)
                         .principal(new UsernamePasswordAuthenticationToken(EMAIL, null))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isBadGateway());
+                .andExpect(status().isBadRequest());
     }
 
     @Test

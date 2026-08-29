@@ -8,7 +8,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
-import com.saferoute.domain.device.client.IoTLightPiClient;
 import com.saferoute.domain.device.dto.request.AssignCctvRequest;
 import com.saferoute.domain.device.dto.request.ChangeLightDirectionRequest;
 import com.saferoute.domain.device.dto.request.ConfigureGuidanceRequest;
@@ -20,8 +19,11 @@ import com.saferoute.domain.device.dto.response.LightDirectionResponse;
 import com.saferoute.domain.device.entity.Cctv;
 import com.saferoute.domain.device.entity.IoTLight;
 import com.saferoute.domain.device.entity.IoTLightDirection;
+import com.saferoute.domain.device.entity.LightCommand;
+import com.saferoute.domain.device.entity.LightCommandStatus;
 import com.saferoute.domain.device.repository.CctvJpaRepository;
 import com.saferoute.domain.device.repository.IoTLightJpaRepository;
+import com.saferoute.domain.device.repository.LightCommandJpaRepository;
 import com.saferoute.global.api.error.CctvErrorCode;
 import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
@@ -79,7 +81,7 @@ class IoTLightServiceTest {
     private FloorRepository floorRepository;
 
     @Mock
-    private IoTLightPiClient iotLightPiClient;
+    private LightCommandJpaRepository lightCommandJpaRepository;
 
     @Mock
     private IoTLightDirectionStore iotLightDirectionStore;
@@ -123,6 +125,12 @@ class IoTLightServiceTest {
         MapEdge edge = MapEdge.create(floor, from, to, 3.0, true);
         ReflectionTestUtils.setField(edge, "id", UUID.randomUUID());
         return edge;
+    }
+
+    private Cctv createCctv(String code) {
+        Cctv cctv = Cctv.create(code, code, createNode(code, NodeType.CUSTOM));
+        ReflectionTestUtils.setField(cctv, "id", UUID.randomUUID());
+        return cctv;
     }
 
     private IoTLight createLight(String code, MapNode customNode) {
@@ -438,7 +446,7 @@ class IoTLightServiceTest {
         // given
         MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
         IoTLight light = createLight("LIGHT_001", customNode);
-        light.updatePiEndpoint("http://192.168.0.50:5000");
+        light.assignCctv(createCctv("CCTV_001"));
         ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.OFF);
 
         given(iotLightJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(light.getId(), SCHOOL_NAME)).willReturn(Optional.of(light));
@@ -448,7 +456,10 @@ class IoTLightServiceTest {
 
         // then
         assertThat(response.direction()).isEqualTo(IoTLightDirection.OFF);
-        verify(iotLightPiClient).sendDirection("http://192.168.0.50:5000", "LIGHT_001", IoTLightDirection.OFF);
+        org.mockito.ArgumentCaptor<LightCommand> captor = org.mockito.ArgumentCaptor.forClass(LightCommand.class);
+        verify(lightCommandJpaRepository).save(captor.capture());
+        assertThat(captor.getValue().getDirection()).isEqualTo(IoTLightDirection.OFF);
+        assertThat(captor.getValue().getStatus()).isEqualTo(LightCommandStatus.PENDING);
         verify(iotLightDirectionStore).update(light.getId(), IoTLightDirection.OFF);
         verify(trainingEventPublisher).publishIoTLightStatusUpdatedAfterCommit(light, IoTLightDirection.OFF);
     }
@@ -459,7 +470,7 @@ class IoTLightServiceTest {
         // given
         MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
         IoTLight light = createLight("LIGHT_001", customNode);
-        light.updatePiEndpoint("http://192.168.0.50:5000");
+        light.assignCctv(createCctv("CCTV_001"));
         MapNode decisionNode = createNode("HALLWAY1", NodeType.HALLWAY);
         MapNode leftTarget = createNode("HALLWAY2", NodeType.HALLWAY);
         MapNode rightTarget = createNode("HALLWAY3", NodeType.HALLWAY);
@@ -473,7 +484,31 @@ class IoTLightServiceTest {
 
         // then
         assertThat(response.direction()).isEqualTo(IoTLightDirection.LEFT);
-        verify(iotLightPiClient).sendDirection("http://192.168.0.50:5000", "LIGHT_001", IoTLightDirection.LEFT);
+        org.mockito.ArgumentCaptor<LightCommand> captor = org.mockito.ArgumentCaptor.forClass(LightCommand.class);
+        verify(lightCommandJpaRepository).save(captor.capture());
+        assertThat(captor.getValue().getDirection()).isEqualTo(IoTLightDirection.LEFT);
+    }
+
+    @Test
+    @DisplayName("기존 PENDING 명령이 있으면 SUPERSEDED로 남기고 새 명령을 적재한다")
+    void changeDirection_supersedesExistingPendingCommand() {
+        // given
+        MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
+        IoTLight light = createLight("LIGHT_001", customNode);
+        light.assignCctv(createCctv("CCTV_001"));
+        ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.OFF);
+
+        LightCommand stalePending = LightCommand.createPending(light, IoTLightDirection.LEFT);
+        given(iotLightJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(light.getId(), SCHOOL_NAME)).willReturn(Optional.of(light));
+        given(lightCommandJpaRepository.findAllByLight_IdAndStatus(light.getId(), LightCommandStatus.PENDING))
+                .willReturn(List.of(stalePending));
+
+        // when
+        iotLightService.changeDirection(light.getId(), request, EMAIL);
+
+        // then
+        assertThat(stalePending.getStatus()).isEqualTo(LightCommandStatus.SUPERSEDED);
+        verify(lightCommandJpaRepository).save(any(LightCommand.class));
     }
 
     @Test
@@ -482,7 +517,7 @@ class IoTLightServiceTest {
         // given
         MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
         IoTLight light = createLight("LIGHT_001", customNode);
-        light.updatePiEndpoint("http://192.168.0.50:5000");
+        light.assignCctv(createCctv("CCTV_001"));
         ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.LEFT);
 
         given(iotLightJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(light.getId(), SCHOOL_NAME)).willReturn(Optional.of(light));
@@ -491,7 +526,7 @@ class IoTLightServiceTest {
         assertThatThrownBy(() -> iotLightService.changeDirection(light.getId(), request, EMAIL))
                 .isInstanceOf(ApiException.class)
                 .hasMessage(IoTLightErrorCode.GUIDANCE_NOT_CONFIGURED.getMessage());
-        verifyNoInteractions(iotLightPiClient, iotLightDirectionStore, trainingEventPublisher);
+        verifyNoInteractions(lightCommandJpaRepository, iotLightDirectionStore, trainingEventPublisher);
     }
 
     @Test
@@ -500,7 +535,7 @@ class IoTLightServiceTest {
         // given
         MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
         IoTLight light = createLight("LIGHT_001", customNode);
-        light.updatePiEndpoint("http://192.168.0.50:5000");
+        light.assignCctv(createCctv("CCTV_001"));
         light.disable();
         ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.OFF);
 
@@ -510,12 +545,12 @@ class IoTLightServiceTest {
         assertThatThrownBy(() -> iotLightService.changeDirection(light.getId(), request, EMAIL))
                 .isInstanceOf(ApiException.class)
                 .hasMessage(IoTLightErrorCode.LIGHT_DISABLED.getMessage());
-        verifyNoInteractions(iotLightPiClient, iotLightDirectionStore, trainingEventPublisher);
+        verifyNoInteractions(lightCommandJpaRepository, iotLightDirectionStore, trainingEventPublisher);
     }
 
     @Test
-    @DisplayName("piEndpoint가 설정되지 않은 유도등에 명령을 보내면 예외가 발생한다")
-    void changeDirection_piEndpointNotSet_throws() {
+    @DisplayName("담당 CCTV(Pi)가 연결되지 않은 유도등에 명령을 보내면 예외가 발생한다")
+    void changeDirection_cctvNotAssigned_throws() {
         // given
         MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
         IoTLight light = createLight("LIGHT_001", customNode);
@@ -526,28 +561,8 @@ class IoTLightServiceTest {
         // when & then
         assertThatThrownBy(() -> iotLightService.changeDirection(light.getId(), request, EMAIL))
                 .isInstanceOf(ApiException.class)
-                .hasMessage(IoTLightErrorCode.DEVICE_UNREACHABLE.getMessage());
-        verifyNoInteractions(iotLightPiClient, iotLightDirectionStore, trainingEventPublisher);
-    }
-
-    @Test
-    @DisplayName("Pi 통신이 실패하면 예외가 전파되고 상태 저장/이벤트 발행은 일어나지 않는다")
-    void changeDirection_piUnreachable_throws() {
-        // given
-        MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
-        IoTLight light = createLight("LIGHT_001", customNode);
-        light.updatePiEndpoint("http://192.168.0.50:5000");
-        ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.OFF);
-
-        given(iotLightJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(light.getId(), SCHOOL_NAME)).willReturn(Optional.of(light));
-        org.mockito.BDDMockito.willThrow(new ApiException(IoTLightErrorCode.DEVICE_UNREACHABLE))
-                .given(iotLightPiClient).sendDirection(any(), any(), any());
-
-        // when & then
-        assertThatThrownBy(() -> iotLightService.changeDirection(light.getId(), request, EMAIL))
-                .isInstanceOf(ApiException.class)
-                .hasMessage(IoTLightErrorCode.DEVICE_UNREACHABLE.getMessage());
-        verifyNoInteractions(iotLightDirectionStore, trainingEventPublisher);
+                .hasMessage(IoTLightErrorCode.CCTV_NOT_ASSIGNED.getMessage());
+        verifyNoInteractions(lightCommandJpaRepository, iotLightDirectionStore, trainingEventPublisher);
     }
 
     @Test
@@ -556,7 +571,7 @@ class IoTLightServiceTest {
         // given
         MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
         IoTLight light = createLight("LIGHT_001", customNode);
-        light.updatePiEndpoint("http://192.168.0.50:5000");
+        light.assignCctv(createCctv("CCTV_001"));
         MapNode decisionNode = createNode("HALLWAY1", NodeType.HALLWAY);
         MapNode leftTarget = createNode("HALLWAY2", NodeType.HALLWAY);
         MapNode rightTarget = createNode("HALLWAY3", NodeType.HALLWAY);
@@ -589,7 +604,7 @@ class IoTLightServiceTest {
         // given
         MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
         IoTLight light = createLight("LIGHT_001", customNode);
-        light.updatePiEndpoint("http://192.168.0.50:5000");
+        light.assignCctv(createCctv("CCTV_001"));
         ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.OFF);
 
         given(iotLightJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(light.getId(), SCHOOL_NAME)).willReturn(Optional.of(light));
@@ -610,7 +625,7 @@ class IoTLightServiceTest {
         // given
         MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
         IoTLight light = createLight("LIGHT_001", customNode);
-        light.updatePiEndpoint("http://192.168.0.50:5000");
+        light.assignCctv(createCctv("CCTV_001"));
         ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.OFF);
 
         given(iotLightJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(light.getId(), SCHOOL_NAME)).willReturn(Optional.of(light));
@@ -634,7 +649,7 @@ class IoTLightServiceTest {
         // given
         MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
         IoTLight light = createLight("LIGHT_001", customNode);
-        light.updatePiEndpoint("http://192.168.0.50:5000");
+        light.assignCctv(createCctv("CCTV_001"));
         MapNode decisionNode = createNode("HALLWAY1", NodeType.HALLWAY);
         MapNode leftTarget = createNode("HALLWAY2", NodeType.HALLWAY);
         MapNode rightTarget = createNode("HALLWAY3", NodeType.HALLWAY);
@@ -646,7 +661,9 @@ class IoTLightServiceTest {
         iotLightService.resetToNormal(buildingId);
 
         // then
-        verify(iotLightPiClient).sendDirection("http://192.168.0.50:5000", "LIGHT_001", IoTLightDirection.BOTH);
+        org.mockito.ArgumentCaptor<LightCommand> captor = org.mockito.ArgumentCaptor.forClass(LightCommand.class);
+        verify(lightCommandJpaRepository).save(captor.capture());
+        assertThat(captor.getValue().getDirection()).isEqualTo(IoTLightDirection.BOTH);
         verify(iotLightDirectionStore).update(light.getId(), IoTLightDirection.BOTH);
     }
 
@@ -668,7 +685,7 @@ class IoTLightServiceTest {
         iotLightService.resetToNormal(buildingId);
 
         // then
-        verifyNoInteractions(iotLightPiClient, iotLightDirectionStore);
+        verifyNoInteractions(lightCommandJpaRepository, iotLightDirectionStore);
     }
 
     @Test
@@ -677,7 +694,7 @@ class IoTLightServiceTest {
         // given
         MapNode failingNode = createNode("LIGHT_001", NodeType.CUSTOM);
         IoTLight failingLight = createLight("LIGHT_001", failingNode);
-        // piEndpoint 미설정 -> changeDirection이 DEVICE_UNREACHABLE을 던짐
+        // 담당 CCTV 미연결 -> changeDirection이 CCTV_NOT_ASSIGNED를 던짐
         MapNode decisionNodeA = createNode("HALLWAY1", NodeType.HALLWAY);
         MapNode leftTargetA = createNode("HALLWAY2", NodeType.HALLWAY);
         MapNode rightTargetA = createNode("HALLWAY3", NodeType.HALLWAY);
@@ -686,7 +703,7 @@ class IoTLightServiceTest {
 
         MapNode succeedingNode = createNode("LIGHT_002", NodeType.CUSTOM);
         IoTLight succeedingLight = createLight("LIGHT_002", succeedingNode);
-        succeedingLight.updatePiEndpoint("http://192.168.0.51:5000");
+        succeedingLight.assignCctv(createCctv("CCTV_002"));
         MapNode decisionNodeB = createNode("HALLWAY4", NodeType.HALLWAY);
         MapNode leftTargetB = createNode("HALLWAY5", NodeType.HALLWAY);
         MapNode rightTargetB = createNode("HALLWAY6", NodeType.HALLWAY);
@@ -700,7 +717,10 @@ class IoTLightServiceTest {
         iotLightService.resetToNormal(buildingId);
 
         // then
-        verify(iotLightPiClient).sendDirection("http://192.168.0.51:5000", "LIGHT_002", IoTLightDirection.BOTH);
+        org.mockito.ArgumentCaptor<LightCommand> captor = org.mockito.ArgumentCaptor.forClass(LightCommand.class);
+        verify(lightCommandJpaRepository).save(captor.capture());
+        assertThat(captor.getValue().getLight()).isEqualTo(succeedingLight);
+        assertThat(captor.getValue().getDirection()).isEqualTo(IoTLightDirection.BOTH);
         verify(iotLightDirectionStore).update(succeedingLight.getId(), IoTLightDirection.BOTH);
         verify(trainingEventPublisher).publishIoTLightStatusUpdatedAfterCommit(succeedingLight, IoTLightDirection.BOTH);
     }
@@ -733,6 +753,6 @@ class IoTLightServiceTest {
                     .isEqualTo(IoTLightErrorCode.IOT_LIGHT_NOT_FOUND);
         }
 
-        verifyNoInteractions(iotLightPiClient, iotLightDirectionStore, trainingEventPublisher);
+        verifyNoInteractions(lightCommandJpaRepository, iotLightDirectionStore, trainingEventPublisher);
     }
 }
