@@ -2,6 +2,8 @@ package com.saferoute.domain.training.controller;
 
 import com.saferoute.domain.training.dto.MonitoringCameraListApiResponse;
 import com.saferoute.domain.training.dto.MonitoringCameraListResponse;
+import com.saferoute.domain.training.dto.MonitoringEventListApiResponse;
+import com.saferoute.domain.training.dto.MonitoringEventListResponse;
 import com.saferoute.domain.training.dto.MonitoringFrameListApiResponse;
 import com.saferoute.domain.training.dto.MonitoringFrameListResponse;
 import com.saferoute.domain.training.service.TrainingMonitoringService;
@@ -391,6 +393,133 @@ public class TrainingMonitoringController {
                 sessionId, cctvId, limit, cursor, authentication.getName());
         return ResponseEntity.ok(ApiResponse.success(
                 TrainingSuccessCode.MONITORING_FRAME_LIST_FOUND,
+                response
+        ));
+    }
+
+    @Operation(
+            summary = "이벤트 타임라인 조회",
+            description = """
+                    실행 중인 훈련 세션에서 발생한 혼잡 감지 이벤트(CongestionEventItem)와
+                    경로 재탐색 이벤트(RouteRecalculation)를 발생 시각 오름차순으로 통합해 반환합니다.
+
+                    경로 재탐색 한 건은 요청 시점 이벤트 하나로 시작해, 관리자가 승인/거절하거나
+                    시스템이 자동 취소하면 해소 시점 이벤트가 하나 더 추가됩니다.
+
+                    cctvCode를 지정하면 해당 CCTV와 관련된 이벤트만 반환합니다.
+
+                    AI 분석 시작, 경로 이탈, 위험 구역 진입 이벤트는 아직 Pi/AI 쪽 이벤트 수신
+                    계약이 없어 이 API에 포함되지 않습니다.
+                    """
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200",
+                    description = "이벤트 타임라인 조회 성공",
+                    content = @Content(
+                            mediaType = "application/json",
+                            schema = @io.swagger.v3.oas.annotations.media.Schema(
+                                    implementation = MonitoringEventListApiResponse.class
+                            ),
+                            examples = @ExampleObject(
+                                    name = "이벤트 타임라인",
+                                    value = """
+                                            {
+                                              "isSuccess": true,
+                                              "code": "TRAINING_SUCCESS_009",
+                                              "message": "모니터링 이벤트 타임라인 조회에 성공했습니다.",
+                                              "result": {
+                                                "sessionId": "d669294e-55e1-4c00-bf67-229d89b76948",
+                                                "events": [
+                                                  {
+                                                    "eventId": "3c9f7e2a-3b39-4f0a-9f0a-6a2b6b1f5a11",
+                                                    "type": "CONGESTION_STARTED",
+                                                    "severity": "WARNING",
+                                                    "occurredAt": 1787722095000,
+                                                    "cctvCode": "CCTV_001",
+                                                    "congestionLevel": "CAUTION",
+                                                    "message": "혼잡 감지 · CCTV_001"
+                                                  }
+                                                ]
+                                              }
+                                            }
+                                            """
+                            )
+                    )
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "JWT가 없거나 유효하지 않음",
+                    content = @Content(
+                            mediaType = "application/json",
+                            examples = @ExampleObject(value = """
+                                    {
+                                      "isSuccess": false,
+                                      "code": "COMMON401",
+                                      "message": "인증이 필요합니다."
+                                    }
+                                    """)
+                    )
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403",
+                    description = "MANAGER 권한이 없음",
+                    content = @Content(
+                            mediaType = "application/json",
+                            examples = @ExampleObject(value = """
+                                    {
+                                      "isSuccess": false,
+                                      "code": "COMMON403",
+                                      "message": "접근 권한이 없습니다."
+                                    }
+                                    """)
+                    )
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404",
+                    description = "세션이 없거나 요청자와 다른 학교의 세션",
+                    content = @Content(
+                            mediaType = "application/json",
+                            examples = @ExampleObject(value = """
+                                    {
+                                      "isSuccess": false,
+                                      "code": "TRAINING001",
+                                      "message": "훈련 세션을 찾을 수 없습니다."
+                                    }
+                                    """)
+                    )
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "409",
+                    description = "훈련 세션이 RUNNING 상태가 아님",
+                    content = @Content(
+                            mediaType = "application/json",
+                            examples = @ExampleObject(value = """
+                                    {
+                                      "isSuccess": false,
+                                      "code": "TRAINING006",
+                                      "message": "진행 중인 훈련 세션을 찾을 수 없습니다."
+                                    }
+                                    """)
+                    )
+            )
+    })
+    @GetMapping("/events")
+    public ResponseEntity<ApiResponse<MonitoringEventListResponse>> getEvents(
+            @Parameter(
+                    description = "조회할 RUNNING 훈련 세션의 UUID",
+                    required = true,
+                    example = "d669294e-55e1-4c00-bf67-229d89b76948"
+            )
+            @PathVariable UUID sessionId,
+            @Parameter(description = "특정 CCTV의 이벤트만 조회하려면 지정", example = "CCTV_001")
+            @RequestParam(required = false) String cctvCode,
+            Authentication authentication
+    ) {
+        MonitoringEventListResponse response = trainingMonitoringService.getEvents(
+                sessionId, cctvCode, authentication.getName());
+        return ResponseEntity.ok(ApiResponse.success(
+                TrainingSuccessCode.MONITORING_EVENT_LIST_FOUND,
                 response
         ));
     }

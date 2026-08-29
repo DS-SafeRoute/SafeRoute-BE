@@ -10,14 +10,23 @@ import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.device.entity.Cctv;
 import com.saferoute.domain.device.repository.CctvJpaRepository;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
+import com.saferoute.domain.evacuation.recalculation.entity.RecalculationStatus;
+import com.saferoute.domain.evacuation.recalculation.entity.RouteRecalculation;
+import com.saferoute.domain.evacuation.recalculation.repository.RouteRecalculationRepository;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.congestion.entity.CongestionLevel;
+import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventItem;
+import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventType;
 import com.saferoute.domain.telemetry.dynamo.entity.LatestMonitoringCaptureItem;
 import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
+import com.saferoute.domain.telemetry.dynamo.repository.CongestionEventRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.LatestMonitoringCaptureRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
 import com.saferoute.domain.training.dto.MonitoringCameraListResponse;
 import com.saferoute.domain.training.dto.MonitoringCameraResponse;
+import com.saferoute.domain.training.dto.MonitoringEventListResponse;
+import com.saferoute.domain.training.dto.MonitoringEventResponse;
+import com.saferoute.domain.training.dto.MonitoringEventType;
 import com.saferoute.domain.training.dto.MonitoringFrameListResponse;
 import com.saferoute.domain.training.dto.MonitoringFrameResponse;
 import com.saferoute.domain.training.entity.TrainingScenario;
@@ -60,6 +69,10 @@ class TrainingMonitoringServiceTest {
     @Mock
     private ObservationRepository observationRepository;
     @Mock
+    private CongestionEventRepository congestionEventRepository;
+    @Mock
+    private RouteRecalculationRepository routeRecalculationRepository;
+    @Mock
     private S3PresignedUrlService s3PresignedUrlService;
     @Mock
     private SchoolContextService schoolContextService;
@@ -73,6 +86,8 @@ class TrainingMonitoringServiceTest {
                 cctvJpaRepository,
                 latestMonitoringCaptureRepository,
                 observationRepository,
+                congestionEventRepository,
+                routeRecalculationRepository,
                 s3PresignedUrlService,
                 schoolContextService
         );
@@ -562,6 +577,112 @@ class TrainingMonitoringServiceTest {
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_INPUT);
     }
 
+    @Test
+    void 혼잡_이벤트와_재탐색_이벤트를_발생_시각순으로_합쳐_반환한다() {
+        stubSession(TrainingStatus.RUNNING);
+        CongestionEventItem congestionEvent = congestionEventItem(
+                "CCTV_001", CongestionEventType.CONGESTION_STARTED, 1_000L, CongestionLevel.CAUTION);
+        given(congestionEventRepository.findAllBySessionId(SESSION_ID.toString()))
+                .willReturn(List.of(congestionEvent));
+        RouteRecalculation recalculation = recalculation(
+                "CCTV_001", CongestionLevel.CROWDED, Instant.ofEpochMilli(2_000L), null, null);
+        given(routeRecalculationRepository.findAllByTrainingSession_IdOrderByRequestedAtDesc(SESSION_ID))
+                .willReturn(List.of(recalculation));
+
+        MonitoringEventListResponse response = service.getEvents(SESSION_ID, null, EMAIL);
+
+        assertThat(response.sessionId()).isEqualTo(SESSION_ID);
+        assertThat(response.events())
+                .extracting(MonitoringEventResponse::type, MonitoringEventResponse::occurredAt)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(MonitoringEventType.CONGESTION_STARTED, 1_000L),
+                        org.assertj.core.groups.Tuple.tuple(MonitoringEventType.ROUTE_RECALCULATION_REQUESTED, 2_000L)
+                );
+    }
+
+    @Test
+    void 해소된_재탐색은_요청과_해소_두_이벤트로_나뉜다() {
+        stubSession(TrainingStatus.RUNNING);
+        given(congestionEventRepository.findAllBySessionId(SESSION_ID.toString())).willReturn(List.of());
+        RouteRecalculation recalculation = recalculation(
+                "CCTV_001", CongestionLevel.CROWDED,
+                Instant.ofEpochMilli(1_000L), Instant.ofEpochMilli(3_000L), RecalculationStatus.APPROVED);
+        given(routeRecalculationRepository.findAllByTrainingSession_IdOrderByRequestedAtDesc(SESSION_ID))
+                .willReturn(List.of(recalculation));
+
+        MonitoringEventListResponse response = service.getEvents(SESSION_ID, null, EMAIL);
+
+        assertThat(response.events())
+                .extracting(MonitoringEventResponse::type)
+                .containsExactly(
+                        MonitoringEventType.ROUTE_RECALCULATION_REQUESTED,
+                        MonitoringEventType.EVACUATION_ROUTE_UPDATED
+                );
+    }
+
+    @Test
+    void cctvCode로_필터링한다() {
+        stubSession(TrainingStatus.RUNNING);
+        CongestionEventItem matching = congestionEventItem(
+                "CCTV_001", CongestionEventType.CONGESTION_STARTED, 1_000L, CongestionLevel.CAUTION);
+        CongestionEventItem other = congestionEventItem(
+                "CCTV_002", CongestionEventType.CONGESTION_STARTED, 1_500L, CongestionLevel.CAUTION);
+        given(congestionEventRepository.findAllBySessionId(SESSION_ID.toString()))
+                .willReturn(List.of(matching, other));
+        given(routeRecalculationRepository.findAllByTrainingSession_IdOrderByRequestedAtDesc(SESSION_ID))
+                .willReturn(List.of());
+
+        MonitoringEventListResponse response = service.getEvents(SESSION_ID, "CCTV_001", EMAIL);
+
+        assertThat(response.events()).singleElement()
+                .extracting(MonitoringEventResponse::cctvCode)
+                .isEqualTo("CCTV_001");
+    }
+
+    @Test
+    void 이벤트가_없는_세션은_빈_타임라인을_반환한다() {
+        stubSession(TrainingStatus.RUNNING);
+        given(congestionEventRepository.findAllBySessionId(SESSION_ID.toString())).willReturn(List.of());
+        given(routeRecalculationRepository.findAllByTrainingSession_IdOrderByRequestedAtDesc(SESSION_ID))
+                .willReturn(List.of());
+
+        MonitoringEventListResponse response = service.getEvents(SESSION_ID, null, EMAIL);
+
+        assertThat(response.events()).isEmpty();
+    }
+
+    @Test
+    void 이벤트_타임라인_조회는_실행_중이_아닌_세션은_거부한다() {
+        stubSession(TrainingStatus.COMPLETED);
+
+        assertThatThrownBy(() -> service.getEvents(SESSION_ID, null, EMAIL))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND);
+        verify(congestionEventRepository, never()).findAllBySessionId(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    private CongestionEventItem congestionEventItem(
+            String cctvCode, CongestionEventType type, long detectedAt, CongestionLevel level) {
+        return CongestionEventItem.received(
+                UUID.randomUUID(), SESSION_ID, cctvCode, type, detectedAt,
+                5, 0.3, CongestionLevel.NORMAL, 0.5, level, 1L, null);
+    }
+
+    private RouteRecalculation recalculation(
+            String cctvCode, CongestionLevel level, Instant requestedAt, Instant resolvedAt,
+            RecalculationStatus status) {
+        RouteRecalculation recalculation = org.mockito.Mockito.mock(RouteRecalculation.class);
+        given(recalculation.getId()).willReturn(UUID.randomUUID());
+        given(recalculation.getCctvCode()).willReturn(cctvCode);
+        given(recalculation.getCongestionLevel()).willReturn(level);
+        given(recalculation.getRequestedAt()).willReturn(requestedAt);
+        given(recalculation.getResolvedAt()).willReturn(resolvedAt);
+        if (resolvedAt != null) {
+            given(recalculation.getStatus()).willReturn(status);
+        }
+        return recalculation;
+    }
+
     private Cctv frameCctv() {
         Cctv cctv = org.mockito.Mockito.mock(Cctv.class);
         given(cctv.getCode()).willReturn("CCTV_001");
@@ -589,7 +710,7 @@ class TrainingMonitoringServiceTest {
         );
     }
 
-    private void stubSession(TrainingStatus status) {
+    private TrainingSession stubSession(TrainingStatus status) {
         TrainingSession session = org.mockito.Mockito.mock(TrainingSession.class);
         TrainingScenario scenario = org.mockito.Mockito.mock(TrainingScenario.class);
         Building building = org.mockito.Mockito.mock(Building.class);
@@ -597,10 +718,12 @@ class TrainingMonitoringServiceTest {
                 SESSION_ID, SCHOOL_NAME)).willReturn(Optional.of(session));
         given(session.getStatus()).willReturn(status);
         if (status == TrainingStatus.RUNNING) {
-            given(session.getScenario()).willReturn(scenario);
-            given(scenario.getBuilding()).willReturn(building);
-            given(building.getId()).willReturn(BUILDING_ID);
+            // getEvents()는 건물 정보를 쓰지 않으므로, 그 테스트들에서는 아래 스텁이 사용되지 않는다 - lenient 처리.
+            org.mockito.Mockito.lenient().when(session.getScenario()).thenReturn(scenario);
+            org.mockito.Mockito.lenient().when(scenario.getBuilding()).thenReturn(building);
+            org.mockito.Mockito.lenient().when(building.getId()).thenReturn(BUILDING_ID);
         }
+        return session;
     }
 
     private Cctv cctv(int floorNum) {

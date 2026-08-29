@@ -127,11 +127,13 @@ public class SecurityConfig {
                         ).hasRole("MANAGER")
 
                         // 훈련 모니터링 카메라와 캡처 이미지는 관리자 화면에서만 조회한다.
-                        // 카메라 카드 목록(/cameras)과 프레임 목록(/cameras/{cctvId}/frames)을 모두 포함해야 한다.
+                        // 카메라 카드 목록(/cameras), 프레임 목록(/cameras/{cctvId}/frames), 이벤트
+                        // 타임라인(/events)을 모두 포함해야 한다.
                         .requestMatchers(
                                 HttpMethod.GET,
                                 "/api/v1/sessions/*/monitoring/cameras",
-                                "/api/v1/sessions/*/monitoring/cameras/**"
+                                "/api/v1/sessions/*/monitoring/cameras/**",
+                                "/api/v1/sessions/*/monitoring/events"
                         ).hasRole("MANAGER")
 
                         // 세션 목록은 모니터링 화면 진입점으로 쓰이므로 카메라 조회와 동일하게 관리자 전용이다.
