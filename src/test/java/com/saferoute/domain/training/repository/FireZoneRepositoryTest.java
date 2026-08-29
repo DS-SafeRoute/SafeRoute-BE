@@ -69,7 +69,7 @@ class FireZoneRepositoryTest {
 
     private TrainingScenario scenario(String name) {
         return scenarioRepository.save(TrainingScenario.create(
-                name, 10, Instant.now(), false, FireSpreadSpeed.MEDIUM, building, admin));
+                name, 10, Instant.now(), false, FireSpreadSpeed.MEDIUM, building, admin, null));
     }
 
     private void sessionWithStatus(TrainingScenario scenario, TrainingStatus status) {

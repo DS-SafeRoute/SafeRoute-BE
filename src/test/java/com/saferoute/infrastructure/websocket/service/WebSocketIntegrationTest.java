@@ -138,7 +138,8 @@ class WebSocketIntegrationTest {
                 false,
                 FireSpreadSpeed.MEDIUM,
                 building,
-                managerUser
+                managerUser,
+                null
         );
         trainingScenarioRepository.save(trainingScenario);
 
@@ -202,7 +203,7 @@ class WebSocketIntegrationTest {
     // 테스트마다 별도 시나리오를 만들어 추가 세션을 붙인다.
     private TrainingScenario newScenario() {
         TrainingScenario scenario = TrainingScenario.create(
-                "정기 훈련", 50, Instant.now(), false, FireSpreadSpeed.MEDIUM, building, managerUser);
+                "정기 훈련", 50, Instant.now(), false, FireSpreadSpeed.MEDIUM, building, managerUser, null);
         return trainingScenarioRepository.save(scenario);
     }
 

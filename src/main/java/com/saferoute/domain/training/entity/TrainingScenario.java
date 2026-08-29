@@ -1,6 +1,7 @@
 package com.saferoute.domain.training.entity;
 
 import com.saferoute.domain.building.entity.Building;
+import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.user.entity.User;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -69,6 +70,12 @@ public class TrainingScenario {
     @JoinColumn(name = "building_id", nullable = false)
     private Building building;
 
+    // 훈련 시작 시 최초 대피 경로 계산의 출발 노드. 기존 시나리오는 값이 없을 수 있어 DB 컬럼은
+    // nullable로 두고, 신규 생성 시 필수 여부는 CreateScenarioRequest에서 강제한다.
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "start_node_id")
+    private MapNode startNode;
+
     // ERD 기준 admin_id (팀원 원본 코드의 user_id에서 변경)
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "admin_id", nullable = false)
@@ -88,7 +95,8 @@ public class TrainingScenario {
                                           Boolean isTemplate,
                                           FireSpreadSpeed fireSpreadSpeed,
                                           Building building,
-                                          User admin) {
+                                          User admin,
+                                          MapNode startNode) {
         TrainingScenario scenario = new TrainingScenario();
         scenario.name = name;
         scenario.expectedParticipants = expectedParticipants;
@@ -97,6 +105,7 @@ public class TrainingScenario {
         scenario.fireSpreadSpeed = fireSpreadSpeed != null ? fireSpreadSpeed : FireSpreadSpeed.MEDIUM;
         scenario.building = building;
         scenario.admin = admin;
+        scenario.startNode = startNode;
         // 생성 시점엔 필수 필드가 모두 채워져 있어 바로 실행 가능한 상태로 시작한다.
         // 초안 저장(DRAFT) 플로우는 별도 엔드포인트가 생기면 그때 지정한다.
         scenario.status = ScenarioStatus.READY;
@@ -107,12 +116,14 @@ public class TrainingScenario {
                        Integer expectedParticipants,
                        Instant scheduledAt,
                        Boolean isTemplate,
-                       FireSpreadSpeed fireSpreadSpeed) {
+                       FireSpreadSpeed fireSpreadSpeed,
+                       MapNode startNode) {
         if (name != null) this.name = name;
         if (expectedParticipants != null) this.expectedParticipants = expectedParticipants;
         if (scheduledAt != null) this.scheduledAt = scheduledAt;
         if (isTemplate != null) this.isTemplate = isTemplate;
         if (fireSpreadSpeed != null) this.fireSpreadSpeed = fireSpreadSpeed;
+        if (startNode != null) this.startNode = startNode;
     }
 
     // 상태 전이 가드는 이 엔티티가 아니라 TrainingSessionService가 담당한다
@@ -136,5 +147,9 @@ public class TrainingScenario {
 
     public UUID getAdminId() {
         return admin != null ? admin.getId() : null;
+    }
+
+    public UUID getStartNodeId() {
+        return startNode != null ? startNode.getId() : null;
     }
 }
