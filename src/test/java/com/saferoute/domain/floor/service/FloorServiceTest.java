@@ -5,13 +5,20 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 
+import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.never;
+
 import com.saferoute.domain.analysis.service.FloorAnalysisService;
 import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.building.repository.BuildingRepository;
+import com.saferoute.domain.evacuation.graph.repository.MapEdgeJpaRepository;
+import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
 import com.saferoute.domain.floor.dto.response.FloorImageUrlResponse;
 import com.saferoute.domain.floor.entity.Floor;
+import com.saferoute.domain.floor.entity.SegmentationStatus;
 import com.saferoute.domain.floor.repository.FloorRepository;
 import com.saferoute.domain.user.service.SchoolContextService;
+import com.saferoute.global.api.error.AnalysisErrorCode;
 import com.saferoute.global.api.error.BuildingErrorCode;
 import com.saferoute.global.api.error.FloorErrorCode;
 import com.saferoute.global.api.exception.ApiException;
@@ -53,6 +60,12 @@ class FloorServiceTest {
 
     @Mock
     private SchoolContextService schoolContextService;
+
+    @Mock
+    private MapNodeJpaRepository mapNodeRepository;
+
+    @Mock
+    private MapEdgeJpaRepository mapEdgeRepository;
 
     @Test
     void hidesFloorsOfBuildingFromAnotherSchool() {
@@ -136,5 +149,50 @@ class FloorServiceTest {
                 .isInstanceOf(ApiException.class)
                 .extracting(exception -> ((ApiException) exception).getErrorCode())
                 .isEqualTo(BuildingErrorCode.BUILDING_NOT_FOUND);
+    }
+
+    @Test
+    void clearsFloorMapAndCascadesGraphDeletion() {
+        UUID buildingId = UUID.randomUUID();
+        UUID floorId = UUID.randomUUID();
+        Building building = mock(Building.class);
+        Floor floor = Floor.create(building, 1);
+        floor.upload(3.0, 4.0, "floors/map.png");
+
+        given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
+        given(buildingRepository.findByIdAndSchoolName(buildingId, SCHOOL_NAME))
+                .willReturn(Optional.of(building));
+        given(floorRepository.findByIdAndBuilding_Id(floorId, building.getId()))
+                .willReturn(Optional.of(floor));
+
+        floorService.clearFloorMap(buildingId, floorId, EMAIL);
+
+        then(mapEdgeRepository).should().deleteAllByFloor(floor);
+        then(mapNodeRepository).should().deleteAllByFloor(floor);
+        assertThat(floor.getMapImageKey()).isNull();
+        assertThat(floor.getSegmentationStatus()).isEqualTo(SegmentationStatus.PENDING);
+    }
+
+    @Test
+    void rejectsClearingFloorMapWhileAnalysisInProgress() {
+        UUID buildingId = UUID.randomUUID();
+        UUID floorId = UUID.randomUUID();
+        Building building = mock(Building.class);
+        Floor floor = Floor.create(building, 1);
+        floor.updateSegmentationStatus(SegmentationStatus.PROCESSING);
+
+        given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
+        given(buildingRepository.findByIdAndSchoolName(buildingId, SCHOOL_NAME))
+                .willReturn(Optional.of(building));
+        given(floorRepository.findByIdAndBuilding_Id(floorId, building.getId()))
+                .willReturn(Optional.of(floor));
+
+        assertThatThrownBy(() -> floorService.clearFloorMap(buildingId, floorId, EMAIL))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(AnalysisErrorCode.ANALYSIS_ALREADY_IN_PROGRESS);
+
+        then(mapEdgeRepository).should(never()).deleteAllByFloor(floor);
+        then(mapNodeRepository).should(never()).deleteAllByFloor(floor);
     }
 }
