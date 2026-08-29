@@ -248,6 +248,21 @@ public class IoTLightService {
         }
     }
 
+    // 훈련 종료(정상/강제/타임아웃) 시 호출한다. 건물 내 안내 설정이 끝난 유도등을 모두 평상시(BOTH)
+    // 상태로 되돌린다. applyRouteGuidance와 동일하게 개별 유도등의 실패는 흡수한다.
+    public void resetToNormal(UUID buildingId) {
+        for (IoTLight light : iotLightJpaRepository.findAllByCustomNode_Floor_Building_Id(buildingId)) {
+            if (!light.isEnabled() || !light.isGuidanceConfigured()) {
+                continue;
+            }
+            try {
+                changeDirection(light, new ChangeLightDirectionRequest(IoTLightDirection.BOTH));
+            } catch (ApiException exception) {
+                log.warn("훈련 종료에 따른 유도등 평상시 복귀 실패: lightId={}", light.getId(), exception);
+            }
+        }
+    }
+
     // leftEdge/rightEdge 중 다음 노드로 이어지는 쪽을 찾는다. 둘 다 아니면(이 유도등은 이 경로와 무관) null.
     private IoTLightDirection resolveDirection(IoTLight light, UUID decisionNodeId, UUID nextNodeId) {
         if (!light.isGuidanceConfigured()) {

@@ -16,6 +16,7 @@ public class ScenarioResponse {
     private String name;
     private UUID buildingId;
     private UUID adminId;
+    private UUID startNodeId;
     private Integer expectedParticipants;
     private Instant scheduledAt;
     private Boolean isTemplate;
@@ -38,6 +39,7 @@ public class ScenarioResponse {
                 .name(scenario.getName())
                 .buildingId(scenario.getBuildingId())
                 .adminId(scenario.getAdminId())
+                .startNodeId(scenario.getStartNodeId())
                 .expectedParticipants(scenario.getExpectedParticipants())
                 .scheduledAt(scenario.getScheduledAt())
                 .isTemplate(scenario.getIsTemplate())

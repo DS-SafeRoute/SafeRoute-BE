@@ -97,7 +97,9 @@ public class RouteDeviationService {
         for (WindowHeadcount headcount : windows.values()) {
             // 방향 조회는 관측 구간의 실제 보고 시각(capturedAt)을 기준으로 한다. windowStart는 병합 키일 뿐이다.
             IoTLightDirection activeDirection = activeDirectionAt(directionEvents, headcount.capturedAt);
-            if (activeDirection == null || activeDirection == IoTLightDirection.OFF) {
+            // BOTH(평상시)는 "안내 반대쪽"이라는 개념이 없어 이탈 여부를 판단할 기준이 없으므로 OFF와 함께 제외한다.
+            if (activeDirection == null || activeDirection == IoTLightDirection.OFF
+                    || activeDirection == IoTLightDirection.BOTH) {
                 continue;
             }
             total++;
