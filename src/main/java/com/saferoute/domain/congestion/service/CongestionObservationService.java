@@ -127,6 +127,13 @@ public class CongestionObservationService {
             // 관측값은 5초 단위 스냅샷이라 STARTED/ENDED 같은 이벤트 구분이 없다 - 항상 LEVEL_UP으로 취급한다
             // (즉시 이벤트의 CONGESTION_ENDED 기반 복구 트리거는 CongestionEventService가 전담한다).
             if (savedLevel.requiresRouteRecalculation()) {
+                if (affectedEdges.isEmpty()) {
+                    log.warn(
+                            "혼잡 레벨이 재계산 기준을 충족했지만 감시 중인 MapEdge가 없어 재계산을 건너뜀: "
+                                    + "sessionId={}, cctvCode={}, level={}",
+                            session.getId(), cctv.getCode(), savedLevel
+                    );
+                }
                 for (MapEdge edge : affectedEdges) {
                     routeRecalculationService.trigger(
                             session, edge, savedLevel, RecalculationTriggerType.LEVEL_UP, cctv.getCode(), density);
