@@ -7,8 +7,10 @@ import com.saferoute.domain.report.entity.Grade;
 import com.saferoute.domain.telemetry.dynamo.repository.CongestionEventRepository;
 import com.saferoute.domain.training.dto.DashboardStatsResponse;
 import com.saferoute.domain.report.dto.ReportResponse;
+import com.saferoute.domain.report.entity.RecommendationPoint;
 import com.saferoute.domain.report.entity.TrainingReport;
 import com.saferoute.domain.report.entity.TrainingReportCharts;
+import com.saferoute.domain.report.entity.ZoneDensityPoint;
 import com.saferoute.domain.report.dto.RecentTrainingReportResponse;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.report.repository.TrainingReportRepository;
@@ -80,10 +82,22 @@ public class TrainingReportService {
         evacuationScore, survivalRate, bottleneckScore, deviationScore);
     Grade grade = TrainingReportScoreCalculator.gradeOf(overallScore);
 
+    List<ZoneDensityPoint> zoneDensities = trainingReportChartService.buildZoneDensities(session);
     TrainingReportCharts charts = new TrainingReportCharts(
         trainingReportChartService.buildCumulativeEvacuation(session, request.participantCount()),
-        trainingReportChartService.buildZoneDensities(session),
+        zoneDensities,
         trainingReportChartService.buildRecentEvacuationTimes(session.getScenario().getBuildingId(), evacuationSec));
+
+    ReportNarrativeInput narrativeInput = new ReportNarrativeInput(
+        session.getScenario().getName(),
+        request.participantCount(), request.survivorCount(), survivalRate,
+        evacuationSec, targetEvacuationSec, evacuationScore,
+        bottleneckCount, bottleneckScore,
+        deviation.deviationRate(), deviationScore,
+        overallScore, grade,
+        zoneDensities);
+    String summaryText = TrainingReportNarrativeGenerator.buildSummary(narrativeInput);
+    List<RecommendationPoint> recommendations = TrainingReportNarrativeGenerator.buildRecommendations(narrativeInput);
 
     TrainingReport report = TrainingReport.create(
         grade, overallScore,
@@ -92,6 +106,7 @@ public class TrainingReportService {
         bottleneckCount, bottleneckScore,
         deviation.deviationRate(), deviationScore,
         charts,
+        summaryText, recommendations,
         session);
 
     try {

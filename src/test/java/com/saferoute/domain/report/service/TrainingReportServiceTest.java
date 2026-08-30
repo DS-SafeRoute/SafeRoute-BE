@@ -79,6 +79,7 @@ class TrainingReportServiceTest {
         TrainingScenario scenario = mock(TrainingScenario.class);
         org.mockito.Mockito.lenient().when(scenario.getTargetEvacuationSec()).thenReturn(targetEvacuationSec);
         org.mockito.Mockito.lenient().when(scenario.getBuildingId()).thenReturn(buildingId);
+        org.mockito.Mockito.lenient().when(scenario.getName()).thenReturn("정기 훈련");
         TrainingSession session = mock(TrainingSession.class);
         org.mockito.Mockito.lenient().when(session.getScenario()).thenReturn(scenario);
         org.mockito.Mockito.lenient().when(session.getStartedAt()).thenReturn(startedAt);
@@ -154,6 +155,9 @@ class TrainingReportServiceTest {
         assertThat(response.getBottleneckCount()).isZero();
         assertThat(response.getBottleneckScore()).isEqualTo(100);
         assertThat(response.getDeviationScore()).isEqualTo(100);
+        // 4개 항목이 전부 만점이라 강점 문장만 있고 개선 권고사항은 비어있어야 한다.
+        assertThat(response.getSummaryText()).contains("강점:").doesNotContain("개선:");
+        assertThat(response.getRecommendations()).isEmpty();
 
         ArgumentCaptor<TrainingReport> captor = ArgumentCaptor.forClass(TrainingReport.class);
         verify(trainingReportRepository).saveAndFlush(captor.capture());

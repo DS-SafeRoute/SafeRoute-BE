@@ -86,12 +86,18 @@ public class TrainingReport {
     @Column(name = "risk_index")
     private Double riskIndex;
 
-    // 자동 평가 보고서 서술형 요약/개선 권고사항. 아직 생성 로직 미구현이라 항상 null.
-    @Column(name="ai_recommendations", columnDefinition = "TEXT")
-    private String aiRecommendations;
+    // 자동 평가 보고서 서술형 요약. TrainingReportNarrativeGenerator가 점수 기반 고정 템플릿으로 생성
+    @Column(name="summary_text", columnDefinition = "TEXT")
+    private String summaryText;
 
     @Column(name="pdf_url", length = 1000)
     private String pdfUrl;
+
+    @ElementCollection
+    @CollectionTable(name = "training_report_recommendations",
+            joinColumns = @JoinColumn(name = "training_report_id"))
+    @OrderColumn(name = "point_order")
+    private List<RecommendationPoint> recommendations = new ArrayList<>();
 
     @ElementCollection
     @CollectionTable(name = "training_report_evacuation_points",
@@ -129,6 +135,7 @@ public class TrainingReport {
                            Integer bottleneckCount, Integer bottleneckScore,
                            Double deviationRate, Integer deviationScore,
                            TrainingReportCharts charts,
+                           String summaryText, List<RecommendationPoint> recommendations,
                            TrainingSession trainingSession) {
         this.shortId = generateShortId();
         this.grade = grade;
@@ -145,21 +152,24 @@ public class TrainingReport {
         this.cumulativeEvacuationPoints = new ArrayList<>(charts.cumulativeEvacuation());
         this.zoneDensityPoints = new ArrayList<>(charts.zoneDensities());
         this.recentEvacuationPoints = new ArrayList<>(charts.recentEvacuationTimes());
+        this.summaryText = summaryText;
+        this.recommendations = new ArrayList<>(recommendations);
         this.trainingSession = trainingSession;
     }
 
     // 4개 항목(대피시간/생존률/병목/경로준수율)을 이미 갖고 있는 데이터로부터 계산한 결과로 리포트를 생성한다.
-    // riskIndex/aiRecommendations/pdfUrl은 아직 계산·생성 로직이 없어 null로 시작한다.
+    // riskIndex/pdfUrl은 아직 계산·생성 로직이 없어 null로 시작한다.
     public static TrainingReport create(Grade grade, Double overallScore,
                                         Integer avgEvacuationSec, Integer evacuationScore,
                                         Integer participantCount, Integer survivorCount, BigDecimal survivalRate,
                                         Integer bottleneckCount, Integer bottleneckScore,
                                         Double deviationRate, Integer deviationScore,
                                         TrainingReportCharts charts,
+                                        String summaryText, List<RecommendationPoint> recommendations,
                                         TrainingSession trainingSession) {
         return new TrainingReport(grade, overallScore, avgEvacuationSec, evacuationScore,
                 participantCount, survivorCount, survivalRate, bottleneckCount, bottleneckScore,
-                deviationRate, deviationScore, charts, trainingSession);
+                deviationRate, deviationScore, charts, summaryText, recommendations, trainingSession);
     }
 
     private static String generateShortId() {

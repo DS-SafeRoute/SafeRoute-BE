@@ -3,6 +3,7 @@ package com.saferoute.domain.report.dto;
 import com.saferoute.domain.report.entity.Grade;
 import com.saferoute.domain.report.entity.TrainingReport;
 import java.math.BigDecimal;
+import java.util.List;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -22,7 +23,8 @@ public class ReportResponse {
   private Double deviationRate;
   private Integer deviationScore;
   private Double riskIndex;
-  private String aiRecommendations;
+  private String summaryText;
+  private List<RecommendationResponse> recommendations;
   private String pdfUrl;
   private ReportChartsResponse charts;
 
@@ -41,7 +43,10 @@ public class ReportResponse {
         .deviationRate(report.getDeviationRate())
         .deviationScore(report.getDeviationScore())
         .riskIndex(report.getRiskIndex())
-        .aiRecommendations(report.getAiRecommendations())
+        .summaryText(report.getSummaryText())
+        .recommendations(report.getRecommendations().stream()
+            .map(RecommendationResponse::from)
+            .toList())
         .pdfUrl(report.getPdfUrl())
         .charts(ReportChartsResponse.from(report))
         .build();
