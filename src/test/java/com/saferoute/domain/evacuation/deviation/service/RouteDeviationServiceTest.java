@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 
@@ -26,6 +27,7 @@ import com.saferoute.domain.telemetry.dynamo.entity.LightDirectionEventItem;
 import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import com.saferoute.domain.telemetry.dynamo.repository.LightDirectionEventRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
+import com.saferoute.domain.training.entity.TrainingScenario;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.user.service.SchoolContextService;
@@ -99,12 +101,16 @@ class RouteDeviationServiceTest {
     }
 
     private IoTLight lightWithGuidance() {
-        MapNode customNode = node("LIGHT_001", NodeType.CUSTOM);
-        IoTLight light = IoTLight.create("LIGHT_001", "LIGHT_001", customNode);
-        ReflectionTestUtils.setField(light, "id", lightId);
-        MapNode decisionNode = node("HALLWAY1", NodeType.HALLWAY);
-        MapNode leftTarget = node("HALLWAY2", NodeType.HALLWAY);
-        MapNode rightTarget = node("HALLWAY3", NodeType.HALLWAY);
+        return lightWithGuidance("LIGHT_001", lightId);
+    }
+
+    private IoTLight lightWithGuidance(String code, UUID id) {
+        MapNode customNode = node(code, NodeType.CUSTOM);
+        IoTLight light = IoTLight.create(code, code, customNode);
+        ReflectionTestUtils.setField(light, "id", id);
+        MapNode decisionNode = node(code + "_HALLWAY1", NodeType.HALLWAY);
+        MapNode leftTarget = node(code + "_HALLWAY2", NodeType.HALLWAY);
+        MapNode rightTarget = node(code + "_HALLWAY3", NodeType.HALLWAY);
         light.configureGuidance(decisionNode, edge(decisionNode, leftTarget), edge(decisionNode, rightTarget));
         return light;
     }
@@ -284,5 +290,82 @@ class RouteDeviationServiceTest {
         assertThatThrownBy(() -> routeDeviationService.calculate(lightId, sessionId, EMAIL))
                 .isInstanceOf(ApiException.class)
                 .hasMessage(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND.getMessage());
+    }
+
+    // === calculateForSession (훈련 리포트용 세션 단위 집계) ===
+
+    @Test
+    @DisplayName("세션이 속한 건물의 모든 유도등 결과를 합산한다")
+    void calculateForSession_aggregatesAcrossAllLightsInBuilding() {
+        UUID buildingId = UUID.randomUUID();
+        IoTLight lightA = lightWithGuidance("LIGHT_A", UUID.randomUUID());
+        IoTLight lightB = lightWithGuidance("LIGHT_B", UUID.randomUUID());
+
+        TrainingScenario scenario = mock(TrainingScenario.class);
+        given(scenario.getBuildingId()).willReturn(buildingId);
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(session.getScenario()).willReturn(scenario);
+
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME))
+                .willReturn(Optional.of(session));
+        given(iotLightJpaRepository.findAllByCustomNode_Floor_Building_Id(buildingId))
+                .willReturn(List.of(lightA, lightB));
+
+        for (IoTLight light : List.of(lightA, lightB)) {
+            FloorGridCell leftCell = gridCell();
+            FloorGridCell rightCell = gridCell();
+            Cctv leftCctv = cctv(light.getCode() + "_LEFT");
+            Cctv rightCctv = cctv(light.getCode() + "_RIGHT");
+
+            given(mapEdgeGridCellRepository.findAllByMapEdge_Id(light.getLeftEdge().getId()))
+                    .willReturn(List.of(MapEdgeGridCell.create(light.getLeftEdge(), leftCell)));
+            given(mapEdgeGridCellRepository.findAllByMapEdge_Id(light.getRightEdge().getId()))
+                    .willReturn(List.of(MapEdgeGridCell.create(light.getRightEdge(), rightCell)));
+            given(cctvGridCellRepository.findAllByGridCell_IdIn(List.of(leftCell.getId())))
+                    .willReturn(List.of(mapping(leftCctv, leftCell)));
+            given(cctvGridCellRepository.findAllByGridCell_IdIn(List.of(rightCell.getId())))
+                    .willReturn(List.of(mapping(rightCctv, rightCell)));
+            given(lightDirectionEventRepository.findAllBySessionIdAndLightCode(sessionId.toString(), light.getCode()))
+                    .willReturn(List.of(directionEvent(light, IoTLightDirection.LEFT, 1_000L)));
+
+            // 좌/우 CCTV가 같은 5초 구간(capturedAt=7000)에 함께 탐지 -> 유도등마다 구간 1개, 이탈 1개
+            given(observationRepository.findAllBySessionIdAndCctvCode(
+                    eq(sessionId.toString()), eq(light.getCode() + "_LEFT"), any(Integer.class)))
+                    .willReturn(List.of(observation(light.getCode() + "_LEFT", 3.0, 7_000L)));
+            given(observationRepository.findAllBySessionIdAndCctvCode(
+                    eq(sessionId.toString()), eq(light.getCode() + "_RIGHT"), any(Integer.class)))
+                    .willReturn(List.of(observation(light.getCode() + "_RIGHT", 2.0, 7_000L)));
+        }
+
+        SessionDeviationResult result = routeDeviationService.calculateForSession(sessionId, EMAIL);
+
+        assertThat(result.totalObservedWindows()).isEqualTo(2); // 유도등 2개 x 1구간
+        assertThat(result.deviatedWindows()).isEqualTo(2); // 둘 다 반대쪽에서도 탐지되어 이탈
+        assertThat(result.deviationRate()).isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("경로 설정이 안 되었거나 CCTV 매핑이 없는 유도등은 예외 없이 집계에서 제외한다")
+    void calculateForSession_skipsUnconfiguredOrUnmappedLights() {
+        UUID buildingId = UUID.randomUUID();
+        MapNode customNode = node("LIGHT_UNCONFIGURED", NodeType.CUSTOM);
+        IoTLight unconfigured = IoTLight.create("LIGHT_UNCONFIGURED", "LIGHT_UNCONFIGURED", customNode);
+
+        TrainingScenario scenario = mock(TrainingScenario.class);
+        given(scenario.getBuildingId()).willReturn(buildingId);
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getScenario()).willReturn(scenario);
+
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME))
+                .willReturn(Optional.of(session));
+        given(iotLightJpaRepository.findAllByCustomNode_Floor_Building_Id(buildingId))
+                .willReturn(List.of(unconfigured));
+
+        SessionDeviationResult result = routeDeviationService.calculateForSession(sessionId, EMAIL);
+
+        assertThat(result.totalObservedWindows()).isZero();
+        assertThat(result.deviatedWindows()).isZero();
+        assertThat(result.deviationRate()).isEqualTo(0.0);
     }
 }
