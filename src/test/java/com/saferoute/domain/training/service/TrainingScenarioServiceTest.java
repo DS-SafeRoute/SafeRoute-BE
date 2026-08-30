@@ -68,6 +68,7 @@ class TrainingScenarioServiceTest {
         TrainingScenario scenario = TrainingScenario.create(
                 "테스트 시나리오",
                 10,
+                300,
                 Instant.now(),
                 false,
                 FireSpreadSpeed.MEDIUM,

@@ -12,6 +12,12 @@ import org.springframework.data.repository.query.Param;
 
 public interface TrainingReportRepository extends JpaRepository<TrainingReport, UUID> {
 
+  boolean existsByTrainingSession_Id(UUID trainingSessionId);
+
+  // "최근 5회 대피 시간" 차트용 - 같은 건물에서 만들어진 과거 리포트를 최신순으로 조회한다.
+  List<TrainingReport> findByTrainingSession_Scenario_Building_IdOrderByCreatedAtDesc(
+      UUID buildingId, Pageable pageable);
+
   // 목록 조회에서 시나리오별 리포트 존재 여부/id를 N+1 없이 계산하기 위해,
   // 시나리오당 세션이 1개뿐이라는 전제로 시나리오 id -> 리포트 shortId를 바로 매핑한다.
   @Query("""
