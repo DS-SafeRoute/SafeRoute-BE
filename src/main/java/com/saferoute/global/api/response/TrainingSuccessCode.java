@@ -28,6 +28,11 @@ public enum TrainingSuccessCode implements BaseCode {
             HttpStatus.OK,
             "TRAINING_SUCCESS_008",
             "훈련 세션 목록 조회에 성공했습니다."
+    ),
+    MONITORING_EVENT_LIST_FOUND(
+            HttpStatus.OK,
+            "TRAINING_SUCCESS_009",
+            "모니터링 이벤트 타임라인 조회에 성공했습니다."
     );
 
     private final HttpStatus httpStatus;

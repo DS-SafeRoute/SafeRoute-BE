@@ -576,6 +576,85 @@ class IoTLightServiceTest {
         verify(trainingEventPublisher).publishIoTLightStatusUpdatedAfterCommit(light, IoTLightDirection.OFF);
     }
 
+    // === resetToNormal ===
+
+    @Test
+    @DisplayName("건물 내 안내 설정이 끝난 유도등을 평상시(BOTH) 상태로 되돌린다")
+    void resetToNormal_success() {
+        // given
+        MapNode customNode = createNode("LIGHT_001", NodeType.CUSTOM);
+        IoTLight light = createLight("LIGHT_001", customNode);
+        light.updatePiEndpoint("http://192.168.0.50:5000");
+        MapNode decisionNode = createNode("HALLWAY1", NodeType.HALLWAY);
+        MapNode leftTarget = createNode("HALLWAY2", NodeType.HALLWAY);
+        MapNode rightTarget = createNode("HALLWAY3", NodeType.HALLWAY);
+        light.configureGuidance(decisionNode, createEdge(decisionNode, leftTarget), createEdge(decisionNode, rightTarget));
+
+        given(iotLightJpaRepository.findAllByCustomNode_Floor_Building_Id(buildingId)).willReturn(List.of(light));
+
+        // when
+        iotLightService.resetToNormal(buildingId);
+
+        // then
+        verify(iotLightPiClient).sendDirection("http://192.168.0.50:5000", "LIGHT_001", IoTLightDirection.BOTH);
+        verify(iotLightDirectionStore).update(light.getId(), IoTLightDirection.BOTH);
+    }
+
+    @Test
+    @DisplayName("비활성화되었거나 안내가 설정되지 않은 유도등은 건너뛴다")
+    void resetToNormal_skipsDisabledOrUnconfiguredLights() {
+        // given
+        MapNode disabledNode = createNode("LIGHT_001", NodeType.CUSTOM);
+        IoTLight disabledLight = createLight("LIGHT_001", disabledNode);
+        disabledLight.disable();
+
+        MapNode unconfiguredNode = createNode("LIGHT_002", NodeType.CUSTOM);
+        IoTLight unconfiguredLight = createLight("LIGHT_002", unconfiguredNode);
+
+        given(iotLightJpaRepository.findAllByCustomNode_Floor_Building_Id(buildingId))
+                .willReturn(List.of(disabledLight, unconfiguredLight));
+
+        // when
+        iotLightService.resetToNormal(buildingId);
+
+        // then
+        verifyNoInteractions(iotLightPiClient, iotLightDirectionStore);
+    }
+
+    @Test
+    @DisplayName("일부 유도등 명령이 실패해도 나머지 유도등 전환은 계속 진행된다")
+    void resetToNormal_individualFailureDoesNotStopOthers() {
+        // given
+        MapNode failingNode = createNode("LIGHT_001", NodeType.CUSTOM);
+        IoTLight failingLight = createLight("LIGHT_001", failingNode);
+        // piEndpoint 미설정 -> changeDirection이 DEVICE_UNREACHABLE을 던짐
+        MapNode decisionNodeA = createNode("HALLWAY1", NodeType.HALLWAY);
+        MapNode leftTargetA = createNode("HALLWAY2", NodeType.HALLWAY);
+        MapNode rightTargetA = createNode("HALLWAY3", NodeType.HALLWAY);
+        failingLight.configureGuidance(
+                decisionNodeA, createEdge(decisionNodeA, leftTargetA), createEdge(decisionNodeA, rightTargetA));
+
+        MapNode succeedingNode = createNode("LIGHT_002", NodeType.CUSTOM);
+        IoTLight succeedingLight = createLight("LIGHT_002", succeedingNode);
+        succeedingLight.updatePiEndpoint("http://192.168.0.51:5000");
+        MapNode decisionNodeB = createNode("HALLWAY4", NodeType.HALLWAY);
+        MapNode leftTargetB = createNode("HALLWAY5", NodeType.HALLWAY);
+        MapNode rightTargetB = createNode("HALLWAY6", NodeType.HALLWAY);
+        succeedingLight.configureGuidance(
+                decisionNodeB, createEdge(decisionNodeB, leftTargetB), createEdge(decisionNodeB, rightTargetB));
+
+        given(iotLightJpaRepository.findAllByCustomNode_Floor_Building_Id(buildingId))
+                .willReturn(List.of(failingLight, succeedingLight));
+
+        // when
+        iotLightService.resetToNormal(buildingId);
+
+        // then
+        verify(iotLightPiClient).sendDirection("http://192.168.0.51:5000", "LIGHT_002", IoTLightDirection.BOTH);
+        verify(iotLightDirectionStore).update(succeedingLight.getId(), IoTLightDirection.BOTH);
+        verify(trainingEventPublisher).publishIoTLightStatusUpdatedAfterCommit(succeedingLight, IoTLightDirection.BOTH);
+    }
+
     @Test
     @DisplayName("다른 기관 유도등의 모든 변경 요청은 not-found로 거부한다")
     void mutations_otherSchool_throwNotFoundWithoutChangingState() {

@@ -184,6 +184,32 @@ class SecurityAuthorizationIntegrationTest {
     }
 
     @Test
+    @DisplayName("일반 사용자는 훈련 모니터링 이벤트 타임라인을 조회할 수 없다")
+    void normalUserCannotReadTrainingMonitoringEvents() throws Exception {
+        String token = signupAndLogin(UserRole.NORMAL);
+
+        mockMvc.perform(
+                        get("/api/v1/sessions/{sessionId}/monitoring/events", UUID.randomUUID())
+                                .header("Authorization", "Bearer " + token)
+                )
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMMON403"));
+    }
+
+    @Test
+    @DisplayName("관리자는 훈련 모니터링 이벤트 타임라인 엔드포인트에 접근할 수 있다")
+    void managerCanReadTrainingMonitoringEvents() throws Exception {
+        String token = signupAndLogin(UserRole.MANAGER);
+
+        mockMvc.perform(
+                        get("/api/v1/sessions/{sessionId}/monitoring/events", UUID.randomUUID())
+                                .header("Authorization", "Bearer " + token)
+                )
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("TRAINING001"));
+    }
+
+    @Test
     @DisplayName("일반 사용자는 훈련 세션 목록을 조회할 수 없다")
     void normalUserCannotReadTrainingSessions() throws Exception {
         String token = signupAndLogin(UserRole.NORMAL);

@@ -3,6 +3,8 @@ package com.saferoute.domain.floor.service;
 import com.saferoute.domain.analysis.service.FloorAnalysisService;
 import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.building.repository.BuildingRepository;
+import com.saferoute.domain.evacuation.graph.repository.MapEdgeJpaRepository;
+import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
 import com.saferoute.domain.floor.dto.request.CreateFloorRequest;
 import com.saferoute.domain.floor.dto.request.UpdateFloorRequest;
 import com.saferoute.domain.floor.dto.request.UploadFloorRequest;
@@ -36,6 +38,8 @@ public class FloorService {
     private final S3Service s3Service;
     private final S3PresignedUrlService s3PresignedUrlService;
     private final SchoolContextService schoolContextService;
+    private final MapNodeJpaRepository mapNodeRepository;
+    private final MapEdgeJpaRepository mapEdgeRepository;
 
     public List<FloorResponse> getFloors(UUID buildingId, String email) {
         findBuilding(buildingId, email);
@@ -134,6 +138,22 @@ public class FloorService {
         Floor floor = findFloor(buildingId, floorId, email);
         floor.getBuilding().removeFloor(floor.getFloorNum());
         floorRepository.delete(floor);
+    }
+
+    // 도면 초기화: 이미지·세그멘테이션·그리드·노드·엣지만 지우고 층(Floor row)과 층수 카운트는 유지
+    @Transactional
+    public FloorResponse clearFloorMap(UUID buildingId, UUID floorId, String email) {
+        Floor floor = findFloor(buildingId, floorId, email);
+
+        if (floor.getSegmentationStatus() == SegmentationStatus.PROCESSING) {
+            throw new ApiException(AnalysisErrorCode.ANALYSIS_ALREADY_IN_PROGRESS);
+        }
+
+        mapEdgeRepository.deleteAllByFloor(floor);
+        mapNodeRepository.deleteAllByFloor(floor);
+        floor.clearMap();
+
+        return FloorResponse.from(floor);
     }
 
     private Building findBuilding(UUID buildingId, String email) {

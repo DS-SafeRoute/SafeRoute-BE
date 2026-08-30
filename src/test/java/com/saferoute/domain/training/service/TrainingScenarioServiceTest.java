@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 
 import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.building.repository.BuildingRepository;
+import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
 import com.saferoute.domain.report.repository.TrainingReportRepository;
 import com.saferoute.domain.training.dto.ScenarioResponse;
 import com.saferoute.domain.training.entity.FireSpreadSpeed;
@@ -58,6 +59,9 @@ class TrainingScenarioServiceTest {
     private UserRepository userRepository;
 
     @Mock
+    private MapNodeJpaRepository mapNodeRepository;
+
+    @Mock
     private SchoolContextService schoolContextService;
 
     private TrainingScenario scenarioWithId(UUID id) {
@@ -69,7 +73,8 @@ class TrainingScenarioServiceTest {
                 false,
                 FireSpreadSpeed.MEDIUM,
                 mock(Building.class),
-                mock(User.class));
+                mock(User.class),
+                null);
         ReflectionTestUtils.setField(scenario, "id", id);
         return scenario;
     }

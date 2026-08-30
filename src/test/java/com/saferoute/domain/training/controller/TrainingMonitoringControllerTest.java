@@ -8,6 +8,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.saferoute.domain.congestion.entity.CongestionLevel;
 import com.saferoute.domain.training.dto.MonitoringCameraListResponse;
 import com.saferoute.domain.training.dto.MonitoringCameraResponse;
+import com.saferoute.domain.training.dto.MonitoringEventListResponse;
+import com.saferoute.domain.training.dto.MonitoringEventResponse;
+import com.saferoute.domain.training.dto.MonitoringEventSeverity;
+import com.saferoute.domain.training.dto.MonitoringEventType;
 import com.saferoute.domain.training.dto.MonitoringFrameListResponse;
 import com.saferoute.domain.training.dto.MonitoringFrameResponse;
 import com.saferoute.domain.training.service.TrainingMonitoringService;
@@ -307,5 +311,69 @@ class TrainingMonitoringControllerTest {
                         .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("COMMON400"));
+    }
+
+    @Test
+    void 이벤트_타임라인을_공통_응답으로_반환한다() throws Exception {
+        MonitoringEventResponse event = new MonitoringEventResponse(
+                "3c9f7e2a-3b39-4f0a-9f0a-6a2b6b1f5a11",
+                MonitoringEventType.CONGESTION_STARTED,
+                MonitoringEventSeverity.WARNING,
+                1_787_722_095_000L,
+                "CCTV_001",
+                CongestionLevel.CAUTION,
+                "혼잡 감지 · CCTV_001"
+        );
+        given(trainingMonitoringService.getEvents(SESSION_ID, null, EMAIL))
+                .willReturn(new MonitoringEventListResponse(SESSION_ID, List.of(event)));
+
+        mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/events", SESSION_ID)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.code").value("TRAINING_SUCCESS_009"))
+                .andExpect(jsonPath("$.result.sessionId").value(SESSION_ID.toString()))
+                .andExpect(jsonPath("$.result.events[0].eventId")
+                        .value("3c9f7e2a-3b39-4f0a-9f0a-6a2b6b1f5a11"))
+                .andExpect(jsonPath("$.result.events[0].type").value("CONGESTION_STARTED"))
+                .andExpect(jsonPath("$.result.events[0].severity").value("WARNING"))
+                .andExpect(jsonPath("$.result.events[0].occurredAt").value(1_787_722_095_000L))
+                .andExpect(jsonPath("$.result.events[0].cctvCode").value("CCTV_001"))
+                .andExpect(jsonPath("$.result.events[0].congestionLevel").value("CAUTION"))
+                .andExpect(jsonPath("$.result.events[0].message").value("혼잡 감지 · CCTV_001"));
+    }
+
+    @Test
+    void cctvCode_쿼리파라미터를_서비스에_그대로_전달한다() throws Exception {
+        given(trainingMonitoringService.getEvents(SESSION_ID, "CCTV_001", EMAIL))
+                .willReturn(new MonitoringEventListResponse(SESSION_ID, List.of()));
+
+        mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/events", SESSION_ID)
+                        .param("cctvCode", "CCTV_001")
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.events").isEmpty());
+    }
+
+    @Test
+    void 이벤트_타임라인_조회시_세션을_찾을_수_없으면_404를_반환한다() throws Exception {
+        given(trainingMonitoringService.getEvents(SESSION_ID, null, EMAIL))
+                .willThrow(new ApiException(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND));
+
+        mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/events", SESSION_ID)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("TRAINING001"));
+    }
+
+    @Test
+    void 이벤트_타임라인_조회시_실행_중인_세션이_아니면_409를_반환한다() throws Exception {
+        given(trainingMonitoringService.getEvents(SESSION_ID, null, EMAIL))
+                .willThrow(new ApiException(TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND));
+
+        mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/events", SESSION_ID)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("TRAINING006"));
     }
 }

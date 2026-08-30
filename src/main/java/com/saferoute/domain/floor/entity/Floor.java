@@ -124,4 +124,18 @@ public class Floor {
     this.gridRows = gridRows;
     this.gridColumns = gridColumns;
   }
+
+  // 도면 초기화: 이미지/세그멘테이션/그리드 정보를 지우고 재업로드 가능한 상태로 되돌림 (층 자체는 유지)
+  public void clearMap() {
+    this.mapImageKey = null;
+    this.realWidth = null;
+    this.realHeight = null;
+    this.gridCellSizeMeter = null;
+    this.gridRows = null;
+    this.gridColumns = null;
+    this.planWidthPx = null;
+    this.planHeightPx = null;
+    this.segmentationStatus = SegmentationStatus.PENDING;
+    this.processedAt = null;
+  }
 }

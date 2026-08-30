@@ -39,4 +39,8 @@ public class CreateScenarioRequest {
 
     // 미지정 시 Service에서 MEDIUM으로 기본 처리
     private FireSpreadSpeed fireSpreadSpeed;
+
+    // 훈련 시작 시 최초 대피 경로 계산의 출발 노드
+    @NotNull
+    private UUID startNodeId;
 }
