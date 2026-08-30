@@ -13,7 +13,7 @@ on:
           - ai-only
           - all
 
-# 체크아웃 외에는 GitHub API 쓰기 권한이 필요하지 않다.
+# 잡별로 필요한 권한만 개별 permissions 블록에서 확장한다.
 permissions:
   contents: read
 
@@ -22,13 +22,65 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # EC2(self-hosted)는 RAM 1.9GB/Disk 8GB로 빌드+테스트를 감당하지 못해
+  # 러너 프로세스가 죽는 문제가 있었다. 빌드/테스트/이미지 빌드는 GitHub-hosted
+  # 러너에서 수행하고, EC2는 완성된 이미지를 pull해서 배포만 담당한다.
+  build-and-push-be:
+    name: Build and push BE image
+    if: ${{ inputs.deploy_target == 'be-only' || inputs.deploy_target == 'all' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      # 같은 커밋이면 build-and-push-be와 deploy 잡이 항상 같은 태그를 계산하므로
+      # job outputs로 잇지 않고 각자 github.sha로부터 독립 계산한다.
+      APP_IMAGE: ghcr.io/ds-saferoute/saferoute-be:${{ github.sha }}
+
+    steps:
+      - name: Checkout BE repository
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Run tests and build jar
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew clean build --no-daemon
+
+      - name: Log in to GHCR
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and push image
+        run: |
+          set -euo pipefail
+          docker build -t "$APP_IMAGE" .
+          docker push "$APP_IMAGE"
+
   deploy:
     name: Deploy ${{ inputs.deploy_target }}
+    needs: [build-and-push-be]
+    if: |
+      always() &&
+      (needs.build-and-push-be.result == 'success' || needs.build-and-push-be.result == 'skipped')
     runs-on:
       - self-hosted
       - linux
       - x64
     timeout-minutes: 60
+
+    permissions:
+      contents: read
+      packages: read
 
     defaults:
       run:
@@ -41,6 +93,9 @@ jobs:
       ENV_FILE: /opt/saferoute/.env
       # 실행 위치가 달라도 같은 Compose 프로젝트/컨테이너를 사용한다.
       COMPOSE_PROJECT_NAME: saferoute
+      # build-and-push-be와 동일한 규칙(github.sha)으로 계산해 같은 커밋이면
+      # 항상 같은 이미지를 가리키게 한다. ai-only에서는 사용되지 않는다.
+      APP_IMAGE: ghcr.io/ds-saferoute/saferoute-be:${{ github.sha }}
 
     steps:
       - name: Reclaim deployment disk space
@@ -233,18 +288,14 @@ jobs:
             -f docker-compose.prod.yml \
             config --quiet
 
-      - name: Build and test BE candidate
+      - name: Pull BE candidate image
         if: ${{ inputs.deploy_target == 'be-only' || inputs.deploy_target == 'all' }}
         run: |
           set -euo pipefail
 
-          cd "$STAGING_ROOT/SafeRoute-BE"
-          chmod +x gradlew
-          ./gradlew clean build --no-daemon
-          docker compose \
-            --env-file "$ENV_FILE" \
-            -f docker-compose.prod.yml \
-            build app
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker pull "$APP_IMAGE"
 
       - name: Build and test AI candidate
         if: ${{ inputs.deploy_target == 'ai-only' || inputs.deploy_target == 'all' }}
