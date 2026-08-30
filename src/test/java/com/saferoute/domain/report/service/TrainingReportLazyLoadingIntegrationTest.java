@@ -68,7 +68,7 @@ class TrainingReportLazyLoadingIntegrationTest {
         Building building = buildingRepository.save(
                 Building.create("테스트관", "서울특별시 안전구 1", BuildingType.CLASSROOM, "SafeRoute School"));
         TrainingScenario scenario = trainingScenarioRepository.save(TrainingScenario.create(
-                "정기 훈련", 50, 300, Instant.now(), false, FireSpreadSpeed.MEDIUM, building, admin));
+                "정기 훈련", 50, 300, Instant.now(), false, FireSpreadSpeed.MEDIUM, building, admin, null));
 
         Instant startedAt = Instant.now().minusSeconds(300);
         TrainingSession session = TrainingSession.create(TrainingStatus.RUNNING, startedAt, admin, scenario);

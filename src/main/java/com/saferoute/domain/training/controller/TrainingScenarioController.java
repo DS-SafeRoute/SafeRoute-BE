@@ -56,7 +56,7 @@ public class TrainingScenarioController {
     @PatchMapping("/{scenarioId}")
     public ResponseEntity<ScenarioResponse> updateScenario(
             @PathVariable UUID scenarioId,
-            @RequestBody UpdateScenarioRequest request,
+            @Valid @RequestBody UpdateScenarioRequest request,
             Authentication authentication) {
         return ResponseEntity.ok(scenarioService.updateScenario(scenarioId, request, authentication.getName()));
     }

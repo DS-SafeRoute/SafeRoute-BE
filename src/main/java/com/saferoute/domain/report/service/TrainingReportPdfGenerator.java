@@ -106,27 +106,37 @@ public class TrainingReportPdfGenerator {
     }
 
     // 점수만큼 채워진 파란 칸 + 나머지 회색 칸으로 이루어진 중첩 표 하나를 막대그래프처럼 보이게 만든다.
+    // 0점/100점처럼 한쪽이 꽉 찬 경우엔 반대쪽 색이 1%라도 슬리버로 비치지 않도록 단일 색 칸으로 만든다.
     private PdfPCell scoreBarCell(int score) {
         int clamped = Math.max(0, Math.min(100, score));
-        PdfPTable bar = new PdfPTable(new float[]{Math.max(clamped, 1), Math.max(100 - clamped, 1)});
-        bar.setWidthPercentage(100);
-
-        PdfPCell filled = new PdfPCell();
-        filled.setBackgroundColor(BAR_FILLED_COLOR);
-        filled.setFixedHeight(10f);
-        filled.setBorder(0);
-        bar.addCell(filled);
-
-        PdfPCell empty = new PdfPCell();
-        empty.setBackgroundColor(BAR_EMPTY_COLOR);
-        empty.setFixedHeight(10f);
-        empty.setBorder(0);
-        bar.addCell(empty);
+        PdfPTable bar;
+        if (clamped <= 0) {
+            bar = new PdfPTable(1);
+            bar.setWidthPercentage(100);
+            bar.addCell(barSegment(BAR_EMPTY_COLOR));
+        } else if (clamped >= 100) {
+            bar = new PdfPTable(1);
+            bar.setWidthPercentage(100);
+            bar.addCell(barSegment(BAR_FILLED_COLOR));
+        } else {
+            bar = new PdfPTable(new float[]{clamped, 100 - clamped});
+            bar.setWidthPercentage(100);
+            bar.addCell(barSegment(BAR_FILLED_COLOR));
+            bar.addCell(barSegment(BAR_EMPTY_COLOR));
+        }
 
         PdfPCell wrapper = new PdfPCell(bar);
         wrapper.setPadding(6f);
         wrapper.setVerticalAlignment(Element.ALIGN_MIDDLE);
         return wrapper;
+    }
+
+    private PdfPCell barSegment(Color color) {
+        PdfPCell cell = new PdfPCell();
+        cell.setBackgroundColor(color);
+        cell.setFixedHeight(10f);
+        cell.setBorder(0);
+        return cell;
     }
 
     private void addSummary(Document document, Font headingFont, Font bodyFont, TrainingReport report)

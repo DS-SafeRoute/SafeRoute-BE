@@ -123,18 +123,32 @@ public class TrainingReportChartService {
         List<CumulativeEvacuationPoint> points = new ArrayList<>();
         int runningMax = 0;
         for (long elapsedSec = 0; elapsedSec <= durationSec; elapsedSec += CUMULATIVE_BUCKET_INTERVAL_SEC) {
-            long bucketMillis = startMillis + elapsedSec * 1000;
-            double totalHeadcount = 0.0;
-            for (List<ObservationItem> observations : observationsByCctv.values()) {
-                totalHeadcount += headcountAt(observations, bucketMillis);
-            }
-            int estimatedRemaining = (int) Math.round(totalHeadcount);
-            int cumulativeEvacuated = Math.max(0, Math.min(participantCount, participantCount - estimatedRemaining));
-            // 센서 노이즈로 탐지 인원이 일시적으로 늘어 보여도, 누적 대피 인원은 절대 줄어들지 않게 한다.
-            runningMax = Math.max(runningMax, cumulativeEvacuated);
-            points.add(new CumulativeEvacuationPoint((int) elapsedSec, runningMax));
+            runningMax = appendCumulativePoint(
+                    points, observationsByCctv, startMillis, elapsedSec, participantCount, runningMax);
+        }
+        // durationSec이 버킷 간격의 배수가 아니면(예: 45초) 위 루프가 세션 종료 시점을 건너뛴다.
+        // 마지막 상태(세션 종료 시점의 누적 대피 인원)를 놓치지 않도록 별도로 한 번 더 채운다.
+        if (points.isEmpty() || points.get(points.size() - 1).getElapsedSec() != durationSec) {
+            appendCumulativePoint(
+                    points, observationsByCctv, startMillis, durationSec, participantCount, runningMax);
         }
         return points;
+    }
+
+    private int appendCumulativePoint(List<CumulativeEvacuationPoint> points,
+                                       Map<String, List<ObservationItem>> observationsByCctv,
+                                       long startMillis, long elapsedSec, int participantCount, int runningMax) {
+        long bucketMillis = startMillis + elapsedSec * 1000;
+        double totalHeadcount = 0.0;
+        for (List<ObservationItem> observations : observationsByCctv.values()) {
+            totalHeadcount += headcountAt(observations, bucketMillis);
+        }
+        int estimatedRemaining = (int) Math.round(totalHeadcount);
+        int cumulativeEvacuated = Math.max(0, Math.min(participantCount, participantCount - estimatedRemaining));
+        // 센서 노이즈로 탐지 인원이 일시적으로 늘어 보여도, 누적 대피 인원은 절대 줄어들지 않게 한다.
+        int newRunningMax = Math.max(runningMax, cumulativeEvacuated);
+        points.add(new CumulativeEvacuationPoint((int) elapsedSec, newRunningMax));
+        return newRunningMax;
     }
 
     // 같은 건물에서 과거에 생성된 리포트(최대 4개, 오래된 순)에 이번 리포트의 대피시간을 마지막으로 붙인다.

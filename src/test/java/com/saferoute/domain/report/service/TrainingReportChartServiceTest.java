@@ -181,6 +181,33 @@ class TrainingReportChartServiceTest {
     }
 
     @Test
+    @DisplayName("훈련 시간이 버킷 간격(30초)의 배수가 아니어도 세션 종료 시점의 마지막 값을 반드시 포함한다")
+    void buildCumulativeEvacuation_nonMultipleDuration_includesFinalPoint() {
+        Instant startedAt = Instant.ofEpochSecond(0);
+        Instant endedAt = startedAt.plusSeconds(45); // 30초 버킷 간격의 배수가 아님
+        TrainingSession session = sessionOf(startedAt, endedAt);
+        Cctv cctvA = cctv("CCTV_A");
+        given(cctvJpaRepository
+                .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
+                        buildingId))
+                .willReturn(List.of(cctvA));
+
+        // t=0: 10명 탐지(아무도 대피 못함), t=45s(세션 종료 시각): 0명 탐지(전원 대피 완료)
+        given(observationRepository.findAllBySessionIdAndCctvCode(sessionId.toString(), "CCTV_A", 5_000))
+                .willReturn(List.of(
+                        observation("CCTV_A", 10.0, 1.0, 0L),
+                        observation("CCTV_A", 0.0, 0.0, 45_000L)));
+
+        List<CumulativeEvacuationPoint> points = chartService.buildCumulativeEvacuation(session, 10);
+
+        // 30초 간격 루프만으로는 0, 30까지만 채워지고 45(세션 종료 시점)를 건너뛴다 - 그 마지막 값을 반드시 채워야 한다.
+        assertThat(points).extracting(CumulativeEvacuationPoint::getElapsedSec).contains(45);
+        CumulativeEvacuationPoint last = points.get(points.size() - 1);
+        assertThat(last.getElapsedSec()).isEqualTo(45);
+        assertThat(last.getCumulativeCount()).isEqualTo(10);
+    }
+
+    @Test
     @DisplayName("건물에 관측 데이터가 전혀 없으면 빈 목록을 반환한다")
     void buildCumulativeEvacuation_noObservations_returnsEmpty() {
         TrainingSession session = sessionOf(Instant.now(), Instant.now().plusSeconds(60));

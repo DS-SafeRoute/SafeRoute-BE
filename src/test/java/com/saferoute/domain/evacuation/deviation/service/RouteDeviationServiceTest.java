@@ -346,8 +346,8 @@ class RouteDeviationServiceTest {
     }
 
     @Test
-    @DisplayName("경로 설정이 안 되었거나 CCTV 매핑이 없는 유도등은 예외 없이 집계에서 제외한다")
-    void calculateForSession_skipsUnconfiguredOrUnmappedLights() {
+    @DisplayName("경로 설정이 안 된 유도등은 예외 없이 집계에서 제외한다")
+    void calculateForSession_skipsUnconfiguredLights() {
         UUID buildingId = UUID.randomUUID();
         MapNode customNode = node("LIGHT_UNCONFIGURED", NodeType.CUSTOM);
         IoTLight unconfigured = IoTLight.create("LIGHT_UNCONFIGURED", "LIGHT_UNCONFIGURED", customNode);
@@ -361,6 +361,33 @@ class RouteDeviationServiceTest {
                 .willReturn(Optional.of(session));
         given(iotLightJpaRepository.findAllByCustomNode_Floor_Building_Id(buildingId))
                 .willReturn(List.of(unconfigured));
+
+        SessionDeviationResult result = routeDeviationService.calculateForSession(sessionId, EMAIL);
+
+        assertThat(result.totalObservedWindows()).isZero();
+        assertThat(result.deviatedWindows()).isZero();
+        assertThat(result.deviationRate()).isEqualTo(0.0);
+        // isGuidanceConfigured()에서 걸러지므로 computeWindowStats까지 가지 않고, CCTV 조회는 아예 일어나지 않는다.
+        org.mockito.Mockito.verifyNoInteractions(mapEdgeGridCellRepository, cctvGridCellRepository);
+    }
+
+    @Test
+    @DisplayName("경로 설정은 됐지만 좌/우를 감시하는 CCTV 매핑이 없는 유도등은 예외 없이 집계에서 제외한다")
+    void calculateForSession_skipsConfiguredLightWithoutCctvMapping() {
+        UUID buildingId = UUID.randomUUID();
+        IoTLight configuredButUnmapped = lightWithGuidance("LIGHT_NO_MAPPING", UUID.randomUUID());
+
+        TrainingScenario scenario = mock(TrainingScenario.class);
+        given(scenario.getBuildingId()).willReturn(buildingId);
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getScenario()).willReturn(scenario);
+
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME))
+                .willReturn(Optional.of(session));
+        given(iotLightJpaRepository.findAllByCustomNode_Floor_Building_Id(buildingId))
+                .willReturn(List.of(configuredButUnmapped));
+        // 경로 설정(configureGuidance)은 되어 있지만, 그 통로를 감시하는 CCTV 매핑이 하나도 없다.
+        given(mapEdgeGridCellRepository.findAllByMapEdge_Id(any())).willReturn(List.of());
 
         SessionDeviationResult result = routeDeviationService.calculateForSession(sessionId, EMAIL);
 
