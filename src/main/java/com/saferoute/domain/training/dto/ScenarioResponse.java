@@ -16,6 +16,7 @@ public class ScenarioResponse {
     private String name;
     private UUID buildingId;
     private UUID adminId;
+    private UUID startNodeId;
     private Integer expectedParticipants;
     private Integer targetEvacuationSec;
     private Instant scheduledAt;
@@ -39,6 +40,7 @@ public class ScenarioResponse {
                 .name(scenario.getName())
                 .buildingId(scenario.getBuildingId())
                 .adminId(scenario.getAdminId())
+                .startNodeId(scenario.getStartNodeId())
                 .expectedParticipants(scenario.getExpectedParticipants())
                 .targetEvacuationSec(scenario.getTargetEvacuationSec())
                 .scheduledAt(scenario.getScheduledAt())

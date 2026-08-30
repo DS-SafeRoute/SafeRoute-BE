@@ -11,7 +11,10 @@ import com.saferoute.domain.building.repository.BuildingRepository;
 import com.saferoute.domain.device.entity.IoTLight;
 import com.saferoute.domain.device.entity.IoTLightDirection;
 import com.saferoute.domain.device.repository.IoTLightJpaRepository;
+import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
+import com.saferoute.domain.evacuation.graph.entity.NodeType;
+import com.saferoute.domain.evacuation.graph.repository.MapEdgeJpaRepository;
 import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.floor.repository.FloorRepository;
@@ -88,6 +91,9 @@ class WebSocketIntegrationTest {
     private MapNodeJpaRepository mapNodeJpaRepository;
 
     @Autowired
+    private MapEdgeJpaRepository mapEdgeJpaRepository;
+
+    @Autowired
     private IoTLightJpaRepository iotLightJpaRepository;
 
     @Autowired
@@ -104,6 +110,9 @@ class WebSocketIntegrationTest {
     private User normalUser;
     private String managerToken;
     private String normalToken;
+    // newScenario()가 만드는 Floor는 building FK를 갖고 있어, tearDown의 building 삭제보다
+    // 먼저 정리해야 한다 (연결된 MapNode/MapEdge는 Floor 삭제에 cascade로 함께 지워진다).
+    private final java.util.List<Floor> scenarioFloors = new java.util.ArrayList<>();
 
     @BeforeEach
     void setUp() {
@@ -139,7 +148,8 @@ class WebSocketIntegrationTest {
                 false,
                 FireSpreadSpeed.MEDIUM,
                 building,
-                managerUser
+                managerUser,
+                null
         );
         trainingScenarioRepository.save(trainingScenario);
 
@@ -157,6 +167,7 @@ class WebSocketIntegrationTest {
         // @Transactional을 쓰지 않으므로 테스트가 만든 데이터를 직접 정리한다.
         trainingSessionRepository.deleteById(trainingSession.getId());
         trainingScenarioRepository.delete(trainingScenario);
+        scenarioFloors.forEach(floorRepository::delete);
         buildingRepository.delete(building);
         userRepository.delete(managerUser);
         userRepository.delete(normalUser);
@@ -201,7 +212,17 @@ class WebSocketIntegrationTest {
 
     // 시나리오당 세션은 1개만 허용되므로(UNIQUE 제약), setUp()의 trainingScenario를 재사용하지 않고
     // 테스트마다 별도 시나리오를 만들어 추가 세션을 붙인다.
+    // start() 통합 테스트가 최초 경로 계산을 실제로 성공시킬 수 있도록, 출발 노드에서
+    // EXIT 노드까지 이어지는 최소 그래프(노드 2개 + 엣지 1개)를 함께 만든다.
     private TrainingScenario newScenario() {
+        Floor floor = floorRepository.save(Floor.create(building, 1));
+        scenarioFloors.add(floor);
+        MapNode startNode = mapNodeJpaRepository.save(
+                MapNode.create(floor, "START", NodeType.ROOM, "출발 지점", 0.1, 0.1, false));
+        MapNode exitNode = mapNodeJpaRepository.save(
+                MapNode.create(floor, "EXIT", NodeType.EXIT, "출구", 0.9, 0.9, true));
+        mapEdgeJpaRepository.save(MapEdge.create(floor, startNode, exitNode, 3.0, true));
+
         TrainingScenario scenario = TrainingScenario.create(
                 "정기 훈련", 50, 300, Instant.now(), false, FireSpreadSpeed.MEDIUM, building, managerUser);
         return trainingScenarioRepository.save(scenario);

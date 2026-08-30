@@ -1,6 +1,10 @@
 package com.saferoute.domain.training.service;
 
 import com.saferoute.domain.building.entity.Building;
+import com.saferoute.domain.device.service.IoTLightService;
+import com.saferoute.domain.evacuation.graph.entity.MapNode;
+import com.saferoute.domain.evacuation.service.EvacuationRoute;
+import com.saferoute.domain.evacuation.service.EvacuationRouteService;
 import com.saferoute.domain.training.dto.CreateSessionRequest;
 import com.saferoute.domain.training.dto.RunningSessionResponse;
 import com.saferoute.domain.training.dto.ScheduledSessionResponse;
@@ -48,6 +52,8 @@ public class TrainingSessionService {
   private final TrainingScenarioRepository trainingScenarioRepository;
   private final FireZoneRepository fireZoneRepository;
   private final RouteRecalculationService routeRecalculationService;
+  private final EvacuationRouteService evacuationRouteService;
+  private final IoTLightService ioTLightService;
   private final TrainingEventPublisher trainingEventPublisher;
   private final SchoolContextService schoolContextService;
 
@@ -135,8 +141,17 @@ public class TrainingSessionService {
       throw new ApiException(TrainingErrorCode.INVALID_STATUS_TRANSITION);
     }
 
+    // 유도등 반영 전 최초 경로부터 계산해, EXIT 미지정/도달 불가 시 세션 상태를 바꾸지 않고 막는다.
+    MapNode startNode = session.getScenario().getStartNode();
+    if (startNode == null) {
+      throw new ApiException(TrainingErrorCode.START_NODE_NOT_CONFIGURED);
+    }
+    EvacuationRoute initialRoute =
+        evacuationRouteService.findShortestRoute(startNode.getFloor().getId(), startNode.getId());
+
     session.start(Instant.now());
     session.getScenario().markInProgress();
+    ioTLightService.applyRouteGuidance(initialRoute.path().stream().map(MapNode::getId).toList());
     trainingEventPublisher.publishTrainingStatusUpdatedAfterCommit(session);
 
     return TrainingSessionResponse.from(session);
@@ -154,6 +169,7 @@ public class TrainingSessionService {
     session.getScenario().markCompleted();
     fireZoneRepository.resetFiredCellsByScenarioId(session.getScenario().getId());
     routeRecalculationService.cancelAllPendingForSession(session.getId(), "훈련 종료로 무효화됨");
+    ioTLightService.resetToNormal(session.getScenario().getBuildingId());
     trainingEventPublisher.publishTrainingStatusUpdatedAfterCommit(session);
 
     return TrainingSessionResponse.from(session);
@@ -172,6 +188,7 @@ public class TrainingSessionService {
     session.getScenario().markError();
     fireZoneRepository.resetFiredCellsByScenarioId(session.getScenario().getId());
     routeRecalculationService.cancelAllPendingForSession(session.getId(), "훈련 강제 종료로 무효화됨");
+    ioTLightService.resetToNormal(session.getScenario().getBuildingId());
     trainingEventPublisher.publishTrainingStatusUpdatedAfterCommit(session);
 
     return TrainingSessionResponse.from(session);
@@ -196,6 +213,7 @@ public class TrainingSessionService {
 
     for (TrainingSession session : timedOutSessions) {
       routeRecalculationService.cancelAllPendingForSession(session.getId(), "훈련 타임아웃으로 무효화됨");
+      ioTLightService.resetToNormal(session.getScenario().getBuildingId());
       trainingEventPublisher.publishTrainingStatusUpdatedAfterCommit(session);
       log.info("훈련 세션 타임아웃 처리: sessionId={}", session.getId());
     }

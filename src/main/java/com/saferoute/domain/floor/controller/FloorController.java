@@ -107,4 +107,15 @@ public class FloorController {
         floorService.deleteFloor(buildingId, floorId, authentication.getName());
         return ResponseEntity.ok(ApiResponse.success(FloorSuccessCode.FLOOR_DELETED, null));
     }
+
+    // 도면 초기화 (이미지·노드·엣지만 삭제, 층은 유지)
+    @DeleteMapping("/{floorId}/map")
+    public ResponseEntity<ApiResponse<FloorResponse>> clearFloorMap(
+            @PathVariable UUID buildingId,
+            @PathVariable UUID floorId,
+            Authentication authentication
+    ) {
+        FloorResponse response = floorService.clearFloorMap(buildingId, floorId, authentication.getName());
+        return ResponseEntity.ok(ApiResponse.success(FloorSuccessCode.FLOOR_MAP_CLEARED, response));
+    }
 }

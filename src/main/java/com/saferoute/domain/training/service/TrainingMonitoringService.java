@@ -2,12 +2,17 @@ package com.saferoute.domain.training.service;
 
 import com.saferoute.domain.device.entity.Cctv;
 import com.saferoute.domain.device.repository.CctvJpaRepository;
+import com.saferoute.domain.evacuation.recalculation.entity.RouteRecalculation;
+import com.saferoute.domain.evacuation.recalculation.repository.RouteRecalculationRepository;
 import com.saferoute.domain.telemetry.dynamo.entity.LatestMonitoringCaptureItem;
 import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
+import com.saferoute.domain.telemetry.dynamo.repository.CongestionEventRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.LatestMonitoringCaptureRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
 import com.saferoute.domain.training.dto.MonitoringCameraListResponse;
 import com.saferoute.domain.training.dto.MonitoringCameraResponse;
+import com.saferoute.domain.training.dto.MonitoringEventListResponse;
+import com.saferoute.domain.training.dto.MonitoringEventResponse;
 import com.saferoute.domain.training.dto.MonitoringFrameListResponse;
 import com.saferoute.domain.training.dto.MonitoringFrameResponse;
 import com.saferoute.domain.training.entity.TrainingSession;
@@ -19,8 +24,11 @@ import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.s3.dto.PresignedGetUrl;
 import com.saferoute.infrastructure.s3.service.S3PresignedUrlService;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -37,6 +45,8 @@ public class TrainingMonitoringService {
     private final CctvJpaRepository cctvJpaRepository;
     private final LatestMonitoringCaptureRepository latestMonitoringCaptureRepository;
     private final ObservationRepository observationRepository;
+    private final CongestionEventRepository congestionEventRepository;
+    private final RouteRecalculationRepository routeRecalculationRepository;
     private final S3PresignedUrlService s3PresignedUrlService;
     private final SchoolContextService schoolContextService;
 
@@ -92,6 +102,38 @@ public class TrainingMonitoringService {
                 : null;
 
         return new MonitoringFrameListResponse(sessionId, cctvId, frames, nextCursor, hasNext);
+    }
+
+    // 혼잡 감지 이벤트(CongestionEventItem)와 경로 재탐색 이벤트(RouteRecalculation)를 발생 시각순으로 합친다.
+    // 관측값(ObservationItem)은 5초 주기 스냅샷이라 타임라인에 넣으면 너무 촘촘해져서 제외한다 -
+    // "이벤트"로 부를 만한 STARTED/LEVEL_UP/ENDED 전환만 대상으로 한다.
+    // 재탐색 한 건은 요청 시점과(있다면) 해소 시점 두 항목으로 나뉠 수 있다.
+    public MonitoringEventListResponse getEvents(UUID sessionId, String cctvCode, String email) {
+        findRunningSessionForSchool(sessionId, email);
+
+        List<MonitoringEventResponse> events = new ArrayList<>();
+        congestionEventRepository.findAllBySessionId(sessionId.toString()).stream()
+                .filter(item -> matchesCctv(item.getCctvCode(), cctvCode))
+                .map(MonitoringEventResponse::fromCongestionEvent)
+                .forEach(events::add);
+
+        routeRecalculationRepository.findAllByTrainingSession_IdOrderByRequestedAtDesc(sessionId).stream()
+                .filter(recalculation -> matchesCctv(recalculation.getCctvCode(), cctvCode))
+                .forEach(recalculation -> addRecalculationEvents(events, recalculation));
+
+        events.sort(Comparator.comparingLong(MonitoringEventResponse::occurredAt));
+        return new MonitoringEventListResponse(sessionId, events);
+    }
+
+    private void addRecalculationEvents(List<MonitoringEventResponse> events, RouteRecalculation recalculation) {
+        events.add(MonitoringEventResponse.requestedFrom(recalculation));
+        if (recalculation.getResolvedAt() != null) {
+            events.add(MonitoringEventResponse.resolvedFrom(recalculation));
+        }
+    }
+
+    private boolean matchesCctv(String eventCctvCode, String filterCctvCode) {
+        return filterCctvCode == null || Objects.equals(eventCctvCode, filterCctvCode);
     }
 
     private Cctv findCctvInSessionBuilding(UUID cctvId, TrainingSession session) {

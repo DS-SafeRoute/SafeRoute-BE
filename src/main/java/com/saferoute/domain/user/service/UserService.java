@@ -13,6 +13,7 @@ import com.saferoute.global.api.error.UserErrorCode;
 import com.saferoute.global.api.code.ErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.global.security.JwtTokenProvider;
+import com.saferoute.global.security.RefreshTokenService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -27,6 +28,7 @@ public class UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
+    private final RefreshTokenService refreshTokenService;
 
     @Transactional
     public SignupResponse signup(SignupRequest request) {
@@ -48,6 +50,7 @@ public class UserService {
     }
 
     // 로그인
+    @Transactional
     public LoginResponse login(LoginRequest request) {
         User user = userRepository.findByEmail(request.email())
                 .orElseThrow(() ->
@@ -61,11 +64,13 @@ public class UserService {
         }
 
         String accessToken = jwtTokenProvider.createAccessToken(user);
+        String refreshToken = refreshTokenService.issue(user);
 
         return LoginResponse.of(
                 user,
                 accessToken,
-                jwtTokenProvider.getAccessTokenExpirationSeconds()
+                jwtTokenProvider.getAccessTokenExpirationSeconds(),
+                refreshToken
         );
     }
 
