@@ -15,6 +15,9 @@ public interface IoTLightJpaRepository extends JpaRepository<IoTLight, UUID> {
 
     List<IoTLight> findAllByCustomNode_Floor_Building_SchoolName(String schoolName);
 
+    // 훈련 리포트의 경로 이탈률을 세션(=건물) 단위로 집계할 때, 그 건물에 설치된 모든 유도등을 조회한다.
+    List<IoTLight> findAllByCustomNode_Floor_Building_Id(UUID buildingId);
+
     List<IoTLight> findAllByCustomNode_Floor_IdAndCustomNode_Floor_Building_SchoolName(
             UUID floorId, String schoolName);
 

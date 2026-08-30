@@ -25,6 +25,10 @@ public class CreateScenarioRequest {
     @NotNull
     private Integer expectedParticipants;
 
+    // 훈련 리포트의 대피 시간 점수 산정 기준(초). 건물 규모에 따라 관리자가 지정
+    @NotNull
+    private Integer targetEvacuationSec;
+
     @NotNull
     private Instant scheduledAt;
 

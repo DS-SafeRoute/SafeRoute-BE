@@ -17,6 +17,7 @@ public class ScenarioResponse {
     private UUID buildingId;
     private UUID adminId;
     private Integer expectedParticipants;
+    private Integer targetEvacuationSec;
     private Instant scheduledAt;
     private Boolean isTemplate;
     private FireSpreadSpeed fireSpreadSpeed;
@@ -39,6 +40,7 @@ public class ScenarioResponse {
                 .buildingId(scenario.getBuildingId())
                 .adminId(scenario.getAdminId())
                 .expectedParticipants(scenario.getExpectedParticipants())
+                .targetEvacuationSec(scenario.getTargetEvacuationSec())
                 .scheduledAt(scenario.getScheduledAt())
                 .isTemplate(scenario.getIsTemplate())
                 .fireSpreadSpeed(scenario.getFireSpreadSpeed())

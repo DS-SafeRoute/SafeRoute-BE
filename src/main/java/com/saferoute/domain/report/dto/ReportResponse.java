@@ -11,23 +11,39 @@ import lombok.Getter;
 public class ReportResponse {
   private String reportId;
   private Grade grade;
-  private BigDecimal survivalRate;
+  private Double overallScore;
   private Integer avgEvacuationSec;
+  private Integer evacuationScore;
   private Integer participantCount;
+  private Integer survivorCount;
+  private BigDecimal survivalRate;
+  private Integer bottleneckCount;
+  private Integer bottleneckScore;
+  private Double deviationRate;
+  private Integer deviationScore;
   private Double riskIndex;
   private String aiRecommendations;
   private String pdfUrl;
+  private ReportChartsResponse charts;
 
   public static ReportResponse from(TrainingReport report) {
     return ReportResponse.builder()
         .reportId(report.getShortId())
         .grade(report.getGrade())
-        .survivalRate(report.getSurvivalRate())
+        .overallScore(report.getOverallScore())
         .avgEvacuationSec(report.getAvgEvacuationSec())
+        .evacuationScore(report.getEvacuationScore())
         .participantCount(report.getParticipantCount())
+        .survivorCount(report.getSurvivorCount())
+        .survivalRate(report.getSurvivalRate())
+        .bottleneckCount(report.getBottleneckCount())
+        .bottleneckScore(report.getBottleneckScore())
+        .deviationRate(report.getDeviationRate())
+        .deviationScore(report.getDeviationScore())
         .riskIndex(report.getRiskIndex())
         .aiRecommendations(report.getAiRecommendations())
         .pdfUrl(report.getPdfUrl())
+        .charts(ReportChartsResponse.from(report))
         .build();
   }
 }

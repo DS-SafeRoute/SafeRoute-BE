@@ -6,6 +6,8 @@ import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 import lombok.AccessLevel;
@@ -42,23 +44,72 @@ public class TrainingReport {
     @Column(name = "grade", length = 20)
     private Grade grade;
 
-    @Column(name = "survival_rate",nullable = false)
-    private BigDecimal survivalRate;
+    // 4개 항목 점수를 가중합(대피시간 35%/생존률 30%/병목 20%/경로준수율 15%)한 최종 점수 (0~100).
+    @Column(name = "overall_score", nullable = false)
+    private Double overallScore;
 
+    // 훈련 시작~종료까지 걸린 전체 시간(초). 개인별 평균이 아니라 세션 전체 소요 시간이다
+    // (개인별 탈출 시각을 추적하는 장치가 없어 낼 수 있는 가장 정확한 값).
     @Column(name = "avg_evacuation_sec")
     private Integer avgEvacuationSec;
+
+    // 위 avgEvacuationSec을 시나리오의 targetEvacuationSec 기준으로 0~100점 환산한 값.
+    @Column(name = "evacuation_score", nullable = false)
+    private Integer evacuationScore;
 
     @Column(name="participant_count", nullable = false)
     private Integer participantCount;
 
-    @Column(name = "risk_index",nullable = false)
+    // 훈련 종료 후 관리자가 수동으로 판정해 입력하는 생존 인원 수.
+    @Column(name = "survivor_count", nullable = false)
+    private Integer survivorCount;
+
+    // survivorCount / participantCount * 100. 그 자체가 생존률 항목 점수다.
+    @Column(name = "survival_rate", nullable = false)
+    private BigDecimal survivalRate;
+
+    // 세션 기간 중 감지된 병목(혼잡) 이벤트 횟수.
+    @Column(name = "bottleneck_count", nullable = false)
+    private Integer bottleneckCount;
+
+    @Column(name = "bottleneck_score", nullable = false)
+    private Integer bottleneckScore;
+
+    // 유도등 안내 방향과 실제 이동 방향이 어긋난 관측 구간의 비율 (0.0~1.0).
+    @Column(name = "deviation_rate", nullable = false)
+    private Double deviationRate;
+
+    @Column(name = "deviation_score", nullable = false)
+    private Integer deviationScore;
+
+    // 실시간 경고/시각화용 보조 지표 - 등급 가중치에는 포함되지 않는다. 아직 계산 로직 미구현이라 항상 null.
+    @Column(name = "risk_index")
     private Double riskIndex;
 
+    // 자동 평가 보고서 서술형 요약/개선 권고사항. 아직 생성 로직 미구현이라 항상 null.
     @Column(name="ai_recommendations", columnDefinition = "TEXT")
     private String aiRecommendations;
 
     @Column(name="pdf_url", length = 1000)
     private String pdfUrl;
+
+    @ElementCollection
+    @CollectionTable(name = "training_report_evacuation_points",
+            joinColumns = @JoinColumn(name = "training_report_id"))
+    @OrderColumn(name = "point_order")
+    private List<CumulativeEvacuationPoint> cumulativeEvacuationPoints = new ArrayList<>();
+
+    @ElementCollection
+    @CollectionTable(name = "training_report_zone_densities",
+            joinColumns = @JoinColumn(name = "training_report_id"))
+    @OrderColumn(name = "point_order")
+    private List<ZoneDensityPoint> zoneDensityPoints = new ArrayList<>();
+
+    @ElementCollection
+    @CollectionTable(name = "training_report_recent_evacuations",
+            joinColumns = @JoinColumn(name = "training_report_id"))
+    @OrderColumn(name = "point_order")
+    private List<RecentEvacuationPoint> recentEvacuationPoints = new ArrayList<>();
 
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -72,25 +123,43 @@ public class TrainingReport {
     )
     private TrainingSession trainingSession;
 
-    private TrainingReport(Grade grade, BigDecimal survivalRate, Integer avgEvacuationSec,
-                           Integer participantCount, Double riskIndex, String aiRecommendations,
-                           String pdfUrl, TrainingSession trainingSession) {
+    private TrainingReport(Grade grade, Double overallScore,
+                           Integer avgEvacuationSec, Integer evacuationScore,
+                           Integer participantCount, Integer survivorCount, BigDecimal survivalRate,
+                           Integer bottleneckCount, Integer bottleneckScore,
+                           Double deviationRate, Integer deviationScore,
+                           TrainingReportCharts charts,
+                           TrainingSession trainingSession) {
         this.shortId = generateShortId();
         this.grade = grade;
-        this.survivalRate = survivalRate;
+        this.overallScore = overallScore;
         this.avgEvacuationSec = avgEvacuationSec;
+        this.evacuationScore = evacuationScore;
         this.participantCount = participantCount;
-        this.riskIndex = riskIndex;
-        this.aiRecommendations = aiRecommendations;
-        this.pdfUrl = pdfUrl;
+        this.survivorCount = survivorCount;
+        this.survivalRate = survivalRate;
+        this.bottleneckCount = bottleneckCount;
+        this.bottleneckScore = bottleneckScore;
+        this.deviationRate = deviationRate;
+        this.deviationScore = deviationScore;
+        this.cumulativeEvacuationPoints = new ArrayList<>(charts.cumulativeEvacuation());
+        this.zoneDensityPoints = new ArrayList<>(charts.zoneDensities());
+        this.recentEvacuationPoints = new ArrayList<>(charts.recentEvacuationTimes());
         this.trainingSession = trainingSession;
     }
 
-    public static TrainingReport create(Grade grade, BigDecimal survivalRate, Integer avgEvacuationSec,
-                                        Integer participantCount, Double riskIndex, String aiRecommendations,
-                                        String pdfUrl, TrainingSession trainingSession) {
-        return new TrainingReport(grade, survivalRate, avgEvacuationSec, participantCount,
-                riskIndex, aiRecommendations, pdfUrl, trainingSession);
+    // 4개 항목(대피시간/생존률/병목/경로준수율)을 이미 갖고 있는 데이터로부터 계산한 결과로 리포트를 생성한다.
+    // riskIndex/aiRecommendations/pdfUrl은 아직 계산·생성 로직이 없어 null로 시작한다.
+    public static TrainingReport create(Grade grade, Double overallScore,
+                                        Integer avgEvacuationSec, Integer evacuationScore,
+                                        Integer participantCount, Integer survivorCount, BigDecimal survivalRate,
+                                        Integer bottleneckCount, Integer bottleneckScore,
+                                        Double deviationRate, Integer deviationScore,
+                                        TrainingReportCharts charts,
+                                        TrainingSession trainingSession) {
+        return new TrainingReport(grade, overallScore, avgEvacuationSec, evacuationScore,
+                participantCount, survivorCount, survivalRate, bottleneckCount, bottleneckScore,
+                deviationRate, deviationScore, charts, trainingSession);
     }
 
     private static String generateShortId() {

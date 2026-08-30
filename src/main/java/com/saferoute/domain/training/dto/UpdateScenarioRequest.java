@@ -14,6 +14,7 @@ public class UpdateScenarioRequest {
 
     private String name;
     private Integer expectedParticipants;
+    private Integer targetEvacuationSec;
     private Instant scheduledAt;
     private Boolean isTemplate;
     private FireSpreadSpeed fireSpreadSpeed;
