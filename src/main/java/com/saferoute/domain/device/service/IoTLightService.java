@@ -1,6 +1,6 @@
 package com.saferoute.domain.device.service;
 
-import com.saferoute.domain.device.client.IoTLightPiClient;
+import com.saferoute.domain.device.dto.request.AssignCctvRequest;
 import com.saferoute.domain.device.dto.request.ChangeLightDirectionRequest;
 import com.saferoute.domain.device.dto.request.ConfigureGuidanceRequest;
 import com.saferoute.domain.device.dto.request.CreateIoTLightRequest;
@@ -8,9 +8,15 @@ import com.saferoute.domain.device.dto.request.UpdateIoTLightRequest;
 import com.saferoute.domain.device.dto.request.UpdatePiEndpointRequest;
 import com.saferoute.domain.device.dto.response.IoTLightResponse;
 import com.saferoute.domain.device.dto.response.LightDirectionResponse;
+import com.saferoute.domain.device.entity.Cctv;
 import com.saferoute.domain.device.entity.IoTLight;
 import com.saferoute.domain.device.entity.IoTLightDirection;
+import com.saferoute.domain.device.entity.LightCommand;
+import com.saferoute.domain.device.entity.LightCommandStatus;
+import com.saferoute.domain.device.repository.CctvJpaRepository;
 import com.saferoute.domain.device.repository.IoTLightJpaRepository;
+import com.saferoute.domain.device.repository.LightCommandJpaRepository;
+import com.saferoute.global.api.error.CctvErrorCode;
 import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.evacuation.graph.repository.MapEdgeJpaRepository;
@@ -43,10 +49,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class IoTLightService {
 
     private final IoTLightJpaRepository iotLightJpaRepository;
+    private final CctvJpaRepository cctvJpaRepository;
     private final MapNodeJpaRepository mapNodeJpaRepository;
     private final MapEdgeJpaRepository mapEdgeJpaRepository;
     private final FloorRepository floorRepository;
-    private final IoTLightPiClient iotLightPiClient;
+    private final LightCommandJpaRepository lightCommandJpaRepository;
     private final IoTLightDirectionStore iotLightDirectionStore;
     private final TrainingEventPublisher trainingEventPublisher;
     private final SchoolContextService schoolContextService;
@@ -143,6 +150,19 @@ public class IoTLightService {
         return IoTLightResponse.from(light);
     }
 
+    // 하드웨어 배치 시 관리자가 이 유도등의 릴레이를 제어하는 Pi(=그 Pi가 감시하는 CCTV)를 지정한다.
+    // 유도등 명령 폴링(GET /device/light-commands?cctvCode=...)이 이 연결로 담당 유도등을 찾는다.
+    @Transactional
+    public IoTLightResponse assignCctv(UUID lightId, AssignCctvRequest request, String email) {
+        String schoolName = schoolContextService.getSchoolName(email);
+        IoTLight light = findLightForSchoolNameOrThrow(lightId, schoolName);
+        Cctv cctv = cctvJpaRepository
+                .findByIdAndCustomNode_Floor_Building_SchoolName(request.cctvId(), schoolName)
+                .orElseThrow(() -> new ApiException(CctvErrorCode.CCTV_NOT_FOUND));
+        light.assignCctv(cctv);
+        return IoTLightResponse.from(light);
+    }
+
     @Transactional
     public IoTLightResponse enableLight(UUID lightId, String email) {
         IoTLight light = findLightForSchoolOrThrow(lightId, email);
@@ -167,9 +187,14 @@ public class IoTLightService {
         mapNodeJpaRepository.delete(customNode);
     }
 
-    // 검증(enabled/guidance) -> Pi 호출 -> 상태 저장 -> 이력 기록 -> 이벤트 발행 순서로 조립한다.
+    // 검증(enabled/guidance) -> 명령 큐 적재 -> 상태 저장 -> 이력 기록 -> 이벤트 발행 순서로 조립한다.
+    // EC2->사설 Pi 직접 호출은 금지라, 여기서 Pi를 직접 부르지 않고 LightCommand를
+    // PENDING으로 적재만 한다. 실제 실행은 그 유도등을 담당하는 CCTV(Pi)가 GET
+    // /device/light-commands로 폴링해가서 하고, 결과는 ACK로 비동기 보고된다.
     // 현재 방향은 훈련별 동적 상태라 DB에 저장하지 않고 IoTLightDirectionStore(서버 메모리)에 저장한다 (IoTLight 참고).
     // 전환 이력만 경로 이탈률 계산을 위해 DynamoDB(LightDirectionEventItem)에 별도로 남긴다.
+    // 주의: 아래 상태 저장/이력 기록/이벤트 발행은 ACK(실제 실행 확인)를 기다리지 않고
+    // 명령을 적재하는 시점에 낙관적으로 수행한다 - Pi가 실행에 실패해도 이 시점에는 알 수 없다.
     public LightDirectionResponse changeDirection(
             UUID lightId, ChangeLightDirectionRequest request, String email) {
         IoTLight light = findLightForSchoolOrThrow(lightId, email);
@@ -186,17 +211,26 @@ public class IoTLightService {
         if (direction != IoTLightDirection.OFF && !light.isGuidanceConfigured()) {
             throw new ApiException(IoTLightErrorCode.GUIDANCE_NOT_CONFIGURED);
         }
-        if (light.getPiEndpoint() == null || light.getPiEndpoint().isBlank()) {
-            throw new ApiException(IoTLightErrorCode.DEVICE_UNREACHABLE);
+        if (light.getCctv() == null) {
+            throw new ApiException(IoTLightErrorCode.CCTV_NOT_ASSIGNED);
         }
 
-        iotLightPiClient.sendDirection(light.getPiEndpoint(), light.getCode(), direction);
+        enqueueCommand(light, direction);
         iotLightDirectionStore.update(light.getId(), direction);
         Instant changedAt = Instant.now();
         logDirectionChange(light, direction, changedAt);
         trainingEventPublisher.publishIoTLightStatusUpdatedAfterCommit(light, direction);
 
         return new LightDirectionResponse(light.getId(), direction, changedAt);
+    }
+
+    // 기존에 아직 실행 안 된(PENDING) 명령은 이번 명령으로 의미가 없어지므로 SUPERSEDED
+    // 처리하고, 새 명령을 PENDING으로 적재한다. Pi는 폴링할 때 유도등당 최신 PENDING
+    // 하나만 가져가므로, 밀린 명령이 뒤늦게 실행되는 일은 없다.
+    private void enqueueCommand(IoTLight light, IoTLightDirection direction) {
+        lightCommandJpaRepository.findAllByLight_IdAndStatus(light.getId(), LightCommandStatus.PENDING)
+                .forEach(LightCommand::supersede);
+        lightCommandJpaRepository.save(LightCommand.createPending(light, direction));
     }
 
     // 경로 이탈률 계산의 원천 데이터로 쓰기 위해 방향 전환 시점을 훈련 세션 기준으로 DynamoDB에 남긴다.

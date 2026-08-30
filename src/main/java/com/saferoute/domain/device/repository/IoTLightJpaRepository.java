@@ -30,4 +30,8 @@ public interface IoTLightJpaRepository extends JpaRepository<IoTLight, UUID> {
 
     // 경로 설정이 아직 안 된 기기 (훈련 시작 전 점검용)
     List<IoTLight> findAllByCustomNode_Floor_IdAndDecisionNodeIsNull(UUID floorId);
+
+    // 유도등 명령 폴링(GET /device/light-commands?cctvCode=...) - 이 CCTV(=이 Pi)가
+    // 담당하는 유도등 목록 조회
+    List<IoTLight> findAllByCctv_Id(UUID cctvId);
 }
