@@ -42,6 +42,7 @@ public class TrainingReportService {
   private final CongestionEventRepository congestionEventRepository;
   private final RouteDeviationService routeDeviationService;
   private final TrainingReportChartService trainingReportChartService;
+  private final TrainingReportPdfGenerator trainingReportPdfGenerator;
   private final SchoolContextService schoolContextService;
 
   // 훈련 종료 후 관리자가 참여/생존 인원만 입력하면, 나머지 3개 항목(대피시간/병목/경로준수율)은
@@ -116,12 +117,24 @@ public class TrainingReportService {
     }
   }
 
+  @Transactional(readOnly = true)
   public ReportResponse getReport(String reportId, String email) {
+    return ReportResponse.from(findReportEntity(reportId, email));
+  }
+
+  // 리포트는 생성된 이후 값이 바뀌지 않으므로 PDF를 S3에 저장해두지 않고, 요청마다 저장된 값으로
+  // 그 자리에서 새로 만든다
+  @Transactional(readOnly = true)
+  public byte[] generatePdf(String reportId, String email) {
+    TrainingReport report = findReportEntity(reportId, email);
+    return trainingReportPdfGenerator.generate(report);
+  }
+
+  private TrainingReport findReportEntity(String reportId, String email) {
     String schoolName = schoolContextService.getSchoolName(email);
-    TrainingReport report = trainingReportRepository
+    return trainingReportRepository
         .findByShortIdAndTrainingSession_Scenario_Building_SchoolName(reportId, schoolName)
         .orElseThrow(() -> new ApiException(ReportErrorCode.REPORT_NOT_FOUND));
-    return ReportResponse.from(report);
   }
 
   public List<RecentTrainingReportResponse> getRecentTrainingReport(String email) {
