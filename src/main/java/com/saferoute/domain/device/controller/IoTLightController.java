@@ -1,5 +1,6 @@
 package com.saferoute.domain.device.controller;
 
+import com.saferoute.domain.device.dto.request.AssignCctvRequest;
 import com.saferoute.domain.device.dto.request.ChangeLightDirectionRequest;
 import com.saferoute.domain.device.dto.request.ConfigureGuidanceRequest;
 import com.saferoute.domain.device.dto.request.CreateIoTLightRequest;
@@ -102,6 +103,16 @@ public class IoTLightController {
     ) {
         IoTLightResponse response = iotLightService.updatePiEndpoint(lightId, request, authentication.getName());
         return ResponseEntity.ok(ApiResponse.success(IoTLightSuccessCode.IOT_LIGHT_PI_ENDPOINT_UPDATED, response));
+    }
+
+    @PatchMapping("/{lightId}/cctv")
+    public ResponseEntity<ApiResponse<IoTLightResponse>> assignCctv(
+            @PathVariable UUID lightId,
+            @Valid @RequestBody AssignCctvRequest request,
+            Authentication authentication
+    ) {
+        IoTLightResponse response = iotLightService.assignCctv(lightId, request, authentication.getName());
+        return ResponseEntity.ok(ApiResponse.success(IoTLightSuccessCode.IOT_LIGHT_CCTV_ASSIGNED, response));
     }
 
     @PatchMapping("/{lightId}/enable")

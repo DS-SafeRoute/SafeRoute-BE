@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.saferoute.domain.device.dto.request.AssignCctvRequest;
 import com.saferoute.domain.device.dto.request.ChangeLightDirectionRequest;
 import com.saferoute.domain.device.dto.request.ConfigureGuidanceRequest;
 import com.saferoute.domain.device.dto.request.CreateIoTLightRequest;
@@ -21,6 +22,7 @@ import com.saferoute.domain.device.dto.response.IoTLightResponse;
 import com.saferoute.domain.device.dto.response.LightDirectionResponse;
 import com.saferoute.domain.device.entity.IoTLightDirection;
 import com.saferoute.domain.device.service.IoTLightService;
+import com.saferoute.global.api.error.CctvErrorCode;
 import com.saferoute.global.api.error.FloorErrorCode;
 import com.saferoute.global.api.error.IoTLightErrorCode;
 import com.saferoute.global.api.exception.ApiException;
@@ -71,7 +73,7 @@ class IoTLightControllerTest {
 
     private IoTLightResponse sampleResponse() {
         return new IoTLightResponse(lightId, "LIGHT_001", "복도1 유도등", floorId, 0.3, 0.4,
-                null, null, null, false, true, null);
+                null, null, null, false, true, null, null);
     }
 
     // === createLight ===
@@ -242,6 +244,49 @@ class IoTLightControllerTest {
                 .andExpect(status().isBadRequest());
     }
 
+    // === assignCctv ===
+
+    @Test
+    @DisplayName("PATCH /lights/{lightId}/cctv - CCTV를 연결하면 200을 반환한다")
+    void assignCctv_success() throws Exception {
+        AssignCctvRequest request = new AssignCctvRequest(UUID.randomUUID());
+        given(iotLightService.assignCctv(eq(lightId), any(), eq(EMAIL))).willReturn(sampleResponse());
+
+        mockMvc.perform(patch("/api/v1/lights/{lightId}/cctv", lightId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null))
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("PATCH /lights/{lightId}/cctv - cctvId가 없으면 400을 반환한다")
+    void assignCctv_missingCctvId_returnsBadRequest() throws Exception {
+        String invalidJson = """
+                {}
+                """;
+
+        mockMvc.perform(patch("/api/v1/lights/{lightId}/cctv", lightId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null))
+                        .contentType("application/json")
+                        .content(invalidJson))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("PATCH /lights/{lightId}/cctv - 존재하지 않는 CCTV면 404를 반환한다")
+    void assignCctv_cctvNotFound_returnsNotFound() throws Exception {
+        AssignCctvRequest request = new AssignCctvRequest(UUID.randomUUID());
+        given(iotLightService.assignCctv(eq(lightId), any(), eq(EMAIL)))
+                .willThrow(new ApiException(CctvErrorCode.CCTV_NOT_FOUND));
+
+        mockMvc.perform(patch("/api/v1/lights/{lightId}/cctv", lightId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null))
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isNotFound());
+    }
+
     // === changeDirection ===
 
     @Test
@@ -288,17 +333,17 @@ class IoTLightControllerTest {
     }
 
     @Test
-    @DisplayName("PATCH /lights/{lightId}/direction - Pi와 통신 실패 시 502를 반환한다")
-    void changeDirection_deviceUnreachable_returnsBadGateway() throws Exception {
+    @DisplayName("PATCH /lights/{lightId}/direction - 담당 CCTV(Pi)가 연결되지 않으면 400을 반환한다")
+    void changeDirection_cctvNotAssigned_returnsBadRequest() throws Exception {
         ChangeLightDirectionRequest request = new ChangeLightDirectionRequest(IoTLightDirection.OFF);
         given(iotLightService.changeDirection(eq(lightId), any(), eq(EMAIL)))
-                .willThrow(new ApiException(IoTLightErrorCode.DEVICE_UNREACHABLE));
+                .willThrow(new ApiException(IoTLightErrorCode.CCTV_NOT_ASSIGNED));
 
         mockMvc.perform(patch("/api/v1/lights/{lightId}/direction", lightId)
                         .principal(new UsernamePasswordAuthenticationToken(EMAIL, null))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isBadGateway());
+                .andExpect(status().isBadRequest());
     }
 
     @Test
