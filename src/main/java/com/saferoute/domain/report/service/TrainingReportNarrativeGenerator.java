@@ -124,7 +124,7 @@ public final class TrainingReportNarrativeGenerator {
         if (input.survivalRate().doubleValue() >= GOOD_SCORE_THRESHOLD) {
             sentences.add(String.format("생존률 %.1f%%로 높은 안전성을 확인했습니다.", input.survivalRate()));
         }
-        if (input.bottleneckScore() >= GOOD_SCORE_THRESHOLD) {
+        if (input.bottleneckCount() == 0) {
             sentences.add("구역별 병목 없이 원활한 대피가 진행되었습니다.");
         }
         if (input.deviationScore() >= GOOD_SCORE_THRESHOLD) {
