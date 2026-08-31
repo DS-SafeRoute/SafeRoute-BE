@@ -75,6 +75,10 @@ public class FloorService {
                 new ApiException(FloorErrorCode.FLOOR_NOT_FOUND)
             );
 
+        // 재업로드는 기존 도면에 딸린 그래프를 무효화한다 (프론트 재업로드 확인 문구와 동일한 동작 보장)
+        mapEdgeRepository.deleteAllByFloor(floor);
+        mapNodeRepository.deleteAllByFloor(floor);
+
         S3UploadResponse uploadResult =
             s3Service.upload(request.file());
 
