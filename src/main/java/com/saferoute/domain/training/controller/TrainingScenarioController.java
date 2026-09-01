@@ -79,16 +79,14 @@ public class TrainingScenarioController {
             summary = "훈련 시나리오 생성",
             description = """
                     새 훈련 시나리오를 생성합니다. buildingId, adminId는 모두 요청자와 같은
-                    학교 소속이어야 하며, startNodeId는 buildingId로 지정한 건물에 속한
-                    MapNode여야 합니다. 셋 중 하나라도 조건을 만족하지 못하면 생성에 실패합니다.
+                    학교 소속이어야 하며, 두 값 중 하나라도 조건을 만족하지 못하면 생성에 실패합니다.
 
                     fireSpreadSpeed를 지정하지 않으면 MEDIUM으로 기본 처리됩니다. 이 값은
                     시나리오 전체에 하나로 적용되며(발화점별 개별 지정 불가), 훈련 시작 후 화재
                     확산 시뮬레이션의 tick 간격을 결정합니다(FAST가 가장 빠르게 확산).
 
-                    startNodeId는 훈련 시작(POST /api/v1/sessions/{sessionId}/start) 시
-                    최초 대피 경로를 계산하는 출발 노드로 사용되며, 이 필드가 비어 있으면 훈련을
-                    시작할 수 없습니다.
+                    startNodeId는 요청으로 받지 않습니다. 발화점을 등록하면 서버가 같은 층의
+                    START 노드를 찾아 시나리오에 연결합니다. targetEvacuationSec도 선택값입니다.
 
                     생성 직후 시나리오는 바로 실행 가능한 READY 상태로 시작합니다. 초안(DRAFT)
                     저장 플로우는 아직 지원하지 않습니다.
@@ -109,9 +107,8 @@ public class TrainingScenarioController {
                     요청 바디에 값이 채워진 필드만 부분 수정합니다. null인 필드는 기존 값을
                     그대로 유지하므로, 값을 지우고 싶다고 해서 null을 보내면 변경되지 않습니다.
 
-                    startNodeId를 지정하면 해당 노드가 시나리오가 속한 건물 소속인지 다시
-                    검증하며, 다른 건물의 노드면 수정이 거부됩니다. buildingId, adminId,
-                    status는 이 API로 변경할 수 없습니다.
+                    startNodeId는 이 API로 변경하지 않습니다. 발화점 층의 START 노드를 서버가
+                    자동으로 연결합니다. buildingId, adminId, status는 이 API로 변경할 수 없습니다.
 
                     시나리오의 status(READY/IN_PROGRESS/COMPLETED/ERROR)는 연결된 훈련
                     세션의 생명주기에 따라 서버가 자동으로 전이시키는 값이라 이 API로는 건드릴

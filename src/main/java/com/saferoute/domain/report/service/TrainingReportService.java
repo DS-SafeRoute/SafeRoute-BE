@@ -65,7 +65,11 @@ public class TrainingReportService {
     }
 
     int evacuationSec = (int) Duration.between(session.getStartedAt(), session.getEndedAt()).getSeconds();
-    int targetEvacuationSec = session.getScenario().getTargetEvacuationSec();
+    Integer configuredTargetEvacuationSec = session.getScenario().getTargetEvacuationSec();
+    if (configuredTargetEvacuationSec == null) {
+      throw new ApiException(ReportErrorCode.TARGET_EVACUATION_SEC_NOT_CONFIGURED);
+    }
+    int targetEvacuationSec = configuredTargetEvacuationSec;
     int evacuationScore = TrainingReportScoreCalculator.evacuationScore(evacuationSec, targetEvacuationSec);
 
     BigDecimal survivalRate = TrainingReportScoreCalculator.survivalRate(
