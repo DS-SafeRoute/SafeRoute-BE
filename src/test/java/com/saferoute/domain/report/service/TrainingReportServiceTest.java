@@ -2,21 +2,36 @@ package com.saferoute.domain.report.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import com.saferoute.domain.evacuation.deviation.service.RouteDeviationService;
+import com.saferoute.domain.evacuation.deviation.service.SessionDeviationResult;
+import com.saferoute.domain.report.dto.GenerateReportRequest;
+import com.saferoute.domain.report.dto.ReportResponse;
+import com.saferoute.domain.report.entity.Grade;
 import com.saferoute.domain.report.entity.TrainingReport;
 import com.saferoute.domain.report.repository.TrainingReportRepository;
+import com.saferoute.domain.telemetry.dynamo.repository.CongestionEventRepository;
+import com.saferoute.domain.training.entity.TrainingScenario;
+import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.user.service.SchoolContextService;
 import com.saferoute.global.api.error.ReportErrorCode;
+import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.Optional;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -37,7 +52,40 @@ class TrainingReportServiceTest {
     private TrainingSessionRepository trainingSessionRepository;
 
     @Mock
+    private CongestionEventRepository congestionEventRepository;
+
+    @Mock
+    private RouteDeviationService routeDeviationService;
+
+    @Mock
+    private TrainingReportChartService trainingReportChartService;
+
+    @Mock
     private SchoolContextService schoolContextService;
+
+    private final UUID sessionId = UUID.randomUUID();
+    private final UUID buildingId = UUID.randomUUID();
+
+    @BeforeEach
+    void setUpSchoolContext() {
+        org.mockito.Mockito.lenient()
+                .when(schoolContextService.getSchoolName(EMAIL))
+                .thenReturn(SCHOOL_NAME);
+    }
+
+    // 가드(종료 여부/중복/생존인원 검증)를 통과한 뒤에야 scenario.getTargetEvacuationSec()/
+    // startedAt에 접근하므로, 가드에서 예외가 나는 테스트는 그 스텁을 쓰지 않는다 - lenient로 풀어준다.
+    private TrainingSession endedSession(int targetEvacuationSec, Instant startedAt, Instant endedAt) {
+        TrainingScenario scenario = mock(TrainingScenario.class);
+        org.mockito.Mockito.lenient().when(scenario.getTargetEvacuationSec()).thenReturn(targetEvacuationSec);
+        org.mockito.Mockito.lenient().when(scenario.getBuildingId()).thenReturn(buildingId);
+        org.mockito.Mockito.lenient().when(scenario.getName()).thenReturn("정기 훈련");
+        TrainingSession session = mock(TrainingSession.class);
+        org.mockito.Mockito.lenient().when(session.getScenario()).thenReturn(scenario);
+        org.mockito.Mockito.lenient().when(session.getStartedAt()).thenReturn(startedAt);
+        given(session.getEndedAt()).willReturn(endedAt);
+        return session;
+    }
 
     @Test
     @DisplayName("shortId와 기관이 일치하는 리포트를 조회할 수 있다")
@@ -45,6 +93,9 @@ class TrainingReportServiceTest {
         String reportId = "abc123XYZ0";
         TrainingReport report = mock(TrainingReport.class);
         given(report.getShortId()).willReturn(reportId);
+        given(report.getCumulativeEvacuationPoints()).willReturn(Collections.emptyList());
+        given(report.getZoneDensityPoints()).willReturn(Collections.emptyList());
+        given(report.getRecentEvacuationPoints()).willReturn(Collections.emptyList());
         given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
         given(trainingReportRepository
                 .findByShortIdAndTrainingSession_Scenario_Building_SchoolName(reportId, SCHOOL_NAME))
@@ -68,6 +119,109 @@ class TrainingReportServiceTest {
                 .isInstanceOf(ApiException.class)
                 .extracting(exception -> ((ApiException) exception).getErrorCode())
                 .isEqualTo(ReportErrorCode.REPORT_NOT_FOUND);
+    }
+
+    // === generate ===
+
+    @Test
+    @DisplayName("종료된 세션이면 참여/생존 인원 입력만으로 나머지 항목을 계산해 리포트를 생성한다")
+    void generate_endedSession_computesRemainingScoresAndSaves() {
+        Instant startedAt = Instant.parse("2026-01-01T00:00:00Z");
+        Instant endedAt = startedAt.plusSeconds(300);
+        TrainingSession session = endedSession(300, startedAt, endedAt);
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME))
+                .willReturn(Optional.of(session));
+        given(trainingReportRepository.existsByTrainingSession_Id(sessionId)).willReturn(false);
+        given(congestionEventRepository.findAllBySessionId(sessionId.toString(), 5_000))
+                .willReturn(Collections.emptyList());
+        given(routeDeviationService.calculateForSession(sessionId, EMAIL))
+                .willReturn(new SessionDeviationResult(10, 0, 0.0));
+        given(trainingReportChartService.buildCumulativeEvacuation(session, 50))
+                .willReturn(Collections.emptyList());
+        given(trainingReportChartService.buildZoneDensities(session))
+                .willReturn(Collections.emptyList());
+        given(trainingReportChartService.buildRecentEvacuationTimes(buildingId, 300))
+                .willReturn(Collections.emptyList());
+        given(trainingReportRepository.saveAndFlush(any())).willAnswer(invocation -> invocation.getArgument(0));
+
+        GenerateReportRequest request = new GenerateReportRequest(50, 50);
+        ReportResponse response = trainingReportService.generate(sessionId, request, EMAIL);
+
+        assertThat(response.getGrade()).isEqualTo(Grade.A);
+        assertThat(response.getOverallScore()).isEqualTo(100.0);
+        assertThat(response.getEvacuationScore()).isEqualTo(100);
+        assertThat(response.getAvgEvacuationSec()).isEqualTo(300);
+        assertThat(response.getSurvivalRate()).isEqualByComparingTo(java.math.BigDecimal.valueOf(100.0));
+        assertThat(response.getBottleneckCount()).isZero();
+        assertThat(response.getBottleneckScore()).isEqualTo(100);
+        assertThat(response.getDeviationScore()).isEqualTo(100);
+        // 4개 항목이 전부 만점이라 강점 문장만 있고 개선 권고사항은 비어있어야 한다.
+        assertThat(response.getSummaryText()).contains("강점:").doesNotContain("개선:");
+        assertThat(response.getRecommendations()).isEmpty();
+
+        ArgumentCaptor<TrainingReport> captor = ArgumentCaptor.forClass(TrainingReport.class);
+        verify(trainingReportRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getTrainingSession()).isEqualTo(session);
+    }
+
+    @Test
+    @DisplayName("아직 종료되지 않은 세션은 리포트를 생성할 수 없다")
+    void generate_sessionNotEnded_throwsException() {
+        TrainingSession session = endedSession(300, Instant.now(), null);
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME))
+                .willReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> trainingReportService.generate(
+                sessionId, new GenerateReportRequest(50, 50), EMAIL))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(ReportErrorCode.SESSION_NOT_ENDED);
+        verify(trainingReportRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 세션이면 예외가 발생한다")
+    void generate_sessionNotFound_throwsException() {
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME))
+                .willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> trainingReportService.generate(
+                sessionId, new GenerateReportRequest(50, 50), EMAIL))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("이미 리포트가 존재하는 세션이면 예외가 발생한다")
+    void generate_reportAlreadyExists_throwsException() {
+        TrainingSession session = endedSession(300, Instant.now(), Instant.now().plusSeconds(300));
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME))
+                .willReturn(Optional.of(session));
+        given(trainingReportRepository.existsByTrainingSession_Id(sessionId)).willReturn(true);
+
+        assertThatThrownBy(() -> trainingReportService.generate(
+                sessionId, new GenerateReportRequest(50, 50), EMAIL))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(ReportErrorCode.REPORT_ALREADY_EXISTS);
+        verify(trainingReportRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("생존 판정 인원이 전체 참여 인원보다 많으면 예외가 발생한다")
+    void generate_survivorExceedsParticipants_throwsException() {
+        TrainingSession session = endedSession(300, Instant.now(), Instant.now().plusSeconds(300));
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME))
+                .willReturn(Optional.of(session));
+        given(trainingReportRepository.existsByTrainingSession_Id(sessionId)).willReturn(false);
+
+        assertThatThrownBy(() -> trainingReportService.generate(
+                sessionId, new GenerateReportRequest(10, 20), EMAIL))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(ReportErrorCode.SURVIVOR_COUNT_EXCEEDS_PARTICIPANTS);
+        verify(trainingReportRepository, never()).saveAndFlush(any());
     }
 
     @Test

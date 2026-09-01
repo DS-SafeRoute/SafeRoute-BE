@@ -5,9 +5,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Modifying;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
 
 public interface IoTLightJpaRepository extends JpaRepository<IoTLight, UUID> {
 
@@ -15,6 +12,7 @@ public interface IoTLightJpaRepository extends JpaRepository<IoTLight, UUID> {
 
     List<IoTLight> findAllByCustomNode_Floor_Building_SchoolName(String schoolName);
 
+    // 훈련 리포트의 경로 이탈률을 세션(=건물) 단위로 집계할 때, 그 건물에 설치된 모든 유도등을 조회한다.
     // 훈련 종료 시 평상시 상태로 되돌릴 대상 조회용 (건물 전체 유도등)
     List<IoTLight> findAllByCustomNode_Floor_Building_Id(UUID buildingId);
 
@@ -32,4 +30,8 @@ public interface IoTLightJpaRepository extends JpaRepository<IoTLight, UUID> {
 
     // 경로 설정이 아직 안 된 기기 (훈련 시작 전 점검용)
     List<IoTLight> findAllByCustomNode_Floor_IdAndDecisionNodeIsNull(UUID floorId);
+
+    // 유도등 명령 폴링(GET /device/light-commands?cctvCode=...) - 이 CCTV(=이 Pi)가
+    // 담당하는 유도등 목록 조회
+    List<IoTLight> findAllByCctv_Id(UUID cctvId);
 }

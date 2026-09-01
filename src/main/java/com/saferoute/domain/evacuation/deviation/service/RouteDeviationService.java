@@ -19,6 +19,7 @@ import com.saferoute.global.api.exception.ApiException;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
@@ -58,13 +59,50 @@ public class RouteDeviationService {
             throw new ApiException(IoTLightErrorCode.GUIDANCE_NOT_CONFIGURED);
         }
 
+        WindowStats stats = computeWindowStats(light, session)
+                .orElseThrow(() -> new ApiException(IoTLightErrorCode.DEVIATION_CCTV_MAPPING_NOT_FOUND));
+
+        return new RouteDeviationResponse(
+                light.getId(), session.getId(), stats.total, stats.deviated, stats.deviationRate());
+    }
+
+    // 훈련 리포트의 "경로 이탈률(→준수율)" 산정용 - 세션이 속한 건물의 모든 유도등을 통틀어 집계
+    public SessionDeviationResult calculateForSession(UUID sessionId, String email) {
+        String schoolName = schoolContextService.getSchoolName(email);
+        TrainingSession session = trainingSessionRepository
+                .findByIdAndScenario_Building_SchoolName(sessionId, schoolName)
+                .orElseThrow(() -> new ApiException(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND));
+
+        UUID buildingId = session.getScenario().getBuildingId();
+        List<IoTLight> lights = iotLightJpaRepository.findAllByCustomNode_Floor_Building_Id(buildingId);
+
+        long total = 0;
+        long deviated = 0;
+        for (IoTLight light : lights) {
+            if (!light.isGuidanceConfigured()) {
+                continue;
+            }
+            WindowStats stats = computeWindowStats(light, session).orElse(null);
+            if (stats == null) {
+                continue;
+            }
+            total += stats.total;
+            deviated += stats.deviated;
+        }
+
+        double deviationRate = total == 0 ? 0.0 : (double) deviated / total;
+        return new SessionDeviationResult(total, deviated, deviationRate);
+    }
+
+    // 유도등 하나에 대해 (관측 구간 수, 이탈 구간 수)를 계산, 경로가 지나는 CCTV를 특정할 수 없으면 empty.
+    private Optional<WindowStats> computeWindowStats(IoTLight light, TrainingSession session) {
         Set<String> leftCctvCodes = resolveCctvCodes(light.getLeftEdge().getId());
         Set<String> rightCctvCodes = resolveCctvCodes(light.getRightEdge().getId());
         Set<String> ambiguous = intersect(leftCctvCodes, rightCctvCodes);
         leftCctvCodes.removeAll(ambiguous);
         rightCctvCodes.removeAll(ambiguous);
         if (leftCctvCodes.isEmpty() || rightCctvCodes.isEmpty()) {
-            throw new ApiException(IoTLightErrorCode.DEVIATION_CCTV_MAPPING_NOT_FOUND);
+            return Optional.empty();
         }
 
         List<LightDirectionEventItem> directionEvents = lightDirectionEventRepository
@@ -112,8 +150,13 @@ public class RouteDeviationService {
             }
         }
 
-        double deviationRate = total == 0 ? 0.0 : (double) deviated / total;
-        return new RouteDeviationResponse(light.getId(), session.getId(), total, deviated, deviationRate);
+        return Optional.of(new WindowStats(total, deviated));
+    }
+
+    private record WindowStats(long total, long deviated) {
+        double deviationRate() {
+            return total == 0 ? 0.0 : (double) deviated / total;
+        }
     }
 
     private static final class WindowHeadcount {

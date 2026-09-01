@@ -13,6 +13,7 @@ import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.building.repository.BuildingRepository;
 import com.saferoute.domain.evacuation.graph.repository.MapEdgeJpaRepository;
 import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
+import com.saferoute.domain.floor.dto.request.UploadFloorRequest;
 import com.saferoute.domain.floor.dto.response.FloorImageUrlResponse;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.floor.entity.SegmentationStatus;
@@ -23,11 +24,13 @@ import com.saferoute.global.api.error.BuildingErrorCode;
 import com.saferoute.global.api.error.FloorErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.s3.dto.PresignedGetUrl;
+import com.saferoute.infrastructure.s3.dto.S3UploadResponse;
 import com.saferoute.infrastructure.s3.service.S3PresignedUrlService;
 import com.saferoute.infrastructure.s3.service.S3Service;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.mock.web.MockMultipartFile;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -194,5 +197,31 @@ class FloorServiceTest {
 
         then(mapEdgeRepository).should(never()).deleteAllByFloor(floor);
         then(mapNodeRepository).should(never()).deleteAllByFloor(floor);
+    }
+
+    @Test
+    void cascadesExistingGraphDeletionOnReupload() {
+        UUID buildingId = UUID.randomUUID();
+        Building building = mock(Building.class);
+        Floor floor = Floor.create(building, 1);
+        UploadFloorRequest request = new UploadFloorRequest(
+                1, 4.0, 3.0,
+                new MockMultipartFile("file", "plan.png", "image/png", new byte[]{1, 2, 3}));
+
+        given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
+        given(buildingRepository.findByIdAndSchoolName(buildingId, SCHOOL_NAME))
+                .willReturn(Optional.of(building));
+        given(building.getId()).willReturn(buildingId);
+        given(floorRepository.findByBuilding_IdAndFloorNum(buildingId, 1))
+                .willReturn(Optional.of(floor));
+        given(s3Service.upload(request.file()))
+                .willReturn(new S3UploadResponse("bucket", "floors/new-plan.png", "s3://bucket/floors/new-plan.png",
+                        3L, "image/png"));
+
+        floorService.uploadFloor(buildingId, request, EMAIL);
+
+        then(mapEdgeRepository).should().deleteAllByFloor(floor);
+        then(mapNodeRepository).should().deleteAllByFloor(floor);
+        assertThat(floor.getMapImageKey()).isEqualTo("floors/new-plan.png");
     }
 }

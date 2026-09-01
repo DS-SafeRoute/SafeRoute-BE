@@ -3,6 +3,7 @@ package com.saferoute.domain.training.dto;
 import com.saferoute.domain.training.entity.FireSpreadSpeed;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.util.UUID;
@@ -24,6 +25,11 @@ public class CreateScenarioRequest {
 
     @NotNull
     private Integer expectedParticipants;
+
+    // 훈련 리포트의 대피 시간 점수 산정 기준(초). 건물 규모에 따라 관리자가 지정
+    @NotNull
+    @Positive
+    private Integer targetEvacuationSec;
 
     @NotNull
     private Instant scheduledAt;

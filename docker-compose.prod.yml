@@ -2,9 +2,7 @@ name: saferoute
 
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ${APP_IMAGE:?APP_IMAGE is required}
     depends_on:
       ai:
         condition: service_healthy

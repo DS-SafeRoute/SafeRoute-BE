@@ -72,6 +72,15 @@ public class IoTLight {
     @Column(name = "pi_endpoint", length = 255)
     private String piEndpoint;
 
+    // 이 유도등의 릴레이(JK-MTCP-2)를 제어하는 라즈베리파이를 식별하기 위한 연결.
+    // 릴레이 자체는 별도 네트워크 장비이지만, 그 장비에 명령을 보내는 코드는 혼잡도
+    // 감지용 Pi 프로세스 안에서 같이 돌기 때문에, 그 Pi가 이미 갖고 있는 CCTV
+    // 디바이스 토큰으로 유도등 명령 폴링(GET /device/light-commands)까지 인증한다.
+    // 등록 시점에는 비어있을 수 있음 - 하드웨어 배치 후 별도로 설정.
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cctv_id")
+    private Cctv cctv;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -145,6 +154,14 @@ public class IoTLight {
             throw new IllegalArgumentException("piEndpoint는 비어있을 수 없습니다.");
         }
         this.piEndpoint = piEndpoint;
+    }
+
+    // 하드웨어 배치 시 관리자가 이 유도등의 릴레이를 제어하는 Pi(=그 Pi가 감시하는 CCTV)를 지정한다.
+    public void assignCctv(Cctv cctv) {
+        if (cctv == null) {
+            throw new IllegalArgumentException("cctv는 비어있을 수 없습니다.");
+        }
+        this.cctv = cctv;
     }
 
     private static void validateCustomNode(MapNode customNode) {
