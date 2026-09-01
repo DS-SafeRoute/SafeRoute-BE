@@ -19,6 +19,12 @@ public interface RouteRecalculationRepository extends JpaRepository<RouteRecalcu
     Optional<RouteRecalculation> findFirstByTrainingSession_IdAndTriggerEdge_IdAndStatusOrderByResolvedAtDesc(
             UUID trainingSessionId, UUID triggerEdgeId, RecalculationStatus status);
 
+    // 세션 전체에서(트리거 엣지 무관) 가장 최근에 승인된 경로 - "지금 안내 중인 경로" 조회(GET
+    // /api/v1/sessions/{sessionId}/current-route)에서 사용. 없으면 호출부가 시나리오의
+    // startNodeId 기준 최단 경로로 대체한다.
+    Optional<RouteRecalculation> findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(
+            UUID trainingSessionId, RecalculationStatus status);
+
     List<RouteRecalculation> findAllByTrainingSession_IdOrderByRequestedAtDesc(UUID trainingSessionId);
 
     List<RouteRecalculation>
