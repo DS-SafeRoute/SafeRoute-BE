@@ -156,6 +156,40 @@ class MapGraphServiceTest {
                 .hasMessage(FloorErrorCode.FLOOR_NOT_FOUND.getMessage());
     }
 
+    @Test
+    @DisplayName("START 노드는 EXIT 대상이 아닌 상태로 생성한다")
+    void createNode_startNode_forcesExitTargetFalse() {
+        CreateMapNodeRequest request =
+                new CreateMapNodeRequest("START1", NodeType.START, "대표 시작점", 0.1, 0.2, true);
+        MapNode savedNode = createNode("START1", NodeType.START);
+        given(floorRepository.findById(floorId)).willReturn(Optional.of(floor));
+        given(floorRepository.findByIdForUpdate(floorId)).willReturn(Optional.of(floor));
+        given(mapGraphRepository.existsNodeByFloorAndType(floorId, NodeType.START)).willReturn(false);
+        given(mapGraphRepository.addNode(floor, "START1", NodeType.START, "대표 시작점", 0.1, 0.2, false))
+                .willReturn(savedNode);
+
+        MapNodeResponse response = mapGraphService.createNode(floorId, request);
+
+        assertThat(response.type()).isEqualTo(NodeType.START);
+        assertThat(response.isExitTarget()).isFalse();
+    }
+
+    @Test
+    @DisplayName("한 층에 START 노드를 두 개 생성할 수 없다")
+    void createNode_duplicateStartNode_throws() {
+        CreateMapNodeRequest request =
+                new CreateMapNodeRequest("START2", NodeType.START, "대표 시작점", 0.1, 0.2, false);
+        given(floorRepository.findById(floorId)).willReturn(Optional.of(floor));
+        given(floorRepository.findByIdForUpdate(floorId)).willReturn(Optional.of(floor));
+        given(mapGraphRepository.existsNodeByFloorAndType(floorId, NodeType.START)).willReturn(true);
+
+        assertThatThrownBy(() -> mapGraphService.createNode(floorId, request))
+                .isInstanceOf(ApiException.class)
+                .hasMessage(EvacuationErrorCode.FLOOR_START_NODE_ALREADY_EXISTS.getMessage());
+
+        verify(mapGraphRepository, never()).addNode(any(), any(), any(), any(), anyDouble(), anyDouble(), anyBoolean());
+    }
+
     // === updateNodePosition ===
 
     @Test
@@ -194,7 +228,8 @@ class MapGraphServiceTest {
     void updateNodePosition_lastExitNodeUnset_throws() {
         // given
         MapNode node = createNode("EXIT1", NodeType.EXIT, true);
-        UpdateMapNodePositionRequest request = new UpdateMapNodePositionRequest(10.0, 20.0, false);
+        UpdateMapNodePositionRequest request =
+                new UpdateMapNodePositionRequest(10.0, 20.0, false, NodeType.HALLWAY);
         given(mapGraphRepository.findNodeById(node.getId())).willReturn(Optional.of(node));
         given(floorRepository.findByIdForUpdate(floorId)).willReturn(Optional.of(floor));
         given(mapGraphRepository.countExitTargetNodesByFloor(floorId)).willReturn(1L);
@@ -211,7 +246,8 @@ class MapGraphServiceTest {
     void updateNodePosition_notLastExitNodeUnset_success() {
         // given
         MapNode node = createNode("EXIT1", NodeType.EXIT, true);
-        UpdateMapNodePositionRequest request = new UpdateMapNodePositionRequest(10.0, 20.0, false);
+        UpdateMapNodePositionRequest request =
+                new UpdateMapNodePositionRequest(10.0, 20.0, false, NodeType.HALLWAY);
         given(mapGraphRepository.findNodeById(node.getId())).willReturn(Optional.of(node));
         given(floorRepository.findByIdForUpdate(floorId)).willReturn(Optional.of(floor));
         given(mapGraphRepository.countExitTargetNodesByFloor(floorId)).willReturn(2L);
@@ -222,6 +258,41 @@ class MapGraphServiceTest {
 
         // then
         verify(mapGraphRepository).updateNodePosition(node, 10.0, 20.0, false);
+        assertThat(node.getType()).isEqualTo(NodeType.HALLWAY);
+    }
+
+    @Test
+    @DisplayName("노드 유형을 START로 변경하면 EXIT 대상을 해제한다")
+    void updateNodePosition_changeTypeToStart_success() {
+        MapNode node = createNode("HALLWAY1", NodeType.HALLWAY);
+        UpdateMapNodePositionRequest request =
+                new UpdateMapNodePositionRequest(10.0, 20.0, true, NodeType.START);
+        given(mapGraphRepository.findNodeById(node.getId())).willReturn(Optional.of(node));
+        given(floorRepository.findByIdForUpdate(floorId)).willReturn(Optional.of(floor));
+        given(mapGraphRepository.existsNodeByFloorAndType(floorId, NodeType.START)).willReturn(false);
+        given(mapGraphRepository.updateNodePosition(node, 10.0, 20.0, false)).willReturn(node);
+
+        MapNodeResponse response = mapGraphService.updateNodePosition(node.getId(), request);
+
+        assertThat(response.type()).isEqualTo(NodeType.START);
+        assertThat(response.isExitTarget()).isFalse();
+    }
+
+    @Test
+    @DisplayName("이미 START가 있는 층의 다른 노드를 START로 변경할 수 없다")
+    void updateNodePosition_duplicateStartNode_throws() {
+        MapNode node = createNode("HALLWAY1", NodeType.HALLWAY);
+        UpdateMapNodePositionRequest request =
+                new UpdateMapNodePositionRequest(10.0, 20.0, false, NodeType.START);
+        given(mapGraphRepository.findNodeById(node.getId())).willReturn(Optional.of(node));
+        given(floorRepository.findByIdForUpdate(floorId)).willReturn(Optional.of(floor));
+        given(mapGraphRepository.existsNodeByFloorAndType(floorId, NodeType.START)).willReturn(true);
+
+        assertThatThrownBy(() -> mapGraphService.updateNodePosition(node.getId(), request))
+                .isInstanceOf(ApiException.class)
+                .hasMessage(EvacuationErrorCode.FLOOR_START_NODE_ALREADY_EXISTS.getMessage());
+
+        verify(mapGraphRepository, never()).updateNodePosition(any(), anyDouble(), anyDouble(), anyBoolean());
     }
 
     // === deleteNode ===
