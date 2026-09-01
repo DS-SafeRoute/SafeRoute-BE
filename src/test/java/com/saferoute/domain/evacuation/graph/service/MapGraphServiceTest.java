@@ -19,6 +19,7 @@ import com.saferoute.domain.evacuation.graph.dto.response.MapEdgeResponse;
 import com.saferoute.domain.evacuation.graph.dto.response.MapNodeResponse;
 import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
+import com.saferoute.domain.evacuation.graph.entity.CustomDeviceType;
 import com.saferoute.domain.evacuation.graph.entity.NodeType;
 import com.saferoute.domain.evacuation.graph.repository.MapGraphRepository;
 import com.saferoute.domain.floor.entity.Floor;
@@ -293,6 +294,19 @@ class MapGraphServiceTest {
                 .hasMessage(EvacuationErrorCode.FLOOR_START_NODE_ALREADY_EXISTS.getMessage());
 
         verify(mapGraphRepository, never()).updateNodePosition(any(), anyDouble(), anyDouble(), anyBoolean());
+    }
+
+    @Test
+    @DisplayName("CUSTOM 노드를 다른 유형으로 변경하면 기기 유형을 제거한다")
+    void changeType_fromCustom_clearsCustomDeviceType() {
+        MapNode node = MapNode.createCustom(
+                floor, "CCTV1", "CCTV", 0.1, 0.2, CustomDeviceType.CCTV);
+
+        node.changeType(NodeType.CUSTOM);
+        assertThat(node.getCustomDeviceType()).isEqualTo(CustomDeviceType.CCTV);
+
+        node.changeType(NodeType.START);
+        assertThat(node.getCustomDeviceType()).isNull();
     }
 
     // === deleteNode ===

@@ -8,6 +8,7 @@ import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
 import com.saferoute.domain.training.dto.CreateFireZoneRequest;
 import com.saferoute.domain.training.dto.FireZoneResponse;
 import com.saferoute.domain.training.entity.FireZone;
+import com.saferoute.domain.training.entity.ScenarioStatus;
 import com.saferoute.domain.training.entity.TrainingScenario;
 import com.saferoute.domain.training.repository.FireZoneRepository;
 import com.saferoute.domain.training.repository.TrainingScenarioRepository;
@@ -37,6 +38,9 @@ public class FireZoneService {
         String schoolName = schoolContextService.getSchoolName(email);
         TrainingScenario scenario = scenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, schoolName)
                 .orElseThrow(() -> new ApiException(TrainingErrorCode.TRAINING_SCENARIO_NOT_FOUND));
+        if (scenario.getStatus() != ScenarioStatus.READY) {
+            throw new ApiException(TrainingErrorCode.INVALID_STATUS_TRANSITION);
+        }
 
         FloorGridCell cell = gridCellRepository.findById(request.gridCellId())
                 .orElseThrow(() -> new ApiException(GridErrorCode.GRID_CELL_NOT_FOUND));

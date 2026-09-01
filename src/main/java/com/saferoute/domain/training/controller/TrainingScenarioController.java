@@ -88,8 +88,9 @@ public class TrainingScenarioController {
                     startNodeId는 요청으로 받지 않습니다. 발화점을 등록하면 서버가 같은 층의
                     START 노드를 찾아 시나리오에 연결합니다. targetEvacuationSec도 선택값입니다.
 
-                    생성 직후 시나리오는 바로 실행 가능한 READY 상태로 시작합니다. 초안(DRAFT)
-                    저장 플로우는 아직 지원하지 않습니다.
+                    생성 직후 시나리오의 상태는 READY이지만, 훈련을 시작하려면 발화점을
+                    등록하고 같은 층의 START 노드가 시나리오에 연결되어야 합니다.
+                    초안(DRAFT) 저장 플로우는 아직 지원하지 않습니다.
                     """
     )
     @PostMapping

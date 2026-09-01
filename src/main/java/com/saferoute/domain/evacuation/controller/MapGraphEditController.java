@@ -41,6 +41,7 @@ public class MapGraphEditController {
                     code는 같은 층 안에서 유일해야 하며(floor_id + code 유니크 제약), x/y는
                     도면 가로/세로 기준 0.0~1.0 정규화 좌표입니다. isExitTarget을 true로 생성하면
                     이 노드가 대피 경로 계산(다익스트라)의 목적지 후보에 포함됩니다.
+                    단, START 노드는 요청값과 관계없이 isExitTarget=false로 저장됩니다.
 
                     CCTV/IoT 유도등 같은 기기 위치 노드는 이 API가 아니라 각 기기 도메인의
                     등록 API를 통해 CUSTOM 타입으로 생성됩니다.

@@ -15,6 +15,7 @@ import com.saferoute.domain.evacuation.grid.repository.FloorGridCellRepository;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.training.dto.CreateFireZoneRequest;
 import com.saferoute.domain.training.entity.FireZone;
+import com.saferoute.domain.training.entity.ScenarioStatus;
 import com.saferoute.domain.training.entity.TrainingScenario;
 import com.saferoute.domain.training.repository.FireZoneRepository;
 import com.saferoute.domain.training.repository.TrainingScenarioRepository;
@@ -70,12 +71,13 @@ class FireZoneServiceTest {
         given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
         given(scenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
                 .willReturn(Optional.of(scenario));
-        given(gridCellRepository.findById(gridCellId)).willReturn(Optional.of(cell));
-        given(scenario.getBuildingId()).willReturn(buildingId);
-        given(cell.getFloor()).willReturn(floor);
-        given(floor.getId()).willReturn(floorId);
-        given(floor.getBuilding()).willReturn(building);
-        given(building.getId()).willReturn(buildingId);
+        given(scenario.getStatus()).willReturn(ScenarioStatus.READY);
+        org.mockito.Mockito.lenient().when(gridCellRepository.findById(gridCellId)).thenReturn(Optional.of(cell));
+        org.mockito.Mockito.lenient().when(scenario.getBuildingId()).thenReturn(buildingId);
+        org.mockito.Mockito.lenient().when(cell.getFloor()).thenReturn(floor);
+        org.mockito.Mockito.lenient().when(floor.getId()).thenReturn(floorId);
+        org.mockito.Mockito.lenient().when(floor.getBuilding()).thenReturn(building);
+        org.mockito.Mockito.lenient().when(building.getId()).thenReturn(buildingId);
     }
 
     @Test
@@ -122,6 +124,23 @@ class FireZoneServiceTest {
                 .isEqualTo(TrainingErrorCode.FLOOR_START_NODE_DUPLICATED);
 
         verify(cell, never()).markFired();
+        verify(fireZoneRepository, never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("READY가 아닌 시나리오의 발화점은 변경할 수 없다")
+    void designateOrigin_scenarioNotReady_throwsBeforeMutation() {
+        given(scenario.getStatus()).willReturn(ScenarioStatus.IN_PROGRESS);
+
+        assertThatThrownBy(() -> fireZoneService.designateOrigin(
+                scenarioId, new CreateFireZoneRequest(gridCellId), EMAIL))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(TrainingErrorCode.INVALID_STATUS_TRANSITION);
+
+        verify(gridCellRepository, never()).findById(gridCellId);
+        verify(cell, never()).markFired();
+        verify(scenario, never()).assignStartNode(org.mockito.ArgumentMatchers.any());
         verify(fireZoneRepository, never()).save(org.mockito.ArgumentMatchers.any());
     }
 }
