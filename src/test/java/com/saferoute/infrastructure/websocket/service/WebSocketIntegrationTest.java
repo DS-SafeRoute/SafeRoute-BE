@@ -231,6 +231,10 @@ class WebSocketIntegrationTest {
     @Test
     @DisplayName("훈련을 시작하면 구독자가 TRAINING_STATUS_UPDATED(RUNNING) 이벤트를 수신한다")
     void startingTrainingPublishesRunningEvent() throws Exception {
+        // 공통 픽스처의 RUNNING 세션을 종료해 건물당 RUNNING 세션 1개 제약을 충족시킨다.
+        trainingSession.stop(Instant.now());
+        trainingSessionRepository.saveAndFlush(trainingSession);
+
         TrainingScenario scenario = newScenario();
         TrainingSession scheduledSession = TrainingSession.create(
                 TrainingStatus.SCHEDULED, Instant.now(), managerUser, scenario);

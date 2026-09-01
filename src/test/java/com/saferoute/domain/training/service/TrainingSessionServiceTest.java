@@ -10,6 +10,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import com.saferoute.domain.building.entity.Building;
+import com.saferoute.domain.building.repository.BuildingRepository;
 import com.saferoute.domain.device.service.IoTLightService;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.evacuation.recalculation.service.RouteRecalculationService;
@@ -82,6 +83,9 @@ class TrainingSessionServiceTest {
 
     @Mock
     private SchoolContextService schoolContextService;
+
+    @Mock
+    private BuildingRepository buildingRepository;
 
     private final UUID sessionId = UUID.randomUUID();
     private final UUID buildingId = UUID.randomUUID();
@@ -278,6 +282,29 @@ class TrainingSessionServiceTest {
         verify(trainingEventPublisher, times(1)).publishTrainingStatusUpdatedAfterCommit(session);
         verify(scenario, times(1)).markInProgress();
         verify(ioTLightService).applyRouteGuidance(List.of(startNodeId, exitNodeId));
+    }
+
+    @Test
+    @DisplayName("같은 건물에 RUNNING 세션이 있으면 SCHEDULED 세션을 시작할 수 없다")
+    void start_buildingAlreadyHasRunningSession_throwsConflict() {
+        TrainingScenario scenario = mock(TrainingScenario.class);
+        given(scenario.getBuildingId()).willReturn(buildingId);
+        TrainingSession session =
+                TrainingSession.create(TrainingStatus.SCHEDULED, Instant.now(), mock(User.class), scenario);
+        ReflectionTestUtils.setField(session, "id", sessionId);
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME))
+                .willReturn(Optional.of(session));
+        given(trainingSessionRepository.existsByStatusAndScenario_Building_Id(
+                TrainingStatus.RUNNING, buildingId)).willReturn(true);
+
+        assertThatThrownBy(() -> trainingSessionService.start(sessionId, EMAIL))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(TrainingErrorCode.RUNNING_SESSION_ALREADY_EXISTS);
+
+        assertThat(session.getStatus()).isEqualTo(TrainingStatus.SCHEDULED);
+        verify(evacuationRouteService, never()).findShortestRoute(any(), any());
+        verify(trainingEventPublisher, never()).publishTrainingStatusUpdatedAfterCommit(any());
     }
 
     @Test
