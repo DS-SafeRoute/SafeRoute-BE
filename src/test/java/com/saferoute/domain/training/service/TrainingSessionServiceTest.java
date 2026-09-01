@@ -13,6 +13,7 @@ import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.building.repository.BuildingRepository;
 import com.saferoute.domain.device.service.IoTLightService;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
+import com.saferoute.domain.evacuation.graph.entity.NodeType;
 import com.saferoute.domain.evacuation.recalculation.service.RouteRecalculationService;
 import com.saferoute.domain.evacuation.service.EvacuationRoute;
 import com.saferoute.domain.evacuation.service.EvacuationRouteService;
@@ -23,6 +24,7 @@ import com.saferoute.domain.training.dto.TrainingSessionSummaryResponse;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
 import com.saferoute.domain.training.entity.TrainingScenario;
+import com.saferoute.domain.training.entity.FireZone;
 import com.saferoute.domain.training.repository.FireZoneRepository;
 import com.saferoute.domain.training.repository.TrainingScenarioRepository;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
@@ -256,6 +258,7 @@ class TrainingSessionServiceTest {
     @Test
     @DisplayName("SCHEDULED 상태의 세션을 시작하면 RUNNING으로 전이하고 최초 경로를 유도등에 반영한다")
     void start_fromScheduled_transitionsToRunningAndAppliesRouteGuidance() {
+        UUID scenarioId = UUID.randomUUID();
         UUID floorId = UUID.randomUUID();
         UUID startNodeId = UUID.randomUUID();
         UUID exitNodeId = UUID.randomUUID();
@@ -264,11 +267,17 @@ class TrainingSessionServiceTest {
         given(floor.getId()).willReturn(floorId);
         given(startNode.getFloor()).willReturn(floor);
         given(startNode.getId()).willReturn(startNodeId);
+        given(startNode.getType()).willReturn(NodeType.START);
         MapNode exitNode = mock(MapNode.class);
         given(exitNode.getId()).willReturn(exitNodeId);
 
         TrainingScenario scenario = mock(TrainingScenario.class);
+        given(scenario.getId()).willReturn(scenarioId);
         given(scenario.getStartNode()).willReturn(startNode);
+        FireZone fireOrigin = mock(FireZone.class);
+        given(fireOrigin.getFloorId()).willReturn(floorId);
+        given(fireZoneRepository.findByScenario_IdAndIsManualAddTrue(scenarioId))
+                .willReturn(List.of(fireOrigin));
         TrainingSession session =
                 TrainingSession.create(TrainingStatus.SCHEDULED, Instant.now(), mock(User.class), scenario);
         ReflectionTestUtils.setField(session, "id", sessionId);
@@ -330,6 +339,7 @@ class TrainingSessionServiceTest {
     @Test
     @DisplayName("출발 노드에서 경로를 찾지 못하면 훈련 시작이 차단되고 상태가 바뀌지 않는다")
     void start_routeNotFound_throwsExceptionWithoutChangingState() {
+        UUID scenarioId = UUID.randomUUID();
         UUID floorId = UUID.randomUUID();
         UUID startNodeId = UUID.randomUUID();
         MapNode startNode = mock(MapNode.class);
@@ -337,9 +347,15 @@ class TrainingSessionServiceTest {
         given(floor.getId()).willReturn(floorId);
         given(startNode.getFloor()).willReturn(floor);
         given(startNode.getId()).willReturn(startNodeId);
+        given(startNode.getType()).willReturn(NodeType.START);
 
         TrainingScenario scenario = mock(TrainingScenario.class);
+        given(scenario.getId()).willReturn(scenarioId);
         given(scenario.getStartNode()).willReturn(startNode);
+        FireZone fireOrigin = mock(FireZone.class);
+        given(fireOrigin.getFloorId()).willReturn(floorId);
+        given(fireZoneRepository.findByScenario_IdAndIsManualAddTrue(scenarioId))
+                .willReturn(List.of(fireOrigin));
         TrainingSession session =
                 TrainingSession.create(TrainingStatus.SCHEDULED, Instant.now(), mock(User.class), scenario);
         ReflectionTestUtils.setField(session, "id", sessionId);
@@ -355,6 +371,53 @@ class TrainingSessionServiceTest {
         verify(scenario, never()).markInProgress();
         verify(trainingEventPublisher, never()).publishTrainingStatusUpdatedAfterCommit(any());
         verify(ioTLightService, never()).applyRouteGuidance(any());
+    }
+
+    @Test
+    @DisplayName("발화 위치가 없는 시나리오는 훈련을 시작할 수 없다")
+    void start_fireOriginNotConfigured_throwsExceptionWithoutChangingState() {
+        UUID scenarioId = UUID.randomUUID();
+        MapNode startNode = mock(MapNode.class);
+        given(startNode.getType()).willReturn(NodeType.START);
+        TrainingScenario scenario = mock(TrainingScenario.class);
+        given(scenario.getId()).willReturn(scenarioId);
+        given(scenario.getStartNode()).willReturn(startNode);
+        TrainingSession session =
+                TrainingSession.create(TrainingStatus.SCHEDULED, Instant.now(), mock(User.class), scenario);
+        ReflectionTestUtils.setField(session, "id", sessionId);
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME))
+                .willReturn(Optional.of(session));
+        given(fireZoneRepository.findByScenario_IdAndIsManualAddTrue(scenarioId)).willReturn(List.of());
+
+        assertThatThrownBy(() -> trainingSessionService.start(sessionId, EMAIL))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(TrainingErrorCode.FIRE_ORIGIN_NOT_CONFIGURED);
+
+        assertThat(session.getStatus()).isEqualTo(TrainingStatus.SCHEDULED);
+        verify(evacuationRouteService, never()).findShortestRoute(any(), any());
+    }
+
+    @Test
+    @DisplayName("대피 시작 노드가 START 유형이 아니면 훈련을 시작할 수 없다")
+    void start_startNodeTypeInvalid_throwsExceptionWithoutChangingState() {
+        MapNode startNode = mock(MapNode.class);
+        given(startNode.getType()).willReturn(NodeType.HALLWAY);
+        TrainingScenario scenario = mock(TrainingScenario.class);
+        given(scenario.getStartNode()).willReturn(startNode);
+        TrainingSession session =
+                TrainingSession.create(TrainingStatus.SCHEDULED, Instant.now(), mock(User.class), scenario);
+        ReflectionTestUtils.setField(session, "id", sessionId);
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME))
+                .willReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> trainingSessionService.start(sessionId, EMAIL))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(TrainingErrorCode.START_NODE_TYPE_INVALID);
+
+        assertThat(session.getStatus()).isEqualTo(TrainingStatus.SCHEDULED);
+        verify(fireZoneRepository, never()).findByScenario_IdAndIsManualAddTrue(any());
     }
 
     @Test

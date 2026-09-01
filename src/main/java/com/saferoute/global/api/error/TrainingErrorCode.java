@@ -19,7 +19,12 @@ public enum TrainingErrorCode implements BaseErrorCode {
     SESSION_ALREADY_EXISTS(HttpStatus.CONFLICT, "TRAINING008", "이미 훈련 세션이 존재하는 시나리오입니다."),
     START_NODE_BUILDING_MISMATCH(HttpStatus.BAD_REQUEST, "TRAINING009", "시작 노드가 해당 시나리오의 건물에 속하지 않습니다."),
     START_NODE_NOT_CONFIGURED(HttpStatus.CONFLICT, "TRAINING010", "출발 노드가 지정되지 않은 시나리오는 훈련을 시작할 수 없습니다."),
-    RUNNING_SESSION_ALREADY_EXISTS(HttpStatus.CONFLICT, "TRAINING011", "해당 건물에서 이미 훈련이 진행 중입니다.");
+    RUNNING_SESSION_ALREADY_EXISTS(HttpStatus.CONFLICT, "TRAINING011", "해당 건물에서 이미 훈련이 진행 중입니다."),
+    FLOOR_START_NODE_NOT_FOUND(HttpStatus.CONFLICT, "TRAINING012", "발화 위치가 속한 층에 대표 대피 시작 노드가 없습니다."),
+    FLOOR_START_NODE_DUPLICATED(HttpStatus.CONFLICT, "TRAINING013", "발화 위치가 속한 층에 대표 대피 시작 노드가 여러 개 존재합니다."),
+    FIRE_ORIGIN_NOT_CONFIGURED(HttpStatus.CONFLICT, "TRAINING014", "발화 위치가 설정되지 않은 시나리오는 훈련을 시작할 수 없습니다."),
+    START_NODE_TYPE_INVALID(HttpStatus.CONFLICT, "TRAINING015", "대피 시작 노드의 유형은 START여야 합니다."),
+    FIRE_ORIGIN_START_FLOOR_MISMATCH(HttpStatus.CONFLICT, "TRAINING016", "발화 위치와 대피 시작 노드는 같은 층이어야 합니다.");
 
     private final HttpStatus httpStatus;
     private final String code;
