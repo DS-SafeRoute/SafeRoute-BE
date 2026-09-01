@@ -130,6 +130,7 @@ class TrainingReportServiceTest {
         TrainingScenario scenario = mock(TrainingScenario.class);
         TrainingSession session = mock(TrainingSession.class);
         given(session.getScenario()).willReturn(scenario);
+        given(scenario.getTargetEvacuationSec()).willReturn(null);
         given(session.getStartedAt()).willReturn(startedAt);
         given(session.getEndedAt()).willReturn(startedAt.plusSeconds(300));
         given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME))
