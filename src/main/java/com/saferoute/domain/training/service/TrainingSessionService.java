@@ -3,6 +3,7 @@ package com.saferoute.domain.training.service;
 import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.device.service.IoTLightService;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
+import com.saferoute.domain.evacuation.recalculation.dto.response.CurrentRouteResponse;
 import com.saferoute.domain.evacuation.service.EvacuationRoute;
 import com.saferoute.domain.evacuation.service.EvacuationRouteService;
 import com.saferoute.domain.training.dto.CreateSessionRequest;
@@ -217,6 +218,14 @@ public class TrainingSessionService {
       trainingEventPublisher.publishTrainingStatusUpdatedAfterCommit(session);
       log.info("훈련 세션 타임아웃 처리: sessionId={}", session.getId());
     }
+  }
+
+  // "지금 안내되고 있는 경로" 조회는 재탐색 승인 이력까지 함께 봐야 해서 실제 로직은
+  // RouteRecalculationService가 갖고 있다 - 이 메서드는 /api/v1/sessions 하위 URL 컨벤션에
+  // 맞추기 위한 위임일 뿐이다.
+  @Transactional(readOnly = true)
+  public CurrentRouteResponse getCurrentRoute(UUID sessionId, String email) {
+    return routeRecalculationService.getCurrentRoute(sessionId, email);
   }
 
   private TrainingSession findSession(UUID sessionId, String email) {
