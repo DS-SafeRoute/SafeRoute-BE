@@ -1,0 +1,40 @@
+{
+  "isSuccess": true,
+  "code": "COMMON_SUCCESS_001",
+  "message": "요청에 성공했습니다.",
+  "result": {
+    "recalculationId": "5f3c1a2e-2b7a-4c9e-9d3e-8a1b2c3d4e5f",
+    "trainingSessionId": "3a2b1c0d-9e8f-4a5b-8c7d-6e5f4a3b2c1d",
+    "floorId": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+    "floorNum": 1,
+    "locationName": "1층",
+    "cctvCode": "CCTV_001",
+    "triggerEdgeId": "9f8e7d6c-5b4a-3928-1706-f5e4d3c2b1a0",
+    "triggerType": "STARTED",
+    "congestionLevel": "VERY_CROWDED",
+    "density": 5.2,
+    "densityUnit": "PERSON_PER_SQUARE_METER",
+    "previousRoute": {
+      "nodeIds": [
+        "aaaaaaaa-1111-2222-3333-444444444444",
+        "bbbbbbbb-1111-2222-3333-444444444444",
+        "cccccccc-1111-2222-3333-444444444444"
+      ],
+      "totalWeight": 12.5
+    },
+    "candidateRoute": {
+      "nodeIds": [
+        "aaaaaaaa-1111-2222-3333-444444444444",
+        "dddddddd-1111-2222-3333-444444444444",
+        "cccccccc-1111-2222-3333-444444444444"
+      ],
+      "totalWeight": 18.3
+    },
+    "status": "PENDING",
+    "requestedAt": "2026-09-01T09:12:34.567Z",
+    "resolvedAt": null,
+    "resolvedBy": null,
+    "rejectReason": null,
+    "cancelReason": null
+  }
+}

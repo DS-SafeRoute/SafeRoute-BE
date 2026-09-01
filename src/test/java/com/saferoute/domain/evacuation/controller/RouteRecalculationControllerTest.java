@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.saferoute.domain.congestion.entity.CongestionLevel;
+import com.saferoute.domain.congestion.entity.DensityUnit;
 import com.saferoute.domain.evacuation.recalculation.dto.response.RouteRecalculationDetailResponse;
 import com.saferoute.domain.evacuation.recalculation.dto.response.RouteRecalculationResponse;
 import com.saferoute.domain.evacuation.recalculation.dto.response.RouteRecalculationSummaryResponse;
@@ -71,14 +72,16 @@ class RouteRecalculationControllerTest {
 
     private RouteRecalculationSummaryResponse summary(RecalculationStatus status) {
         return new RouteRecalculationSummaryResponse(
-                recalculationId, sessionId, "CCTV_001", UUID.randomUUID(),
-                RecalculationTriggerType.STARTED, CongestionLevel.CROWDED, 3.5, status, Instant.now());
+                recalculationId, sessionId, UUID.randomUUID(), 1, "1층", "CCTV_001", UUID.randomUUID(),
+                RecalculationTriggerType.STARTED, CongestionLevel.CROWDED, 3.5,
+                DensityUnit.PERSON_PER_SQUARE_METER, status, Instant.now());
     }
 
     private RouteRecalculationDetailResponse detail(RecalculationStatus status) {
         return new RouteRecalculationDetailResponse(
-                recalculationId, sessionId, "CCTV_001", UUID.randomUUID(),
+                recalculationId, sessionId, UUID.randomUUID(), 1, "1층", "CCTV_001", UUID.randomUUID(),
                 RecalculationTriggerType.STARTED, CongestionLevel.CROWDED, 3.5,
+                DensityUnit.PERSON_PER_SQUARE_METER,
                 new RouteRecalculationDetailResponse.RouteSegment(List.of(UUID.randomUUID()), 15.0),
                 new RouteRecalculationDetailResponse.RouteSegment(List.of(UUID.randomUUID()), 22.0),
                 status, Instant.now(), null, null, null, null);

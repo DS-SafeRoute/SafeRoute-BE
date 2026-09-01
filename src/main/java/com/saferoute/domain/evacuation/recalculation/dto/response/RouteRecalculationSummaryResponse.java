@@ -1,9 +1,11 @@
 package com.saferoute.domain.evacuation.recalculation.dto.response;
 
 import com.saferoute.domain.congestion.entity.CongestionLevel;
+import com.saferoute.domain.congestion.entity.DensityUnit;
 import com.saferoute.domain.evacuation.recalculation.entity.RecalculationStatus;
 import com.saferoute.domain.evacuation.recalculation.entity.RecalculationTriggerType;
 import com.saferoute.domain.evacuation.recalculation.entity.RouteRecalculation;
+import com.saferoute.domain.floor.entity.Floor;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -11,24 +13,33 @@ import java.util.UUID;
 public record RouteRecalculationSummaryResponse(
         UUID recalculationId,
         UUID trainingSessionId,
+        UUID floorId,
+        Integer floorNum,
+        String locationName,
         String cctvCode,
         UUID triggerEdgeId,
         RecalculationTriggerType triggerType,
         CongestionLevel congestionLevel,
         double density,
+        DensityUnit densityUnit,
         RecalculationStatus status,
         Instant requestedAt
 ) {
 
     public static RouteRecalculationSummaryResponse from(RouteRecalculation recalculation) {
+        Floor floor = recalculation.getTriggerEdge().getFloor();
         return new RouteRecalculationSummaryResponse(
                 recalculation.getId(),
                 recalculation.getTrainingSession().getId(),
+                floor.getId(),
+                floor.getFloorNum(),
+                floor.getFloorNum() + "층",
                 recalculation.getCctvCode(),
                 recalculation.getTriggerEdge().getId(),
                 recalculation.getTriggerType(),
                 recalculation.getCongestionLevel(),
                 recalculation.getDensity(),
+                DensityUnit.PERSON_PER_SQUARE_METER,
                 recalculation.getStatus(),
                 recalculation.getRequestedAt()
         );
