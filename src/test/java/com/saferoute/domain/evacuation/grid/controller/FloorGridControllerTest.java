@@ -46,7 +46,8 @@ class FloorGridControllerTest {
                 UUID.randomUUID(), 0, 0, true, false, 0.1, 0.1);
         given(floorGridService.getGridCells(floorId, 0, 500, EMAIL))
                 .willReturn(new FloorGridCellPageResponse(
-                        List.of(cell), 0, 500, 1, 1, true, true));
+                        List.of(cell), 0, 500, 1, 1, true, true,
+                        10.0, 8.0, 1, 1, 0.5));
 
         mockMvc.perform(get("/api/v1/floors/{floorId}/grid/cells", floorId)
                         .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))

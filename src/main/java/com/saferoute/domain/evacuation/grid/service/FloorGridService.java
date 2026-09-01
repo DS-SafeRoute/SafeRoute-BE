@@ -49,9 +49,8 @@ public class FloorGridService {
     private final SchoolContextService schoolContextService;
 
     public FloorGridCellPageResponse getGridCells(UUID floorId, int page, int size) {
-        if (!floorRepository.existsById(floorId)) {
-            throw new ApiException(FloorErrorCode.FLOOR_NOT_FOUND);
-        }
+        Floor floor = floorRepository.findById(floorId)
+                .orElseThrow(() -> new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
         PageRequest pageable = PageRequest.of(
                 page,
                 size,
@@ -59,7 +58,8 @@ public class FloorGridService {
         );
         return FloorGridCellPageResponse.from(
                 floorGridCellRepository.findAllByFloor_Id(floorId, pageable)
-                        .map(FloorGridCellResponse::from)
+                        .map(FloorGridCellResponse::from),
+                floor
         );
     }
 

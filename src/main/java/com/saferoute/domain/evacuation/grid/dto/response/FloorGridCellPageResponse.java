@@ -1,5 +1,6 @@
 package com.saferoute.domain.evacuation.grid.dto.response;
 
+import com.saferoute.domain.floor.entity.Floor;
 import java.util.List;
 import org.springframework.data.domain.Page;
 
@@ -10,9 +11,14 @@ public record FloorGridCellPageResponse(
         long totalElements,
         int totalPages,
         boolean first,
-        boolean last
+        boolean last,
+        Double realWidth,
+        Double realHeight,
+        Integer rows,
+        Integer columns,
+        Double cellSizeMeter
 ) {
-    public static FloorGridCellPageResponse from(Page<FloorGridCellResponse> result) {
+    public static FloorGridCellPageResponse from(Page<FloorGridCellResponse> result, Floor floor) {
         return new FloorGridCellPageResponse(
                 result.getContent(),
                 result.getNumber(),
@@ -20,7 +26,12 @@ public record FloorGridCellPageResponse(
                 result.getTotalElements(),
                 result.getTotalPages(),
                 result.isFirst(),
-                result.isLast()
+                result.isLast(),
+                floor.getRealWidth(),
+                floor.getRealHeight(),
+                floor.getGridRows(),
+                floor.getGridColumns(),
+                floor.getGridCellSizeMeter()
         );
     }
 }
