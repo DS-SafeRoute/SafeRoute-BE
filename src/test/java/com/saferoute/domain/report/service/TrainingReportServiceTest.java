@@ -124,6 +124,29 @@ class TrainingReportServiceTest {
     // === generate ===
 
     @Test
+    @DisplayName("목표 대피 시간이 없으면 명확한 오류로 리포트 생성을 막는다")
+    void generate_targetEvacuationSecNotConfigured_throwsException() {
+        Instant startedAt = Instant.parse("2026-01-01T00:00:00Z");
+        TrainingScenario scenario = mock(TrainingScenario.class);
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getScenario()).willReturn(scenario);
+        given(scenario.getTargetEvacuationSec()).willReturn(null);
+        given(session.getStartedAt()).willReturn(startedAt);
+        given(session.getEndedAt()).willReturn(startedAt.plusSeconds(300));
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME))
+                .willReturn(Optional.of(session));
+        given(trainingReportRepository.existsByTrainingSession_Id(sessionId)).willReturn(false);
+
+        assertThatThrownBy(() -> trainingReportService.generate(
+                sessionId, new GenerateReportRequest(50, 50), EMAIL))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(ReportErrorCode.TARGET_EVACUATION_SEC_NOT_CONFIGURED);
+
+        verify(trainingReportRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
     @DisplayName("종료된 세션이면 참여/생존 인원 입력만으로 나머지 항목을 계산해 리포트를 생성한다")
     void generate_endedSession_computesRemainingScoresAndSaves() {
         Instant startedAt = Instant.parse("2026-01-01T00:00:00Z");

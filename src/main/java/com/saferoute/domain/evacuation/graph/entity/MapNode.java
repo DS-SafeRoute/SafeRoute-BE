@@ -116,4 +116,11 @@ public class MapNode {
     public void changeExitTarget(boolean isExitTarget) {
         this.isExitTarget = isExitTarget;
     }
+
+    public void changeType(NodeType type) {
+        this.type = type;
+        if (type != NodeType.CUSTOM) {
+            this.customDeviceType = null;
+        }
+    }
 }

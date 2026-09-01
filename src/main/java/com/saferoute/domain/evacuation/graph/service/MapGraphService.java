@@ -8,6 +8,7 @@ import com.saferoute.domain.evacuation.graph.dto.response.MapEdgeResponse;
 import com.saferoute.domain.evacuation.graph.dto.response.MapNodeResponse;
 import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
+import com.saferoute.domain.evacuation.graph.entity.NodeType;
 import com.saferoute.domain.evacuation.graph.repository.MapGraphRepository;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.floor.repository.FloorRepository;
@@ -57,8 +58,14 @@ public class MapGraphService {
     public MapNodeResponse createNode(UUID floorId, CreateMapNodeRequest request) {
         Floor floor = floorRepository.findById(floorId)
                 .orElseThrow(() -> new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
+        if (request.type() == NodeType.START) {
+            floorRepository.findByIdForUpdate(floorId)
+                    .orElseThrow(() -> new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
+            validateStartNodeDoesNotExist(floorId);
+        }
+        boolean isExitTarget = resolveExitTarget(request.type(), request.isExitTarget());
         MapNode node = mapGraphRepository.addNode(floor, request.code(), request.type(), request.name(),
-                request.x(), request.y(), request.isExitTarget());
+                request.x(), request.y(), isExitTarget);
         return MapNodeResponse.from(node);
     }
 
@@ -66,15 +73,41 @@ public class MapGraphService {
     @Transactional
     public MapNodeResponse updateNodePosition(UUID nodeId, UpdateMapNodePositionRequest request) {
         MapNode node = findNodeOrThrow(nodeId);
-        if (!request.isExitTarget()) {
+        NodeType nextType = request.type() != null ? request.type() : node.getType();
+        boolean nextExitTarget = resolveExitTarget(nextType, request.isExitTarget());
+        boolean needsFloorLock = !nextExitTarget
+                || (nextType == NodeType.START && node.getType() != NodeType.START);
+        if (needsFloorLock) {
             // 동일 층에 대한 동시 수정 요청을 직렬화해 마지막 EXIT 카운트 검증과 해제 사이의 경쟁을 방지
             floorRepository.findByIdForUpdate(node.getFloor().getId())
                     .orElseThrow(() -> new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
+        }
+        if (nextType == NodeType.START && node.getType() != NodeType.START) {
+            validateStartNodeDoesNotExist(node.getFloor().getId());
+        }
+        if (!nextExitTarget) {
             validateNotLastExitNode(node, EvacuationErrorCode.EXIT_NODE_UNSET_NOT_ALLOWED);
         }
+        node.changeType(nextType);
         MapNode updated = mapGraphRepository.updateNodePosition(
-                node, request.x(), request.y(), request.isExitTarget());
+                node, request.x(), request.y(), nextExitTarget);
         return MapNodeResponse.from(updated);
+    }
+
+    private boolean resolveExitTarget(NodeType type, boolean requestedExitTarget) {
+        if (type == NodeType.START) {
+            return false;
+        }
+        if (type == NodeType.EXIT) {
+            return true;
+        }
+        return requestedExitTarget;
+    }
+
+    private void validateStartNodeDoesNotExist(UUID floorId) {
+        if (mapGraphRepository.existsNodeByFloorAndType(floorId, NodeType.START)) {
+            throw new ApiException(EvacuationErrorCode.FLOOR_START_NODE_ALREADY_EXISTS);
+        }
     }
 
     // 노드 삭제 (연결된 엣지도 함께 삭제)

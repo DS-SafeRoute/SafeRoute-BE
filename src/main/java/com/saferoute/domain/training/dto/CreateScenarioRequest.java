@@ -27,7 +27,6 @@ public class CreateScenarioRequest {
     private Integer expectedParticipants;
 
     // 훈련 리포트의 대피 시간 점수 산정 기준(초). 건물 규모에 따라 관리자가 지정
-    @NotNull
     @Positive
     private Integer targetEvacuationSec;
 
@@ -42,7 +41,4 @@ public class CreateScenarioRequest {
     // 미지정 시 Service에서 MEDIUM으로 기본 처리
     private FireSpreadSpeed fireSpreadSpeed;
 
-    // 훈련 시작 시 최초 대피 경로 계산의 출발 노드
-    @NotNull
-    private UUID startNodeId;
 }

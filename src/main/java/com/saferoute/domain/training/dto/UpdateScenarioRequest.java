@@ -1,7 +1,6 @@
 package com.saferoute.domain.training.dto;
 
 import java.time.Instant;
-import java.util.UUID;
 
 import com.saferoute.domain.training.entity.FireSpreadSpeed;
 import jakarta.validation.constraints.Positive;
@@ -22,5 +21,4 @@ public class UpdateScenarioRequest {
     private Instant scheduledAt;
     private Boolean isTemplate;
     private FireSpreadSpeed fireSpreadSpeed;
-    private UUID startNodeId;
 }

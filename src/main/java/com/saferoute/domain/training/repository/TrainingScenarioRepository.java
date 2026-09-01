@@ -4,7 +4,9 @@ import com.saferoute.domain.training.entity.TrainingScenario;
 import java.util.UUID;
 import java.util.List;
 import java.util.Optional;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -12,4 +14,7 @@ public interface TrainingScenarioRepository extends JpaRepository<TrainingScenar
     List<TrainingScenario> findAllByBuilding_SchoolNameOrderByCreatedAtDesc(String schoolName);
 
     Optional<TrainingScenario> findByIdAndBuilding_SchoolName(UUID id, String schoolName);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<TrainingScenario> findForUpdateByIdAndBuilding_SchoolName(UUID id, String schoolName);
 }

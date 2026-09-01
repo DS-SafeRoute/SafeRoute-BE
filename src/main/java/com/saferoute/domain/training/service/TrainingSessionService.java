@@ -4,6 +4,7 @@ import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.building.repository.BuildingRepository;
 import com.saferoute.domain.device.service.IoTLightService;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
+import com.saferoute.domain.evacuation.graph.entity.NodeType;
 import com.saferoute.domain.evacuation.recalculation.dto.response.CurrentRouteResponse;
 import com.saferoute.domain.evacuation.service.EvacuationRoute;
 import com.saferoute.domain.evacuation.service.EvacuationRouteService;
@@ -17,6 +18,7 @@ import com.saferoute.domain.training.dto.TrainingStatusResponse;
 import com.saferoute.domain.training.entity.TrainingScenario;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
+import com.saferoute.domain.training.entity.FireZone;
 import com.saferoute.domain.evacuation.recalculation.service.RouteRecalculationService;
 import com.saferoute.domain.training.repository.FireZoneRepository;
 import com.saferoute.domain.training.repository.TrainingScenarioRepository;
@@ -159,8 +161,20 @@ public class TrainingSessionService {
     if (startNode == null) {
       throw new ApiException(TrainingErrorCode.START_NODE_NOT_CONFIGURED);
     }
+    if (startNode.getType() != NodeType.START) {
+      throw new ApiException(TrainingErrorCode.START_NODE_TYPE_INVALID);
+    }
+    List<FireZone> fireOrigins = fireZoneRepository
+        .findByScenario_IdAndIsManualAddTrue(session.getScenario().getId());
+    if (fireOrigins.isEmpty()) {
+      throw new ApiException(TrainingErrorCode.FIRE_ORIGIN_NOT_CONFIGURED);
+    }
+    UUID startFloorId = startNode.getFloor().getId();
+    if (fireOrigins.stream().anyMatch(origin -> !startFloorId.equals(origin.getFloorId()))) {
+      throw new ApiException(TrainingErrorCode.FIRE_ORIGIN_START_FLOOR_MISMATCH);
+    }
     EvacuationRoute initialRoute =
-        evacuationRouteService.findShortestRoute(startNode.getFloor().getId(), startNode.getId());
+        evacuationRouteService.findShortestRoute(startFloorId, startNode.getId());
 
     session.start(Instant.now());
     session.getScenario().markInProgress();

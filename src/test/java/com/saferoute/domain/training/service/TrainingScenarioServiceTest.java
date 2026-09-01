@@ -9,8 +9,8 @@ import static org.mockito.Mockito.verify;
 
 import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.building.repository.BuildingRepository;
-import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
 import com.saferoute.domain.report.repository.TrainingReportRepository;
+import com.saferoute.domain.training.dto.CreateScenarioRequest;
 import com.saferoute.domain.training.dto.ScenarioResponse;
 import com.saferoute.domain.training.entity.FireSpreadSpeed;
 import com.saferoute.domain.training.entity.TrainingScenario;
@@ -59,9 +59,6 @@ class TrainingScenarioServiceTest {
     private UserRepository userRepository;
 
     @Mock
-    private MapNodeJpaRepository mapNodeRepository;
-
-    @Mock
     private SchoolContextService schoolContextService;
 
     private TrainingScenario scenarioWithId(UUID id) {
@@ -77,6 +74,27 @@ class TrainingScenarioServiceTest {
                 null);
         ReflectionTestUtils.setField(scenario, "id", id);
         return scenario;
+    }
+
+    @Test
+    @DisplayName("startNodeId와 목표 대피 시간 없이 시나리오를 생성한다")
+    void createScenario_withoutStartNodeAndTarget_succeeds() {
+        UUID buildingId = UUID.randomUUID();
+        UUID adminId = UUID.randomUUID();
+        Building building = mock(Building.class);
+        User admin = mock(User.class);
+        CreateScenarioRequest request = new CreateScenarioRequest(
+                "정기 훈련", buildingId, 52, null, Instant.now(), false, adminId, FireSpreadSpeed.MEDIUM);
+        given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
+        given(buildingRepository.findByIdAndSchoolName(buildingId, SCHOOL_NAME)).willReturn(Optional.of(building));
+        given(userRepository.findByIdAndSchoolName(adminId, SCHOOL_NAME)).willReturn(Optional.of(admin));
+        given(scenarioRepository.save(org.mockito.ArgumentMatchers.any(TrainingScenario.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+
+        ScenarioResponse response = trainingScenarioService.createScenario(request, EMAIL);
+
+        assertThat(response.getStartNodeId()).isNull();
+        assertThat(response.getTargetEvacuationSec()).isNull();
     }
 
     // === getScenarios (deletable) ===

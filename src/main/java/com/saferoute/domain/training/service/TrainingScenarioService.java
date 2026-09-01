@@ -2,8 +2,6 @@ package com.saferoute.domain.training.service;
 
 import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.building.repository.BuildingRepository;
-import com.saferoute.domain.evacuation.graph.entity.MapNode;
-import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
 import com.saferoute.domain.training.dto.CreateScenarioRequest;
 import com.saferoute.domain.training.dto.ScenarioResponse;
 import com.saferoute.domain.training.dto.UpdateScenarioRequest;
@@ -15,7 +13,6 @@ import com.saferoute.domain.user.entity.User;
 import com.saferoute.domain.user.repository.UserRepository;
 import com.saferoute.domain.user.service.SchoolContextService;
 import com.saferoute.global.api.error.BuildingErrorCode;
-import com.saferoute.global.api.error.EvacuationErrorCode;
 import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.error.UserErrorCode;
 import com.saferoute.global.api.exception.ApiException;
@@ -38,7 +35,6 @@ public class TrainingScenarioService {
     private final TrainingReportRepository trainingReportRepository;
     private final BuildingRepository buildingRepository;
     private final UserRepository userRepository;
-    private final MapNodeJpaRepository mapNodeRepository;
     private final SchoolContextService schoolContextService;
 
     // 목록 조회 (deletable = 연결된 훈련 세션이 하나도 없는 시나리오인지 여부, reportId = 리포트가 있으면 그 id)
@@ -79,8 +75,6 @@ public class TrainingScenarioService {
                 .orElseThrow(() -> new ApiException(BuildingErrorCode.BUILDING_NOT_FOUND));
         User admin = userRepository.findByIdAndSchoolName(request.getAdminId(), schoolName)
                 .orElseThrow(() -> new ApiException(UserErrorCode.USER_NOT_FOUND));
-        MapNode startNode = resolveStartNode(request.getStartNodeId(), building.getId());
-
         TrainingScenario scenario = TrainingScenario.create(
                 request.getName(),
                 request.getExpectedParticipants(),
@@ -90,7 +84,7 @@ public class TrainingScenarioService {
                 request.getFireSpreadSpeed(),
                 building,
                 admin,
-                startNode
+                null
         );
         return ScenarioResponse.from(scenarioRepository.save(scenario));
     }
@@ -99,9 +93,6 @@ public class TrainingScenarioService {
     @Transactional
     public ScenarioResponse updateScenario(UUID id, UpdateScenarioRequest request, String email) {
         TrainingScenario scenario = findByIdAndEmail(id, email);
-        MapNode startNode = request.getStartNodeId() != null
-                ? resolveStartNode(request.getStartNodeId(), scenario.getBuildingId())
-                : null;
         scenario.update(
                 request.getName(),
                 request.getExpectedParticipants(),
@@ -109,19 +100,9 @@ public class TrainingScenarioService {
                 request.getScheduledAt(),
                 request.getIsTemplate(),
                 request.getFireSpreadSpeed(),
-                startNode
+                null
         );
         return ScenarioResponse.from(scenario);
-    }
-
-    // 시작 노드가 존재하고, 시나리오와 같은 건물 소속인지 검증 (FireZoneService.designateOrigin의 그리드 셀 검증과 동일한 컨벤션)
-    private MapNode resolveStartNode(UUID startNodeId, UUID buildingId) {
-        MapNode startNode = mapNodeRepository.findById(startNodeId)
-                .orElseThrow(() -> new ApiException(EvacuationErrorCode.MAP_NODE_NOT_FOUND));
-        if (!startNode.getFloor().getBuilding().getId().equals(buildingId)) {
-            throw new ApiException(TrainingErrorCode.START_NODE_BUILDING_MISMATCH);
-        }
-        return startNode;
     }
 
     // 삭제 (훈련 세션이 하나라도 연결된 시나리오는 삭제 불가 - 과거 훈련 기록 보존을 위해)
