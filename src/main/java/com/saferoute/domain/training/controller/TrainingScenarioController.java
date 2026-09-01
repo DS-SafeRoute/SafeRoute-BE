@@ -1,8 +1,10 @@
 package com.saferoute.domain.training.controller;
 
 import com.saferoute.domain.training.dto.CreateScenarioRequest;
+import com.saferoute.domain.training.dto.FireZoneResponse;
 import com.saferoute.domain.training.dto.ScenarioResponse;
 import com.saferoute.domain.training.dto.UpdateScenarioRequest;
+import com.saferoute.domain.training.service.FireZoneService;
 import com.saferoute.domain.training.service.TrainingScenarioService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -29,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class TrainingScenarioController {
 
     private final TrainingScenarioService scenarioService;
+    private final FireZoneService fireZoneService;
 
     // GET /api/v1/scenarios
     @Operation(
@@ -141,5 +144,25 @@ public class TrainingScenarioController {
             Authentication authentication) {
         scenarioService.deleteScenario(scenarioId, authentication.getName());
         return ResponseEntity.noContent().build();
+    }
+
+    // GET /api/v1/scenarios/{scenarioId}/fire-origin
+    @Operation(
+            summary = "최초 발화점 목록 조회",
+            description = """
+                    관리자가 POST /api/v1/scenarios/{scenarioId}/fire-zones로 수동 지정한
+                    최초 발화점(FireZone.isManualAdd = true) 목록을 반환합니다.
+
+                    화재 확산 시뮬레이션이 생성한 FireZone(isManualAdd = false)은 포함되지
+                    않으며, 아직 발화점을 하나도 지정하지 않았다면 빈 배열을 반환합니다.
+
+                    다른 학교 소속이거나 존재하지 않는 scenarioId를 요청하면 조회에 실패합니다.
+                    """
+    )
+    @GetMapping("/{scenarioId}/fire-origin")
+    public ResponseEntity<List<FireZoneResponse>> getFireOrigin(
+            @PathVariable UUID scenarioId,
+            Authentication authentication) {
+        return ResponseEntity.ok(fireZoneService.getFireOrigins(scenarioId, authentication.getName()));
     }
 }

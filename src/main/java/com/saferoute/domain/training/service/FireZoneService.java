@@ -12,6 +12,7 @@ import com.saferoute.domain.user.service.SchoolContextService;
 import com.saferoute.global.api.error.GridErrorCode;
 import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -45,5 +46,18 @@ public class FireZoneService {
         fireZoneRepository.save(origin);
 
         return FireZoneResponse.from(origin);
+    }
+
+    // 관리자가 수동 지정한 최초 발화점 목록 조회 (확산 시뮬레이션으로 생성된 FireZone은 제외)
+    @Transactional(readOnly = true)
+    public List<FireZoneResponse> getFireOrigins(UUID scenarioId, String email) {
+        String schoolName = schoolContextService.getSchoolName(email);
+        if (scenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, schoolName).isEmpty()) {
+            throw new ApiException(TrainingErrorCode.TRAINING_SCENARIO_NOT_FOUND);
+        }
+
+        return fireZoneRepository.findByScenario_IdAndIsManualAddTrue(scenarioId).stream()
+                .map(FireZoneResponse::from)
+                .toList();
     }
 }
