@@ -18,7 +18,8 @@ public enum TrainingErrorCode implements BaseErrorCode {
     SCENARIO_DELETE_NOT_ALLOWED(HttpStatus.CONFLICT, "TRAINING007", "훈련 세션이 존재하는 시나리오는 삭제할 수 없습니다."),
     SESSION_ALREADY_EXISTS(HttpStatus.CONFLICT, "TRAINING008", "이미 훈련 세션이 존재하는 시나리오입니다."),
     START_NODE_BUILDING_MISMATCH(HttpStatus.BAD_REQUEST, "TRAINING009", "시작 노드가 해당 시나리오의 건물에 속하지 않습니다."),
-    START_NODE_NOT_CONFIGURED(HttpStatus.CONFLICT, "TRAINING010", "출발 노드가 지정되지 않은 시나리오는 훈련을 시작할 수 없습니다.");
+    START_NODE_NOT_CONFIGURED(HttpStatus.CONFLICT, "TRAINING010", "출발 노드가 지정되지 않은 시나리오는 훈련을 시작할 수 없습니다."),
+    RUNNING_SESSION_ALREADY_EXISTS(HttpStatus.CONFLICT, "TRAINING011", "해당 건물에서 이미 훈련이 진행 중입니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

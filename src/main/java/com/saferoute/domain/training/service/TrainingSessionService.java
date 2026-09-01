@@ -1,6 +1,7 @@
 package com.saferoute.domain.training.service;
 
 import com.saferoute.domain.building.entity.Building;
+import com.saferoute.domain.building.repository.BuildingRepository;
 import com.saferoute.domain.device.service.IoTLightService;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.evacuation.service.EvacuationRoute;
@@ -56,7 +57,9 @@ public class TrainingSessionService {
   private final IoTLightService ioTLightService;
   private final TrainingEventPublisher trainingEventPublisher;
   private final SchoolContextService schoolContextService;
+  private final BuildingRepository buildingRepository;
 
+  @Transactional
   public TrainingSessionResponse create(CreateSessionRequest request, UUID scenarioId, String email) {
     String schoolName = schoolContextService.getSchoolName(email);
     User user = userRepository.findByIdAndSchoolName(request.getAdminId(), schoolName)
@@ -73,6 +76,11 @@ public class TrainingSessionService {
 
     if (request.getStatus() == TrainingStatus.RUNNING && request.getStartedAt() == null) {
       throw new ApiException(ErrorCode.INVALID_INPUT);
+    }
+
+    if (request.getStatus() == TrainingStatus.RUNNING
+        && hasRunningSession(scenario.getBuildingId())) {
+      throw new ApiException(TrainingErrorCode.RUNNING_SESSION_ALREADY_EXISTS);
     }
 
     TrainingSession trainingSession = TrainingSession.create(
@@ -139,6 +147,10 @@ public class TrainingSessionService {
 
     if (session.getStatus() != TrainingStatus.SCHEDULED) {
       throw new ApiException(TrainingErrorCode.INVALID_STATUS_TRANSITION);
+    }
+
+    if (hasRunningSession(session.getScenario().getBuildingId())) {
+      throw new ApiException(TrainingErrorCode.RUNNING_SESSION_ALREADY_EXISTS);
     }
 
     // 유도등 반영 전 최초 경로부터 계산해, EXIT 미지정/도달 불가 시 세션 상태를 바꾸지 않고 막는다.
@@ -223,5 +235,12 @@ public class TrainingSessionService {
     String schoolName = schoolContextService.getSchoolName(email);
     return trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, schoolName)
         .orElseThrow(() -> new ApiException(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND));
+  }
+
+  private boolean hasRunningSession(UUID buildingId) {
+    // 건물 행 잠금 이후 RUNNING 여부를 검사해야 동시 시작 요청도 하나만 성공한다.
+    buildingRepository.findByIdForUpdate(buildingId);
+    return trainingSessionRepository.existsByStatusAndScenario_Building_Id(
+        TrainingStatus.RUNNING, buildingId);
   }
 }
