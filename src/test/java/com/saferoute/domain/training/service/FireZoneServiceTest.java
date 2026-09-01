@@ -69,7 +69,7 @@ class FireZoneServiceTest {
         Building building = mock(Building.class);
 
         given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
-        given(scenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
+        given(scenarioRepository.findForUpdateByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
                 .willReturn(Optional.of(scenario));
         given(scenario.getStatus()).willReturn(ScenarioStatus.READY);
         org.mockito.Mockito.lenient().when(gridCellRepository.findById(gridCellId)).thenReturn(Optional.of(cell));
@@ -94,6 +94,23 @@ class FireZoneServiceTest {
         verify(scenario).assignStartNode(startNode);
         verify(cell).markFired();
         verify(fireZoneRepository).save(org.mockito.ArgumentMatchers.any(FireZone.class));
+    }
+
+    @Test
+    @DisplayName("시나리오에 최초 발화점이 이미 있으면 추가로 등록할 수 없다")
+    void designateOrigin_alreadyConfigured_throwsBeforeMutation() {
+        given(fireZoneRepository.existsByScenario_IdAndIsManualAddTrue(scenarioId)).willReturn(true);
+
+        assertThatThrownBy(() -> fireZoneService.designateOrigin(
+                scenarioId, new CreateFireZoneRequest(gridCellId), EMAIL))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(TrainingErrorCode.FIRE_ORIGIN_ALREADY_CONFIGURED);
+
+        verify(gridCellRepository, never()).findById(gridCellId);
+        verify(cell, never()).markFired();
+        verify(scenario, never()).assignStartNode(org.mockito.ArgumentMatchers.any());
+        verify(fireZoneRepository, never()).save(org.mockito.ArgumentMatchers.any());
     }
 
     @Test

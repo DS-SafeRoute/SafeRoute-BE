@@ -24,7 +24,8 @@ public enum TrainingErrorCode implements BaseErrorCode {
     FLOOR_START_NODE_DUPLICATED(HttpStatus.CONFLICT, "TRAINING013", "발화 위치가 속한 층에 대표 대피 시작 노드가 여러 개 존재합니다."),
     FIRE_ORIGIN_NOT_CONFIGURED(HttpStatus.CONFLICT, "TRAINING014", "발화 위치가 설정되지 않은 시나리오는 훈련을 시작할 수 없습니다."),
     START_NODE_TYPE_INVALID(HttpStatus.CONFLICT, "TRAINING015", "대피 시작 노드의 유형은 START여야 합니다."),
-    FIRE_ORIGIN_START_FLOOR_MISMATCH(HttpStatus.CONFLICT, "TRAINING016", "발화 위치와 대피 시작 노드는 같은 층이어야 합니다.");
+    FIRE_ORIGIN_START_FLOOR_MISMATCH(HttpStatus.CONFLICT, "TRAINING016", "발화 위치와 대피 시작 노드는 같은 층이어야 합니다."),
+    FIRE_ORIGIN_ALREADY_CONFIGURED(HttpStatus.CONFLICT, "TRAINING017", "이미 최초 발화점이 설정된 시나리오입니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

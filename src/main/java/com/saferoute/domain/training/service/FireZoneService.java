@@ -32,14 +32,17 @@ public class FireZoneService {
     private final MapNodeJpaRepository mapNodeRepository;
     private final SchoolContextService schoolContextService;
 
-    //시나리오 설정 단계에서 최초 발화점을 지정
+    // 도면 관리에서 시나리오의 최초 발화점을 1회 지정
     @Transactional
     public FireZoneResponse designateOrigin(UUID scenarioId, CreateFireZoneRequest request, String email) {
         String schoolName = schoolContextService.getSchoolName(email);
-        TrainingScenario scenario = scenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, schoolName)
+        TrainingScenario scenario = scenarioRepository.findForUpdateByIdAndBuilding_SchoolName(scenarioId, schoolName)
                 .orElseThrow(() -> new ApiException(TrainingErrorCode.TRAINING_SCENARIO_NOT_FOUND));
         if (scenario.getStatus() != ScenarioStatus.READY) {
             throw new ApiException(TrainingErrorCode.INVALID_STATUS_TRANSITION);
+        }
+        if (fireZoneRepository.existsByScenario_IdAndIsManualAddTrue(scenarioId)) {
+            throw new ApiException(TrainingErrorCode.FIRE_ORIGIN_ALREADY_CONFIGURED);
         }
 
         FloorGridCell cell = gridCellRepository.findById(request.gridCellId())

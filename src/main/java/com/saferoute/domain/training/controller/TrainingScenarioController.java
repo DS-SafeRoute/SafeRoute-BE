@@ -148,8 +148,10 @@ public class TrainingScenarioController {
     @Operation(
             summary = "최초 발화점 목록 조회",
             description = """
-                    관리자가 POST /api/v1/scenarios/{scenarioId}/fire-zones로 수동 지정한
+                    도면 관리에서 POST /api/v1/scenarios/{scenarioId}/fire-zones로 등록한
                     최초 발화점(FireZone.isManualAdd = true) 목록을 반환합니다.
+                    시나리오당 최초 발화점은 최대 1개이므로 빈 배열 또는 원소 1개의 배열이
+                    반환됩니다. 시나리오 화면은 이 API로 발화점을 조회해 표시만 합니다.
 
                     화재 확산 시뮬레이션이 생성한 FireZone(isManualAdd = false)은 포함되지
                     않으며, 아직 발화점을 하나도 지정하지 않았다면 빈 배열을 반환합니다.
