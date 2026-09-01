@@ -13,6 +13,7 @@ import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.building.repository.BuildingRepository;
 import com.saferoute.domain.device.service.IoTLightService;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
+import com.saferoute.domain.evacuation.recalculation.dto.response.CurrentRouteResponse;
 import com.saferoute.domain.evacuation.recalculation.service.RouteRecalculationService;
 import com.saferoute.domain.evacuation.service.EvacuationRoute;
 import com.saferoute.domain.evacuation.service.EvacuationRouteService;
@@ -498,5 +499,20 @@ class TrainingSessionServiceTest {
         trainingSessionService.failTimedOutSessions();
 
         verify(trainingEventPublisher, never()).publishTrainingStatusUpdatedAfterCommit(any());
+    }
+
+    // === getCurrentRoute ===
+
+    @Test
+    @DisplayName("현재 유효 경로 조회는 RouteRecalculationService에 위임한다")
+    void getCurrentRoute_delegatesToRouteRecalculationService() {
+        CurrentRouteResponse expected = new CurrentRouteResponse(
+                sessionId, UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                CurrentRouteResponse.RouteSource.RECALCULATED, List.of(), 10.0, Instant.now());
+        given(routeRecalculationService.getCurrentRoute(sessionId, EMAIL)).willReturn(expected);
+
+        CurrentRouteResponse response = trainingSessionService.getCurrentRoute(sessionId, EMAIL);
+
+        assertThat(response).isEqualTo(expected);
     }
 }
