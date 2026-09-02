@@ -430,18 +430,16 @@ class TrainingMonitoringServiceTest {
     }
 
     @Test
-    void 실행_중이_아닌_세션은_조회할_수_없다() {
+    void 종료된_세션도_마지막_카메라_목록을_조회할_수_있다() {
         stubSession(TrainingStatus.COMPLETED);
-
-        assertThatThrownBy(() -> service.getCameras(SESSION_ID, EMAIL))
-                .isInstanceOf(ApiException.class)
-                .hasFieldOrPropertyWithValue(
-                        "errorCode",
-                        TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND
-                );
-        verify(cctvJpaRepository, never())
+        given(cctvJpaRepository
                 .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
-                        org.mockito.ArgumentMatchers.any());
+                        BUILDING_ID))
+                .willReturn(List.of());
+
+        MonitoringCameraListResponse response = service.getCameras(SESSION_ID, EMAIL);
+
+        assertThat(response.cameras()).isEmpty();
     }
 
     @Test
@@ -560,15 +558,16 @@ class TrainingMonitoringServiceTest {
     }
 
     @Test
-    void 현재_상태_조회는_실행_중이_아닌_세션은_거부한다() {
+    void 종료된_세션도_마지막_현재_상태를_조회할_수_있다() {
         stubSession(TrainingStatus.COMPLETED);
-
-        assertThatThrownBy(() -> service.getCurrentStates(SESSION_ID, EMAIL))
-                .isInstanceOf(ApiException.class)
-                .hasFieldOrPropertyWithValue("errorCode", TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND);
-        verify(cctvJpaRepository, never())
+        given(cctvJpaRepository
                 .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
-                        org.mockito.ArgumentMatchers.any());
+                        BUILDING_ID))
+                .willReturn(List.of());
+
+        CurrentCctvStateListResponse response = service.getCurrentStates(SESSION_ID, EMAIL);
+
+        assertThat(response.states()).isEmpty();
     }
 
     @Test
@@ -791,13 +790,15 @@ class TrainingMonitoringServiceTest {
     }
 
     @Test
-    void 이벤트_타임라인_조회는_실행_중이_아닌_세션은_거부한다() {
+    void 종료된_세션도_이벤트_타임라인을_조회할_수_있다() {
         stubSession(TrainingStatus.COMPLETED);
+        given(congestionEventRepository.findAllBySessionId(SESSION_ID.toString())).willReturn(List.of());
+        given(routeRecalculationRepository.findAllByTrainingSession_IdOrderByRequestedAtDesc(SESSION_ID))
+                .willReturn(List.of());
 
-        assertThatThrownBy(() -> service.getEvents(SESSION_ID, null, EMAIL))
-                .isInstanceOf(ApiException.class)
-                .hasFieldOrPropertyWithValue("errorCode", TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND);
-        verify(congestionEventRepository, never()).findAllBySessionId(org.mockito.ArgumentMatchers.anyString());
+        MonitoringEventListResponse response = service.getEvents(SESSION_ID, null, EMAIL);
+
+        assertThat(response.events()).isEmpty();
     }
 
     private CongestionEventItem congestionEventItem(
@@ -849,19 +850,19 @@ class TrainingMonitoringServiceTest {
         );
     }
 
+    // 읽기 API는 세션 상태를 검증하지 않으므로(findSessionForSchool), status 값 자체는
+    // 이제 어떤 조회도 막지 않는다 - 인자로 받는 status는 응답 조립에 쓰이는 값일 뿐이다.
     private TrainingSession stubSession(TrainingStatus status) {
         TrainingSession session = org.mockito.Mockito.mock(TrainingSession.class);
         TrainingScenario scenario = org.mockito.Mockito.mock(TrainingScenario.class);
         Building building = org.mockito.Mockito.mock(Building.class);
         given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(
                 SESSION_ID, SCHOOL_NAME)).willReturn(Optional.of(session));
-        given(session.getStatus()).willReturn(status);
-        if (status == TrainingStatus.RUNNING) {
-            // getEvents()는 건물 정보를 쓰지 않으므로, 그 테스트들에서는 아래 스텁이 사용되지 않는다 - lenient 처리.
-            org.mockito.Mockito.lenient().when(session.getScenario()).thenReturn(scenario);
-            org.mockito.Mockito.lenient().when(scenario.getBuilding()).thenReturn(building);
-            org.mockito.Mockito.lenient().when(building.getId()).thenReturn(BUILDING_ID);
-        }
+        // getEvents()는 건물 정보를 쓰지 않으므로, 그 테스트들에서는 아래 스텁이 사용되지 않는다 - lenient 처리.
+        org.mockito.Mockito.lenient().when(session.getStatus()).thenReturn(status);
+        org.mockito.Mockito.lenient().when(session.getScenario()).thenReturn(scenario);
+        org.mockito.Mockito.lenient().when(scenario.getBuilding()).thenReturn(building);
+        org.mockito.Mockito.lenient().when(building.getId()).thenReturn(BUILDING_ID);
         return session;
     }
 

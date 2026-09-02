@@ -205,17 +205,6 @@ class TrainingMonitoringControllerTest {
     }
 
     @Test
-    void 실행_중인_세션이_아니면_409를_반환한다() throws Exception {
-        given(trainingMonitoringService.getCameras(SESSION_ID, EMAIL))
-                .willThrow(new ApiException(TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND));
-
-        mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/cameras", SESSION_ID)
-                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("TRAINING006"));
-    }
-
-    @Test
     void S3_조회_URL_발급에_실패하면_500과_정의된_오류_응답을_반환한다() throws Exception {
         given(trainingMonitoringService.getCameras(SESSION_ID, EMAIL))
                 .willThrow(new ApiException(S3ErrorCode.PRESIGNED_GET_URL_GENERATION_FAILED));
@@ -304,17 +293,6 @@ class TrainingMonitoringControllerTest {
                         .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("TRAINING001"));
-    }
-
-    @Test
-    void 현재_상태_조회시_실행_중인_세션이_아니면_409를_반환한다() throws Exception {
-        given(trainingMonitoringService.getCurrentStates(SESSION_ID, EMAIL))
-                .willThrow(new ApiException(TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND));
-
-        mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/current-states", SESSION_ID)
-                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("TRAINING006"));
     }
 
     @Test
@@ -456,14 +434,4 @@ class TrainingMonitoringControllerTest {
                 .andExpect(jsonPath("$.code").value("TRAINING001"));
     }
 
-    @Test
-    void 이벤트_타임라인_조회시_실행_중인_세션이_아니면_409를_반환한다() throws Exception {
-        given(trainingMonitoringService.getEvents(SESSION_ID, null, EMAIL))
-                .willThrow(new ApiException(TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND));
-
-        mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/events", SESSION_ID)
-                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("TRAINING006"));
-    }
 }
