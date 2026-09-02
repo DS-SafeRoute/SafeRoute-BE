@@ -48,8 +48,7 @@ public class TrainingScenario {
 
     // 훈련 리포트의 "총 대피 시간" 항목 점수를 매길 때 기준이 되는 목표 대피 시간(초).
     // 건물 규모/층수마다 적정 대피시간이 달라 고정값이 아니라 시나리오별로 관리자가 지정한다.
-    @NotNull
-    @Column(name = "target_evacuation_sec", nullable = false)
+    @Column(name = "target_evacuation_sec")
     private Integer targetEvacuationSec;
 
     @NotNull
@@ -76,8 +75,7 @@ public class TrainingScenario {
     @JoinColumn(name = "building_id", nullable = false)
     private Building building;
 
-    // 훈련 시작 시 최초 대피 경로 계산의 출발 노드. 기존 시나리오는 값이 없을 수 있어 DB 컬럼은
-    // nullable로 두고, 신규 생성 시 필수 여부는 CreateScenarioRequest에서 강제한다.
+    // 발화 위치를 등록하기 전에는 비어 있을 수 있다. FireZoneService가 발화 층의 START 노드를 연결한다.
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "start_node_id")
     private MapNode startNode;
@@ -114,8 +112,8 @@ public class TrainingScenario {
         scenario.building = building;
         scenario.admin = admin;
         scenario.startNode = startNode;
-        // 생성 시점엔 필수 필드가 모두 채워져 있어 바로 실행 가능한 상태로 시작한다.
-        // 초안 저장(DRAFT) 플로우는 별도 엔드포인트가 생기면 그때 지정한다.
+        // 생성 직후 READY로 시작하지만, 도면 관리에서 발화점을 등록해 START 노드가
+        // 연결되기 전에는 훈련을 시작할 수 없다. DRAFT 저장 플로우는 아직 지원하지 않는다.
         scenario.status = ScenarioStatus.READY;
         return scenario;
     }
@@ -161,5 +159,9 @@ public class TrainingScenario {
 
     public UUID getStartNodeId() {
         return startNode != null ? startNode.getId() : null;
+    }
+
+    public void assignStartNode(MapNode startNode) {
+        this.startNode = startNode;
     }
 }

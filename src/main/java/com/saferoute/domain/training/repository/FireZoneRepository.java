@@ -18,6 +18,8 @@ public interface FireZoneRepository extends JpaRepository<FireZone, UUID> {
     // 관리자가 수동 지정한 최초 발화점만 조회 (확산 시뮬레이션이 생성한 FireZone은 제외)
     List<FireZone> findByScenario_IdAndIsManualAddTrue(UUID scenarioId);
 
+    boolean existsByScenario_IdAndIsManualAddTrue(UUID scenarioId);
+
     // 시나리오의 전체 FireZone(수동 발화점 + 확산으로 옮겨붙은 셀) 조회 - 세대 오름차순, 같은 세대는 등록 시각 오름차순
     List<FireZone> findByScenario_IdOrderBySpreadGenerationAscAddedAtAsc(UUID scenarioId);
 

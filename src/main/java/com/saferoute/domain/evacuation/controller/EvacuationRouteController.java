@@ -39,6 +39,10 @@ public class EvacuationRouteController {
 
                     startNodeId는 대상 층에 실제로 존재하는 노드여야 하며, 해당 층에 EXIT 대상으로
                     지정된 노드가 하나도 없거나 그래프상 도달 가능한 경로가 없으면 오류가 발생합니다.
+
+                    이 API는 도면 관리에서 임의의 노드를 기준으로 경로를 확인할 때 사용합니다.
+                    시나리오·훈련 화면은 startNodeId를 직접 선택하지 않고, 세션의
+                    GET /api/v1/sessions/{sessionId}/current-route 응답을 조회해 표시합니다.
                     """
     )
     @GetMapping("/routes")

@@ -1,7 +1,9 @@
 package com.saferoute.domain.congestion.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.saferoute.domain.congestion.entity.CongestionConfig;
 
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record CongestionConfigQueryResponse(
         boolean trainingActive,
         String trainingSessionId,

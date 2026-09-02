@@ -15,6 +15,8 @@ import com.saferoute.domain.device.service.IoTLightService;
 import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.evacuation.graph.entity.NodeType;
+import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
+import com.saferoute.domain.evacuation.recalculation.dto.response.CurrentRouteResponse;
 import com.saferoute.domain.evacuation.recalculation.dto.response.RouteRecalculationResponse;
 import com.saferoute.domain.evacuation.recalculation.entity.RecalculationStatus;
 import com.saferoute.domain.evacuation.recalculation.entity.RecalculationTriggerType;
@@ -23,7 +25,9 @@ import com.saferoute.domain.evacuation.recalculation.repository.RouteRecalculati
 import com.saferoute.domain.evacuation.service.EvacuationRoute;
 import com.saferoute.domain.evacuation.service.EvacuationRouteService;
 import com.saferoute.domain.floor.entity.Floor;
+import com.saferoute.domain.training.entity.TrainingScenario;
 import com.saferoute.domain.training.entity.TrainingSession;
+import com.saferoute.domain.training.entity.TrainingStatus;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.user.entity.User;
 import com.saferoute.domain.user.repository.UserRepository;
@@ -78,8 +82,13 @@ class RouteRecalculationServiceTest {
     @Mock
     private TrainingSessionRepository trainingSessionRepository;
 
+    @Mock
+    private MapNodeJpaRepository mapNodeJpaRepository;
+
     private TrainingSession session;
+    private TrainingScenario scenario;
     private MapEdge triggerEdge;
+    private MapNode representativeStart;
     private UUID floorId;
     private UUID startNodeId;
 
@@ -94,11 +103,16 @@ class RouteRecalculationServiceTest {
         floorId = UUID.randomUUID();
         org.mockito.Mockito.lenient().when(floor.getId()).thenReturn(floorId);
 
-        MapNode fromNode = MapNode.create(floor, "HALLWAY1", NodeType.HALLWAY, "HALLWAY1", 0, 0, false);
+        // 시나리오의 대표 startNode. 재탐색 계산은 이제 이 노드를 출발점으로 쓴다.
+        representativeStart = MapNode.create(floor, "HALLWAY1", NodeType.HALLWAY, "HALLWAY1", 0, 0, false);
         startNodeId = UUID.randomUUID();
-        ReflectionTestUtils.setField(fromNode, "id", startNodeId);
+        ReflectionTestUtils.setField(representativeStart, "id", startNodeId);
 
-        triggerEdge = MapEdge.create(floor, fromNode, mock(MapNode.class), 5.0, true);
+        scenario = mock(TrainingScenario.class);
+        org.mockito.Mockito.lenient().when(scenario.getStartNode()).thenReturn(representativeStart);
+        org.mockito.Mockito.lenient().when(session.getScenario()).thenReturn(scenario);
+
+        triggerEdge = MapEdge.create(floor, mock(MapNode.class), mock(MapNode.class), 5.0, true);
         ReflectionTestUtils.setField(triggerEdge, "id", UUID.randomUUID());
         ReflectionTestUtils.setField(triggerEdge, "floor", floor);
     }
@@ -430,5 +444,147 @@ class RouteRecalculationServiceTest {
         verify(trainingEventPublisher, never()).publishEvacuationRouteUpdatedAfterCommit(any());
         verify(trainingEventPublisher, times(1)).publishRouteRecalculationRejectedAfterCommit(recalculation);
         verify(ioTLightService, never()).applyRouteGuidance(any());
+    }
+
+    // === getCurrentRoute ===
+
+    @Test
+    @DisplayName("다른 기관의 훈련 세션으로 현재 경로를 조회하면 세션 not-found를 반환한다")
+    void getCurrentRoute_otherSchool_throwsTrainingSessionNotFound() {
+        UUID otherSessionId = UUID.randomUUID();
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(otherSessionId, SCHOOL_NAME))
+                .willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> routeRecalculationService.getCurrentRoute(otherSessionId, MANAGER_EMAIL))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("승인된 재탐색이 있으면 그 경로를 노드 상세와 함께 현재 경로로 반환한다")
+    void getCurrentRoute_withApprovedRecalculation_returnsApprovedRoute() {
+        UUID recSessionId = session.getId();
+        UUID scenarioId = UUID.randomUUID();
+        UUID buildingId = UUID.randomUUID();
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(recSessionId, SCHOOL_NAME))
+                .willReturn(Optional.of(session));
+        given(scenario.getId()).willReturn(scenarioId);
+        given(scenario.getBuildingId()).willReturn(buildingId);
+
+        MapNode stairNode = mock(MapNode.class);
+        UUID stairNodeId = UUID.randomUUID();
+        given(stairNode.getId()).willReturn(stairNodeId);
+        given(stairNode.getName()).willReturn("서측 계단");
+        given(stairNode.getType()).willReturn(NodeType.STAIR);
+        given(stairNode.getX()).willReturn(0.5);
+        given(stairNode.getY()).willReturn(0.4);
+
+        MapNode exitNode = mock(MapNode.class);
+        UUID exitNodeId = UUID.randomUUID();
+        given(exitNode.getId()).willReturn(exitNodeId);
+        given(exitNode.getName()).willReturn("1층 출입구");
+        given(exitNode.getType()).willReturn(NodeType.EXIT);
+        given(exitNode.getX()).willReturn(0.8);
+        given(exitNode.getY()).willReturn(0.3);
+
+        List<UUID> recalculatedIds = List.of(startNodeId, stairNodeId, exitNodeId);
+        RouteRecalculation approved = approvedRecalculation(recalculatedIds, 18.3);
+        given(routeRecalculationRepository.findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(
+                recSessionId, RecalculationStatus.APPROVED))
+                .willReturn(Optional.of(approved));
+        // findAllById가 저장 순서를 보장하지 않는다는 걸 검증하기 위해 일부러 뒤섞어 반환한다.
+        given(mapNodeJpaRepository.findAllById(recalculatedIds))
+                .willReturn(List.of(exitNode, representativeStart, stairNode));
+
+        CurrentRouteResponse response = routeRecalculationService.getCurrentRoute(recSessionId, MANAGER_EMAIL);
+
+        assertThat(response.sessionId()).isEqualTo(recSessionId);
+        assertThat(response.scenarioId()).isEqualTo(scenarioId);
+        assertThat(response.buildingId()).isEqualTo(buildingId);
+        assertThat(response.floorId()).isEqualTo(floorId);
+        assertThat(response.startNodeId()).isEqualTo(startNodeId);
+        assertThat(response.source()).isEqualTo(CurrentRouteResponse.RouteSource.RECALCULATED);
+        assertThat(response.path()).extracting(CurrentRouteResponse.NodePoint::nodeId)
+                .containsExactly(startNodeId, stairNodeId, exitNodeId);
+        assertThat(response.path().get(1).name()).isEqualTo("서측 계단");
+        assertThat(response.path().get(2).type()).isEqualTo(NodeType.EXIT);
+        assertThat(response.totalWeight()).isEqualTo(18.3);
+        assertThat(response.updatedAt()).isEqualTo(approved.getResolvedAt());
+    }
+
+    @Test
+    @DisplayName("SCHEDULED 세션에 승인된 재탐색이 없으면 대표 START 기준 INITIAL 경로를 반환한다")
+    void getCurrentRoute_scheduledWithoutApprovedRecalculation_returnsInitialRoute() {
+        UUID recSessionId = UUID.randomUUID();
+        UUID scenarioId = UUID.randomUUID();
+        UUID buildingId = UUID.randomUUID();
+        Instant createdAt = Instant.now();
+        TrainingSession scheduledSession = TrainingSession.schedule(mock(User.class), scenario);
+        ReflectionTestUtils.setField(scheduledSession, "id", recSessionId);
+        ReflectionTestUtils.setField(scheduledSession, "createdAt", createdAt);
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(recSessionId, SCHOOL_NAME))
+                .willReturn(Optional.of(scheduledSession));
+        given(routeRecalculationRepository.findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(
+                recSessionId, RecalculationStatus.APPROVED))
+                .willReturn(Optional.empty());
+        given(scenario.getId()).willReturn(scenarioId);
+        given(scenario.getBuildingId()).willReturn(buildingId);
+
+        MapNode exitNode = mock(MapNode.class);
+        UUID exitNodeId = UUID.randomUUID();
+        given(exitNode.getId()).willReturn(exitNodeId);
+        given(exitNode.getName()).willReturn("1층 출입구");
+        given(exitNode.getType()).willReturn(NodeType.EXIT);
+        given(exitNode.getX()).willReturn(0.8);
+        given(exitNode.getY()).willReturn(0.3);
+
+        given(evacuationRouteService.findShortestRoute(floorId, startNodeId))
+                .willReturn(new EvacuationRoute(List.of(representativeStart, exitNode), 9.5));
+
+        CurrentRouteResponse response = routeRecalculationService.getCurrentRoute(recSessionId, MANAGER_EMAIL);
+
+        assertThat(response.sessionId()).isEqualTo(recSessionId);
+        assertThat(response.scenarioId()).isEqualTo(scenarioId);
+        assertThat(response.buildingId()).isEqualTo(buildingId);
+        assertThat(response.floorId()).isEqualTo(floorId);
+        assertThat(response.startNodeId()).isEqualTo(startNodeId);
+        assertThat(response.source()).isEqualTo(CurrentRouteResponse.RouteSource.INITIAL);
+        assertThat(response.path()).extracting(CurrentRouteResponse.NodePoint::nodeId)
+                .containsExactly(startNodeId, exitNodeId);
+        assertThat(response.totalWeight()).isEqualTo(9.5);
+        assertThat(response.updatedAt()).isEqualTo(createdAt);
+        assertThat(scheduledSession.getStatus()).isEqualTo(TrainingStatus.SCHEDULED);
+        assertThat(scheduledSession.getStartedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("승인된 재탐색도 없고 대표 startNode도 없으면 START_NODE_NOT_CONFIGURED를 던진다")
+    void getCurrentRoute_noApprovedAndNoStartNode_throws() {
+        UUID recSessionId = session.getId();
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(recSessionId, SCHOOL_NAME))
+                .willReturn(Optional.of(session));
+        given(routeRecalculationRepository.findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(
+                recSessionId, RecalculationStatus.APPROVED))
+                .willReturn(Optional.empty());
+        given(scenario.getStartNode()).willReturn(null);
+
+        assertThatThrownBy(() -> routeRecalculationService.getCurrentRoute(recSessionId, MANAGER_EMAIL))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(TrainingErrorCode.START_NODE_NOT_CONFIGURED);
+    }
+
+    @Test
+    @DisplayName("시나리오에 대표 startNode가 없으면 재탐색 승인 대기 항목을 만들지 않는다")
+    void trigger_noRepresentativeStartNode_doesNothing() {
+        givenNoExistingPending();
+        given(scenario.getStartNode()).willReturn(null);
+
+        routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.CROWDED,
+                RecalculationTriggerType.STARTED, "CCTV_001", 3.5);
+
+        verify(routeRecalculationRepository, never()).save(any());
+        verify(evacuationRouteService, never()).findShortestRoute(any(), any(), anySet(), any());
     }
 }

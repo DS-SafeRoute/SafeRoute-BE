@@ -35,12 +35,13 @@ public class MapGraphEditController {
     @Operation(
             summary = "맵 노드 생성",
             description = """
-                    지정한 층에 새 노드(STAIR/ROOM/HALLWAY/DOOR/EXIT/CUSTOM)를 하나 추가합니다.
+                    지정한 층에 새 노드(STAIR/ROOM/HALLWAY/DOOR/EXIT/START/CUSTOM)를 하나 추가합니다.
                     커스텀 편집 UI에서 캔버스에 노드를 드롭했을 때 호출합니다.
 
                     code는 같은 층 안에서 유일해야 하며(floor_id + code 유니크 제약), x/y는
                     도면 가로/세로 기준 0.0~1.0 정규화 좌표입니다. isExitTarget을 true로 생성하면
                     이 노드가 대피 경로 계산(다익스트라)의 목적지 후보에 포함됩니다.
+                    단, START 노드는 요청값과 관계없이 isExitTarget=false로 저장됩니다.
 
                     CCTV/IoT 유도등 같은 기기 위치 노드는 이 API가 아니라 각 기기 도메인의
                     등록 API를 통해 CUSTOM 타입으로 생성됩니다.
@@ -57,11 +58,14 @@ public class MapGraphEditController {
     }
 
     @Operation(
-            summary = "맵 노드 위치/EXIT 대상 여부 수정",
+            summary = "맵 노드 위치/유형/EXIT 대상 여부 수정",
             description = """
-                    노드의 좌표(x, y)와 EXIT 대상(isExitTarget) 여부를 함께 수정합니다.
+                    노드의 좌표(x, y), 선택적 유형(type), EXIT 대상(isExitTarget) 여부를 수정합니다.
                     커스텀 편집 UI에서 노드를 드래그로 이동하거나 EXIT 대상 지정을 토글할 때
-                    사용하며, 두 값을 부분 수정할 수는 없고 항상 함께 전달해야 합니다.
+                    사용합니다. type을 생략하면 기존 유형을 유지합니다.
+
+                    한 층에는 START 노드를 하나만 지정할 수 있습니다. START는 항상
+                    isExitTarget=false, EXIT는 항상 isExitTarget=true로 저장됩니다.
 
                     isExitTarget을 false로 바꾸는 요청은, 그 노드가 속한 층에 남은 EXIT 대상
                     노드가 이 노드 하나뿐이면 거부됩니다(마지막 출구는 해제할 수 없음). 이때

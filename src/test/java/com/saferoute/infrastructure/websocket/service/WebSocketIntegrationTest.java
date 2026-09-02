@@ -16,14 +16,18 @@ import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.evacuation.graph.entity.NodeType;
 import com.saferoute.domain.evacuation.graph.repository.MapEdgeJpaRepository;
 import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
+import com.saferoute.domain.evacuation.grid.entity.FloorGridCell;
+import com.saferoute.domain.evacuation.grid.repository.FloorGridCellRepository;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.floor.repository.FloorRepository;
 import com.saferoute.domain.training.entity.FireSpreadSpeed;
+import com.saferoute.domain.training.entity.FireZone;
 import com.saferoute.domain.training.entity.TrainingScenario;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
 import com.saferoute.domain.training.repository.TrainingScenarioRepository;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
+import com.saferoute.domain.training.repository.FireZoneRepository;
 import com.saferoute.domain.user.entity.User;
 import com.saferoute.domain.user.entity.UserRole;
 import com.saferoute.domain.user.repository.UserRepository;
@@ -92,6 +96,12 @@ class WebSocketIntegrationTest {
 
     @Autowired
     private MapEdgeJpaRepository mapEdgeJpaRepository;
+
+    @Autowired
+    private FloorGridCellRepository floorGridCellRepository;
+
+    @Autowired
+    private FireZoneRepository fireZoneRepository;
 
     @Autowired
     private IoTLightJpaRepository iotLightJpaRepository;
@@ -218,7 +228,7 @@ class WebSocketIntegrationTest {
         Floor floor = floorRepository.save(Floor.create(building, 1));
         scenarioFloors.add(floor);
         MapNode startNode = mapNodeJpaRepository.save(
-                MapNode.create(floor, "START", NodeType.ROOM, "출발 지점", 0.1, 0.1, false));
+                MapNode.create(floor, "START", NodeType.START, "출발 지점", 0.1, 0.1, false));
         MapNode exitNode = mapNodeJpaRepository.save(
                 MapNode.create(floor, "EXIT", NodeType.EXIT, "출구", 0.9, 0.9, true));
         mapEdgeJpaRepository.save(MapEdge.create(floor, startNode, exitNode, 3.0, true));
@@ -231,7 +241,16 @@ class WebSocketIntegrationTest {
     @Test
     @DisplayName("훈련을 시작하면 구독자가 TRAINING_STATUS_UPDATED(RUNNING) 이벤트를 수신한다")
     void startingTrainingPublishesRunningEvent() throws Exception {
+        // 공통 픽스처의 RUNNING 세션을 종료해 건물당 RUNNING 세션 1개 제약을 충족시킨다.
+        trainingSession.stop(Instant.now());
+        trainingSessionRepository.saveAndFlush(trainingSession);
+
         TrainingScenario scenario = newScenario();
+        Floor fireFloor = scenario.getStartNode().getFloor();
+        FloorGridCell fireCell = floorGridCellRepository.save(
+                FloorGridCell.create(fireFloor, 0, 0, true, 0.1, 0.1));
+        FireZone fireOrigin = fireZoneRepository.save(
+                FireZone.createOrigin(scenario, fireFloor, fireCell));
         TrainingSession scheduledSession = TrainingSession.create(
                 TrainingStatus.SCHEDULED, Instant.now(), managerUser, scenario);
         trainingSessionRepository.save(scheduledSession);
@@ -249,6 +268,7 @@ class WebSocketIntegrationTest {
             session.disconnect();
         } finally {
             trainingSessionRepository.deleteById(scheduledSession.getId());
+            fireZoneRepository.delete(fireOrigin);
             trainingScenarioRepository.delete(scenario);
         }
     }

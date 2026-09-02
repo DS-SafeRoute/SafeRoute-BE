@@ -2,9 +2,13 @@ package com.saferoute.domain.training.service;
 
 import com.saferoute.domain.evacuation.grid.entity.FloorGridCell;
 import com.saferoute.domain.evacuation.grid.repository.FloorGridCellRepository;
+import com.saferoute.domain.evacuation.graph.entity.MapNode;
+import com.saferoute.domain.evacuation.graph.entity.NodeType;
+import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
 import com.saferoute.domain.training.dto.CreateFireZoneRequest;
 import com.saferoute.domain.training.dto.FireZoneResponse;
 import com.saferoute.domain.training.entity.FireZone;
+import com.saferoute.domain.training.entity.ScenarioStatus;
 import com.saferoute.domain.training.entity.TrainingScenario;
 import com.saferoute.domain.training.repository.FireZoneRepository;
 import com.saferoute.domain.training.repository.TrainingScenarioRepository;
@@ -25,14 +29,21 @@ public class FireZoneService {
     private final FireZoneRepository fireZoneRepository;
     private final TrainingScenarioRepository scenarioRepository;
     private final FloorGridCellRepository gridCellRepository;
+    private final MapNodeJpaRepository mapNodeRepository;
     private final SchoolContextService schoolContextService;
 
-    //시나리오 설정 단계에서 최초 발화점을 지정
+    // 도면 관리에서 시나리오의 최초 발화점을 1회 지정
     @Transactional
     public FireZoneResponse designateOrigin(UUID scenarioId, CreateFireZoneRequest request, String email) {
         String schoolName = schoolContextService.getSchoolName(email);
-        TrainingScenario scenario = scenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, schoolName)
+        TrainingScenario scenario = scenarioRepository.findForUpdateByIdAndBuilding_SchoolName(scenarioId, schoolName)
                 .orElseThrow(() -> new ApiException(TrainingErrorCode.TRAINING_SCENARIO_NOT_FOUND));
+        if (scenario.getStatus() != ScenarioStatus.READY) {
+            throw new ApiException(TrainingErrorCode.INVALID_STATUS_TRANSITION);
+        }
+        if (fireZoneRepository.existsByScenario_IdAndIsManualAddTrue(scenarioId)) {
+            throw new ApiException(TrainingErrorCode.FIRE_ORIGIN_ALREADY_CONFIGURED);
+        }
 
         FloorGridCell cell = gridCellRepository.findById(request.gridCellId())
                 .orElseThrow(() -> new ApiException(GridErrorCode.GRID_CELL_NOT_FOUND));
@@ -41,7 +52,17 @@ public class FireZoneService {
             throw new ApiException(GridErrorCode.GRID_CELL_FLOOR_MISMATCH);
         }
 
+        List<MapNode> startNodes = mapNodeRepository.findAllByFloor_IdAndType(
+                cell.getFloor().getId(), NodeType.START);
+        if (startNodes.isEmpty()) {
+            throw new ApiException(TrainingErrorCode.FLOOR_START_NODE_NOT_FOUND);
+        }
+        if (startNodes.size() > 1) {
+            throw new ApiException(TrainingErrorCode.FLOOR_START_NODE_DUPLICATED);
+        }
+
         cell.markFired();
+        scenario.assignStartNode(startNodes.get(0));
         FireZone origin = FireZone.createOrigin(scenario, cell.getFloor(), cell);
         fireZoneRepository.save(origin);
 

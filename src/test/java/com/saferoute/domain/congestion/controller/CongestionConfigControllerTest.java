@@ -95,6 +95,12 @@ class CongestionConfigControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.trainingActive").value(false))
                 .andExpect(jsonPath("$.trainingSessionId").doesNotExist())
+                .andExpect(jsonPath("$.monitoredAreaM2").doesNotExist())
+                .andExpect(jsonPath("$.snapshotIntervalSec").doesNotExist())
+                .andExpect(jsonPath("$.targetInferenceFps").doesNotExist())
+                .andExpect(jsonPath("$.congestionThresholds").doesNotExist())
+                .andExpect(jsonPath("$.eventDetection").doesNotExist())
+                .andExpect(jsonPath("$.cctvCode").value("CCTV_001"))
                 .andExpect(jsonPath("$.configVersion").value(1));
     }
 }

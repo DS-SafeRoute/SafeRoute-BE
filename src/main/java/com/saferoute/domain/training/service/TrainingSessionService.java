@@ -1,8 +1,11 @@
 package com.saferoute.domain.training.service;
 
 import com.saferoute.domain.building.entity.Building;
+import com.saferoute.domain.building.repository.BuildingRepository;
 import com.saferoute.domain.device.service.IoTLightService;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
+import com.saferoute.domain.evacuation.graph.entity.NodeType;
+import com.saferoute.domain.evacuation.recalculation.dto.response.CurrentRouteResponse;
 import com.saferoute.domain.evacuation.service.EvacuationRoute;
 import com.saferoute.domain.evacuation.service.EvacuationRouteService;
 import com.saferoute.domain.training.dto.CreateSessionRequest;
@@ -15,6 +18,7 @@ import com.saferoute.domain.training.dto.TrainingStatusResponse;
 import com.saferoute.domain.training.entity.TrainingScenario;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
+import com.saferoute.domain.training.entity.FireZone;
 import com.saferoute.domain.evacuation.recalculation.service.RouteRecalculationService;
 import com.saferoute.domain.training.repository.FireZoneRepository;
 import com.saferoute.domain.training.repository.TrainingScenarioRepository;
@@ -56,7 +60,9 @@ public class TrainingSessionService {
   private final IoTLightService ioTLightService;
   private final TrainingEventPublisher trainingEventPublisher;
   private final SchoolContextService schoolContextService;
+  private final BuildingRepository buildingRepository;
 
+  @Transactional
   public TrainingSessionResponse create(CreateSessionRequest request, UUID scenarioId, String email) {
     String schoolName = schoolContextService.getSchoolName(email);
     User user = userRepository.findByIdAndSchoolName(request.getAdminId(), schoolName)
@@ -71,16 +77,7 @@ public class TrainingSessionService {
       throw new ApiException(TrainingErrorCode.SESSION_ALREADY_EXISTS);
     }
 
-    if (request.getStatus() == TrainingStatus.RUNNING && request.getStartedAt() == null) {
-      throw new ApiException(ErrorCode.INVALID_INPUT);
-    }
-
-    TrainingSession trainingSession = TrainingSession.create(
-        request.getStatus(),
-        request.getStartedAt(),
-        user,
-        scenario
-    );
+    TrainingSession trainingSession = TrainingSession.schedule(user, scenario);
 
     // existsByScenario_Id 체크와 save는 원자적이지 않아 동시 요청이 둘 다 통과할 수 있다.
     // 이 경우 뒤늦게 실패하는 쪽은 UNIQUE 제약 위반으로 걸러지므로, saveAndFlush로 INSERT를
@@ -96,8 +93,12 @@ public class TrainingSessionService {
   @Transactional(readOnly = true)
   public TrainingSessionListResponse getSessions(TrainingStatus status, String email) {
     String schoolName = schoolContextService.getSchoolName(email);
-    List<TrainingSessionSummaryResponse> sessions = trainingSessionRepository
-        .findAllByStatusAndScenario_Building_SchoolNameOrderByStartedAtDesc(status, schoolName)
+    List<TrainingSession> trainingSessions = status == TrainingStatus.SCHEDULED
+        ? trainingSessionRepository
+            .findAllByStatusAndScenario_Building_SchoolNameOrderByCreatedAtDesc(status, schoolName)
+        : trainingSessionRepository
+            .findAllByStatusAndScenario_Building_SchoolNameOrderByStartedAtDesc(status, schoolName);
+    List<TrainingSessionSummaryResponse> sessions = trainingSessions
         .stream()
         .map(TrainingSessionSummaryResponse::from)
         .toList();
@@ -141,13 +142,29 @@ public class TrainingSessionService {
       throw new ApiException(TrainingErrorCode.INVALID_STATUS_TRANSITION);
     }
 
+    if (hasRunningSession(session.getScenario().getBuildingId())) {
+      throw new ApiException(TrainingErrorCode.RUNNING_SESSION_ALREADY_EXISTS);
+    }
+
     // 유도등 반영 전 최초 경로부터 계산해, EXIT 미지정/도달 불가 시 세션 상태를 바꾸지 않고 막는다.
     MapNode startNode = session.getScenario().getStartNode();
     if (startNode == null) {
       throw new ApiException(TrainingErrorCode.START_NODE_NOT_CONFIGURED);
     }
+    if (startNode.getType() != NodeType.START) {
+      throw new ApiException(TrainingErrorCode.START_NODE_TYPE_INVALID);
+    }
+    List<FireZone> fireOrigins = fireZoneRepository
+        .findByScenario_IdAndIsManualAddTrue(session.getScenario().getId());
+    if (fireOrigins.isEmpty()) {
+      throw new ApiException(TrainingErrorCode.FIRE_ORIGIN_NOT_CONFIGURED);
+    }
+    UUID startFloorId = startNode.getFloor().getId();
+    if (fireOrigins.stream().anyMatch(origin -> !startFloorId.equals(origin.getFloorId()))) {
+      throw new ApiException(TrainingErrorCode.FIRE_ORIGIN_START_FLOOR_MISMATCH);
+    }
     EvacuationRoute initialRoute =
-        evacuationRouteService.findShortestRoute(startNode.getFloor().getId(), startNode.getId());
+        evacuationRouteService.findShortestRoute(startFloorId, startNode.getId());
 
     session.start(Instant.now());
     session.getScenario().markInProgress();
@@ -219,9 +236,24 @@ public class TrainingSessionService {
     }
   }
 
+  // "지금 안내되고 있는 경로" 조회는 재탐색 승인 이력까지 함께 봐야 해서 실제 로직은
+  // RouteRecalculationService가 갖고 있다 - 이 메서드는 /api/v1/sessions 하위 URL 컨벤션에
+  // 맞추기 위한 위임일 뿐이다.
+  @Transactional(readOnly = true)
+  public CurrentRouteResponse getCurrentRoute(UUID sessionId, String email) {
+    return routeRecalculationService.getCurrentRoute(sessionId, email);
+  }
+
   private TrainingSession findSession(UUID sessionId, String email) {
     String schoolName = schoolContextService.getSchoolName(email);
     return trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, schoolName)
         .orElseThrow(() -> new ApiException(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND));
+  }
+
+  private boolean hasRunningSession(UUID buildingId) {
+    // 건물 행 잠금 이후 RUNNING 여부를 검사해야 동시 시작 요청도 하나만 성공한다.
+    buildingRepository.findByIdForUpdate(buildingId);
+    return trainingSessionRepository.existsByStatusAndScenario_Building_Id(
+        TrainingStatus.RUNNING, buildingId);
   }
 }

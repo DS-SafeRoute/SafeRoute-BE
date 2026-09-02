@@ -3,6 +3,9 @@ package com.saferoute.domain.evacuation.recalculation.service;
 import com.saferoute.domain.congestion.entity.CongestionLevel;
 import com.saferoute.domain.device.service.IoTLightService;
 import com.saferoute.domain.evacuation.graph.entity.MapEdge;
+import com.saferoute.domain.evacuation.graph.entity.MapNode;
+import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
+import com.saferoute.domain.evacuation.recalculation.dto.response.CurrentRouteResponse;
 import com.saferoute.domain.evacuation.recalculation.dto.response.RouteRecalculationDetailResponse;
 import com.saferoute.domain.evacuation.recalculation.dto.response.RouteRecalculationResponse;
 import com.saferoute.domain.evacuation.recalculation.dto.response.RouteRecalculationSummaryResponse;
@@ -12,6 +15,7 @@ import com.saferoute.domain.evacuation.recalculation.entity.RouteRecalculation;
 import com.saferoute.domain.evacuation.recalculation.repository.RouteRecalculationRepository;
 import com.saferoute.domain.evacuation.service.EvacuationRoute;
 import com.saferoute.domain.evacuation.service.EvacuationRouteService;
+import com.saferoute.domain.training.entity.TrainingScenario;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.user.entity.User;
@@ -27,6 +31,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -52,6 +57,7 @@ public class RouteRecalculationService {
     private final TrainingEventPublisher trainingEventPublisher;
     private final SchoolContextService schoolContextService;
     private final TrainingSessionRepository trainingSessionRepository;
+    private final MapNodeJpaRepository mapNodeJpaRepository;
 
     // 혼잡 감지로 트리거되는 우회 경로 재탐색.
     // - 같은 세션+엣지에 이미 PENDING이 있고 레벨이 그대로면 반복 트리거를 무시한다.
@@ -79,9 +85,15 @@ public class RouteRecalculationService {
         }
 
         UUID floorId = triggerEdge.getFloor().getId();
-        // TODO: 양방향 엣지에서는 실제로 반대편(toNode) 기준 우회도 필요할 수 있다 - 지금은
-        // fromNode 기준으로 고정한다
-        UUID startNodeId = triggerEdge.getFromNode().getId();
+        // 현재 유효 경로는 항상 "시나리오 대표 startNode -> EXIT" 완전한 한 경로여야 하므로,
+        // 혼잡 엣지의 fromNode가 아니라 시나리오의 대표 startNode에서 다시 계산한다.
+        MapNode representativeStart = session.getScenario().getStartNode();
+        if (representativeStart == null) {
+            log.warn("시나리오에 대표 startNode가 없어 재탐색 승인 대기 항목을 생성하지 않음: sessionId={}",
+                    session.getId());
+            return;
+        }
+        UUID startNodeId = representativeStart.getId();
 
         RouteSnapshot previous = resolveActiveRoute(session, triggerEdge, floorId, startNodeId);
 
@@ -128,7 +140,13 @@ public class RouteRecalculationService {
         RouteRecalculation activeDetour = latestApproved.get();
 
         UUID floorId = triggerEdge.getFloor().getId();
-        UUID startNodeId = triggerEdge.getFromNode().getId();
+        MapNode representativeStart = session.getScenario().getStartNode();
+        if (representativeStart == null) {
+            log.warn("시나리오에 대표 startNode가 없어 재탐색 승인 대기 항목을 생성하지 않음: sessionId={}",
+                    session.getId());
+            return;
+        }
+        UUID startNodeId = representativeStart.getId();
 
         EvacuationRoute recovery;
         try {
@@ -225,6 +243,72 @@ public class RouteRecalculationService {
     @Transactional(readOnly = true)
     public RouteRecalculationDetailResponse getRecalculationDetail(UUID recalculationId, String email) {
         return RouteRecalculationDetailResponse.from(findOrThrow(recalculationId, email));
+    }
+
+    // "지금 안내되고 있는 경로"를 세션 단위로 한 번에, 도면에 바로 그릴 수 있는 노드 상세
+    // 목록으로 반환한다. resolveActiveRoute()와 동일한 우선순위(가장 최근 승인된 재탐색 >
+    // 시나리오 대표 startNode 기준 최단 경로)를 쓰지만, 특정 triggerEdge에 종속되지 않고
+    // 세션 전체에서 가장 최근 승인 건을 찾는다는 점이 다르다.
+    // 세션 상태(RUNNING 여부)는 검증하지 않는다 - SCHEDULED 세션은 아직 재탐색이 없으므로
+    // 자연히 최단 경로로, COMPLETED/ERROR 세션은 종료 시점까지의 마지막 승인 경로로 응답된다.
+    @Transactional(readOnly = true)
+    public CurrentRouteResponse getCurrentRoute(UUID sessionId, String email) {
+        String schoolName = schoolContextService.getSchoolName(email);
+        TrainingSession session = trainingSessionRepository
+                .findByIdAndScenario_Building_SchoolName(sessionId, schoolName)
+                .orElseThrow(() -> new ApiException(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND));
+        TrainingScenario scenario = session.getScenario();
+
+        Optional<RouteRecalculation> latestApproved = routeRecalculationRepository
+                .findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(sessionId, RecalculationStatus.APPROVED);
+        if (latestApproved.isPresent()) {
+            RouteRecalculation approved = latestApproved.get();
+            List<CurrentRouteResponse.NodePoint> path = toNodePoints(approved.getRecalculatedNodeIds());
+            UUID startNodeId = path.isEmpty() ? null : path.get(0).nodeId();
+            return new CurrentRouteResponse(
+                    sessionId,
+                    scenario.getId(),
+                    scenario.getBuildingId(),
+                    approved.getTriggerEdge().getFloor().getId(),
+                    startNodeId,
+                    CurrentRouteResponse.RouteSource.RECALCULATED,
+                    path,
+                    approved.getTotalWeight(),
+                    approved.getResolvedAt());
+        }
+
+        MapNode representativeStart = scenario.getStartNode();
+        if (representativeStart == null) {
+            throw new ApiException(TrainingErrorCode.START_NODE_NOT_CONFIGURED);
+        }
+        UUID floorId = representativeStart.getFloor().getId();
+        EvacuationRoute directRoute =
+                evacuationRouteService.findShortestRoute(floorId, representativeStart.getId());
+        List<CurrentRouteResponse.NodePoint> path = directRoute.path().stream()
+                .map(CurrentRouteResponse.NodePoint::from)
+                .toList();
+        return new CurrentRouteResponse(
+                sessionId,
+                scenario.getId(),
+                scenario.getBuildingId(),
+                floorId,
+                representativeStart.getId(),
+                CurrentRouteResponse.RouteSource.INITIAL,
+                path,
+                directRoute.totalWeight(),
+                session.getCreatedAt());
+    }
+
+    // RouteRecalculation은 노드 id만 저장하므로(@ElementCollection), 도면에 그릴 이름/타입/좌표를
+    // 채우려면 MapNode를 다시 조회해야 한다. findAllById는 순서를 보장하지 않으므로 원래
+    // 저장된 순서(출발 -> 도착)대로 재정렬한다.
+    private List<CurrentRouteResponse.NodePoint> toNodePoints(List<UUID> nodeIds) {
+        Map<UUID, MapNode> nodesById = mapNodeJpaRepository.findAllById(nodeIds).stream()
+                .collect(Collectors.toMap(MapNode::getId, node -> node));
+        return nodeIds.stream()
+                .map(nodesById::get)
+                .map(CurrentRouteResponse.NodePoint::from)
+                .toList();
     }
 
     @Transactional
