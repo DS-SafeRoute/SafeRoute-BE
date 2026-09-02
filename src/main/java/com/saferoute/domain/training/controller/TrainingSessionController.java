@@ -40,7 +40,8 @@ public class TrainingSessionController {
   @Operation(
       summary = "상태별 훈련 세션 목록 조회",
       description = """
-              요청자 학교 소속 훈련 세션을 상태로 필터링해 최신 시작 순으로 반환합니다.
+              요청자 학교 소속 훈련 세션을 상태로 필터링해 반환합니다. SCHEDULED 세션은
+              생성 시각 최신순으로, 그 외 상태는 실제 훈련 시작 시각 최신순으로 정렬합니다.
 
               모니터링 화면에 진입할 sessionId를 얻는 용도로 사용합니다.
               예: GET /api/v1/sessions?status=RUNNING

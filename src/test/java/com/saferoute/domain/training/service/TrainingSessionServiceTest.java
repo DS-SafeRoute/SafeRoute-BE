@@ -123,36 +123,47 @@ class TrainingSessionServiceTest {
     // === getSessions ===
 
     @Test
-    @DisplayName("요청자 학교의 SCHEDULED 세션 목록에 실제 시나리오 ID를 포함한다")
-    void getSessions_scheduledIncludesScenarioId() {
+    @DisplayName("SCHEDULED 세션 목록을 생성 시각 기준 최신순으로 반환한다")
+    void getSessions_scheduledOrdersByCreatedAtDescending() {
         UUID buildingId = UUID.randomUUID();
-        UUID scenarioId = UUID.randomUUID();
+        UUID newestScenarioId = UUID.randomUUID();
+        UUID olderScenarioId = UUID.randomUUID();
         Building building = mock(Building.class);
         given(building.getId()).willReturn(buildingId);
         given(building.getName()).willReturn("A동");
-        TrainingScenario scenario = mock(TrainingScenario.class);
-        given(scenario.getId()).willReturn(scenarioId);
-        given(scenario.getName()).willReturn("3학년 A동 화재 대피 훈련");
-        given(scenario.getBuilding()).willReturn(building);
-        TrainingSession session =
-                TrainingSession.schedule(mock(User.class), scenario);
-        ReflectionTestUtils.setField(session, "id", sessionId);
+
+        TrainingScenario newestScenario = mock(TrainingScenario.class);
+        given(newestScenario.getId()).willReturn(newestScenarioId);
+        given(newestScenario.getName()).willReturn("최신 훈련");
+        given(newestScenario.getBuilding()).willReturn(building);
+        TrainingSession newestSession = TrainingSession.schedule(mock(User.class), newestScenario);
+        ReflectionTestUtils.setField(newestSession, "id", sessionId);
+        ReflectionTestUtils.setField(newestSession, "createdAt", Instant.parse("2026-09-03T10:00:00Z"));
+
+        TrainingScenario olderScenario = mock(TrainingScenario.class);
+        given(olderScenario.getId()).willReturn(olderScenarioId);
+        given(olderScenario.getName()).willReturn("이전 훈련");
+        given(olderScenario.getBuilding()).willReturn(building);
+        TrainingSession olderSession = TrainingSession.schedule(mock(User.class), olderScenario);
+        ReflectionTestUtils.setField(olderSession, "id", UUID.randomUUID());
+        ReflectionTestUtils.setField(olderSession, "createdAt", Instant.parse("2026-09-02T10:00:00Z"));
+
         given(trainingSessionRepository
-                .findAllByStatusAndScenario_Building_SchoolNameOrderByStartedAtDesc(
+                .findAllByStatusAndScenario_Building_SchoolNameOrderByCreatedAtDesc(
                         TrainingStatus.SCHEDULED, SCHOOL_NAME))
-                .willReturn(List.of(session));
+                .willReturn(List.of(newestSession, olderSession));
 
         TrainingSessionListResponse response = trainingSessionService.getSessions(TrainingStatus.SCHEDULED, EMAIL);
 
-        assertThat(response.sessions()).hasSize(1);
-        TrainingSessionSummaryResponse summary = response.sessions().get(0);
-        assertThat(summary.sessionId()).isEqualTo(sessionId);
-        assertThat(summary.scenarioId()).isEqualTo(scenarioId);
-        assertThat(summary.scenarioName()).isEqualTo("3학년 A동 화재 대피 훈련");
-        assertThat(summary.buildingId()).isEqualTo(buildingId);
-        assertThat(summary.buildingName()).isEqualTo("A동");
-        assertThat(summary.status()).isEqualTo(TrainingStatus.SCHEDULED);
-        assertThat(summary.startedAt()).isNull();
+        assertThat(response.sessions())
+                .extracting(TrainingSessionSummaryResponse::scenarioId)
+                .containsExactly(newestScenarioId, olderScenarioId);
+        assertThat(response.sessions())
+                .extracting(TrainingSessionSummaryResponse::startedAt)
+                .containsOnlyNulls();
+        verify(trainingSessionRepository)
+                .findAllByStatusAndScenario_Building_SchoolNameOrderByCreatedAtDesc(
+                        TrainingStatus.SCHEDULED, SCHOOL_NAME);
     }
 
     @Test

@@ -1,7 +1,8 @@
 package com.saferoute.domain.training.controller;
 
-import static org.mockito.ArgumentMatchers.eq;
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -95,7 +96,9 @@ class TrainingSessionControllerTest {
                 .andExpect(jsonPath("$.result.sessions[0].buildingId").value(buildingId.toString()))
                 .andExpect(jsonPath("$.result.sessions[0].buildingName").value("A동"))
                 .andExpect(jsonPath("$.result.sessions[0].status").value("SCHEDULED"))
-                .andExpect(jsonPath("$.result.sessions[0].startedAt").doesNotExist());
+                .andExpect(jsonPath("$.result.sessions[0].startedAt").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .string(containsString("\"startedAt\":null")));
     }
 
     @Test

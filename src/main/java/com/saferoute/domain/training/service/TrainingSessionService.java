@@ -93,8 +93,12 @@ public class TrainingSessionService {
   @Transactional(readOnly = true)
   public TrainingSessionListResponse getSessions(TrainingStatus status, String email) {
     String schoolName = schoolContextService.getSchoolName(email);
-    List<TrainingSessionSummaryResponse> sessions = trainingSessionRepository
-        .findAllByStatusAndScenario_Building_SchoolNameOrderByStartedAtDesc(status, schoolName)
+    List<TrainingSession> trainingSessions = status == TrainingStatus.SCHEDULED
+        ? trainingSessionRepository
+            .findAllByStatusAndScenario_Building_SchoolNameOrderByCreatedAtDesc(status, schoolName)
+        : trainingSessionRepository
+            .findAllByStatusAndScenario_Building_SchoolNameOrderByStartedAtDesc(status, schoolName);
+    List<TrainingSessionSummaryResponse> sessions = trainingSessions
         .stream()
         .map(TrainingSessionSummaryResponse::from)
         .toList();
