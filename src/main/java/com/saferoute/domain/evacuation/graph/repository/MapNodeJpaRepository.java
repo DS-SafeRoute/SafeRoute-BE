@@ -28,8 +28,6 @@ public interface MapNodeJpaRepository extends JpaRepository<MapNode, UUID> {
 
     boolean existsByFloor_IdAndCode(UUID floorId, String code);
 
-    boolean existsByFloor_IdAndType(UUID floorId, NodeType type);
-
     void deleteAllByFloor_Id(UUID floorId);
 
     void deleteAllByFloor(Floor floor);

@@ -58,11 +58,6 @@ public class MapGraphService {
     public MapNodeResponse createNode(UUID floorId, CreateMapNodeRequest request) {
         Floor floor = floorRepository.findById(floorId)
                 .orElseThrow(() -> new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
-        if (request.type() == NodeType.START) {
-            floorRepository.findByIdForUpdate(floorId)
-                    .orElseThrow(() -> new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
-            validateStartNodeDoesNotExist(floorId);
-        }
         boolean isExitTarget = resolveExitTarget(request.type(), request.isExitTarget());
         MapNode node = mapGraphRepository.addNode(floor, request.code(), request.type(), request.name(),
                 request.x(), request.y(), isExitTarget);
@@ -75,17 +70,10 @@ public class MapGraphService {
         MapNode node = findNodeOrThrow(nodeId);
         NodeType nextType = request.type() != null ? request.type() : node.getType();
         boolean nextExitTarget = resolveExitTarget(nextType, request.isExitTarget());
-        boolean needsFloorLock = !nextExitTarget
-                || (nextType == NodeType.START && node.getType() != NodeType.START);
-        if (needsFloorLock) {
+        if (!nextExitTarget) {
             // 동일 층에 대한 동시 수정 요청을 직렬화해 마지막 EXIT 카운트 검증과 해제 사이의 경쟁을 방지
             floorRepository.findByIdForUpdate(node.getFloor().getId())
                     .orElseThrow(() -> new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
-        }
-        if (nextType == NodeType.START && node.getType() != NodeType.START) {
-            validateStartNodeDoesNotExist(node.getFloor().getId());
-        }
-        if (!nextExitTarget) {
             validateNotLastExitNode(node, EvacuationErrorCode.EXIT_NODE_UNSET_NOT_ALLOWED);
         }
         node.changeType(nextType);
@@ -102,12 +90,6 @@ public class MapGraphService {
             return true;
         }
         return requestedExitTarget;
-    }
-
-    private void validateStartNodeDoesNotExist(UUID floorId) {
-        if (mapGraphRepository.existsNodeByFloorAndType(floorId, NodeType.START)) {
-            throw new ApiException(EvacuationErrorCode.FLOOR_START_NODE_ALREADY_EXISTS);
-        }
     }
 
     // 노드 삭제 (연결된 엣지도 함께 삭제)
