@@ -176,16 +176,26 @@ class MapGraphServiceTest {
     @Test
     @DisplayName("한 층에 START 후보 노드를 여러 개 생성할 수 있다")
     void createNode_multipleStartNodes_allowed() {
-        CreateMapNodeRequest request =
+        CreateMapNodeRequest firstRequest =
+                new CreateMapNodeRequest("START1", NodeType.START, "대피 시작점 후보 1", 0.1, 0.2, false);
+        CreateMapNodeRequest secondRequest =
                 new CreateMapNodeRequest("START2", NodeType.START, "대피 시작점 후보 2", 0.3, 0.4, false);
-        MapNode savedNode = createNode("START2", NodeType.START);
+        MapNode firstSaved = createNode("START1", NodeType.START);
+        MapNode secondSaved = createNode("START2", NodeType.START);
         given(floorRepository.findById(floorId)).willReturn(Optional.of(floor));
+        given(mapGraphRepository.addNode(floor, "START1", NodeType.START, "대피 시작점 후보 1", 0.1, 0.2, false))
+                .willReturn(firstSaved);
         given(mapGraphRepository.addNode(floor, "START2", NodeType.START, "대피 시작점 후보 2", 0.3, 0.4, false))
-                .willReturn(savedNode);
+                .willReturn(secondSaved);
 
-        MapNodeResponse response = mapGraphService.createNode(floorId, request);
+        // 같은 층에 첫 번째 START 후보가 이미 존재하는 상태에서
+        mapGraphService.createNode(floorId, firstRequest);
+        // 두 번째 START 후보를 생성해도 거부되지 않는다
+        MapNodeResponse response = mapGraphService.createNode(floorId, secondRequest);
 
+        assertThat(response.code()).isEqualTo("START2");
         assertThat(response.type()).isEqualTo(NodeType.START);
+        verify(mapGraphRepository).addNode(floor, "START1", NodeType.START, "대피 시작점 후보 1", 0.1, 0.2, false);
         verify(mapGraphRepository).addNode(floor, "START2", NodeType.START, "대피 시작점 후보 2", 0.3, 0.4, false);
     }
 
@@ -279,6 +289,8 @@ class MapGraphServiceTest {
     @Test
     @DisplayName("같은 층에 이미 START가 있어도 다른 노드를 START로 변경할 수 있다")
     void updateNodePosition_changeTypeToStart_allowedWithExistingStart() {
+        // 같은 층에 이미 START로 지정된 노드가 존재하는 상태
+        MapNode existingStartNode = createNode("START1", NodeType.START);
         MapNode node = createNode("HALLWAY1", NodeType.HALLWAY);
         UpdateMapNodePositionRequest request =
                 new UpdateMapNodePositionRequest(10.0, 20.0, false, NodeType.START);
@@ -288,6 +300,7 @@ class MapGraphServiceTest {
 
         MapNodeResponse response = mapGraphService.updateNodePosition(node.getId(), request);
 
+        assertThat(existingStartNode.getType()).isEqualTo(NodeType.START);
         assertThat(response.type()).isEqualTo(NodeType.START);
         verify(mapGraphRepository).updateNodePosition(node, 10.0, 20.0, false);
     }
