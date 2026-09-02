@@ -13,6 +13,7 @@ public class TrainingSessionResponse {
   private UUID id;
   private TrainingStatus status;
   private Instant startedAt;
+  private Instant endedAt;
   private String adminName;
   private String scenarioName;
 
@@ -21,6 +22,7 @@ public class TrainingSessionResponse {
         .id(session.getId())
         .status(session.getStatus())
         .startedAt(session.getStartedAt())
+        .endedAt(session.getEndedAt())
         .adminName(session.getAdmin().getUsername())
         .scenarioName(session.getScenario().getName())
         .build();
