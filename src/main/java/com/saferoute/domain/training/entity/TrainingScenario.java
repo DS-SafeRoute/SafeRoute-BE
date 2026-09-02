@@ -112,8 +112,8 @@ public class TrainingScenario {
         scenario.building = building;
         scenario.admin = admin;
         scenario.startNode = startNode;
-        // 생성 시점엔 필수 필드가 모두 채워져 있어 바로 실행 가능한 상태로 시작한다.
-        // 초안 저장(DRAFT) 플로우는 별도 엔드포인트가 생기면 그때 지정한다.
+        // 생성 직후 READY로 시작하지만, 도면 관리에서 발화점을 등록해 START 노드가
+        // 연결되기 전에는 훈련을 시작할 수 없다. DRAFT 저장 플로우는 아직 지원하지 않는다.
         scenario.status = ScenarioStatus.READY;
         return scenario;
     }

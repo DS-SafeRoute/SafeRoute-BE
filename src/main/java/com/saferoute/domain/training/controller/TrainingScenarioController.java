@@ -85,11 +85,13 @@ public class TrainingScenarioController {
                     시나리오 전체에 하나로 적용되며(발화점별 개별 지정 불가), 훈련 시작 후 화재
                     확산 시뮬레이션의 tick 간격을 결정합니다(FAST가 가장 빠르게 확산).
 
-                    startNodeId는 요청으로 받지 않습니다. 발화점을 등록하면 서버가 같은 층의
-                    START 노드를 찾아 시나리오에 연결합니다. targetEvacuationSec도 선택값입니다.
+                    startNodeId는 요청으로 받지 않습니다. 도면 관리에서 최초 발화점을
+                    등록하면 서버가 발화층의 대표 START 노드를 찾아 시나리오에
+                    자동으로 연결합니다. targetEvacuationSec도 선택값입니다.
 
-                    생성 직후 시나리오의 상태는 READY이지만, 훈련을 시작하려면 발화점을
-                    등록하고 같은 층의 START 노드가 시나리오에 연결되어야 합니다.
+                    생성 직후 시나리오의 상태는 READY이지만 바로 실행할 수는 없습니다.
+                    도면 관리에서 최초 발화점이 등록되고 같은 층의 START 노드가
+                    시나리오에 연결되어야 훈련을 시작할 수 있습니다.
                     초안(DRAFT) 저장 플로우는 아직 지원하지 않습니다.
                     """
     )
@@ -108,8 +110,9 @@ public class TrainingScenarioController {
                     요청 바디에 값이 채워진 필드만 부분 수정합니다. null인 필드는 기존 값을
                     그대로 유지하므로, 값을 지우고 싶다고 해서 null을 보내면 변경되지 않습니다.
 
-                    startNodeId는 이 API로 변경하지 않습니다. 발화점 층의 START 노드를 서버가
-                    자동으로 연결합니다. buildingId, adminId, status는 이 API로 변경할 수 없습니다.
+                    startNodeId는 이 API로 변경하지 않습니다. 도면 관리에서 등록한
+                    발화점 층의 START 노드를 서버가 자동으로 연결합니다.
+                    buildingId, adminId, status는 이 API로 변경할 수 없습니다.
 
                     시나리오의 status(READY/IN_PROGRESS/COMPLETED/ERROR)는 연결된 훈련
                     세션의 생명주기에 따라 서버가 자동으로 전이시키는 값이라 이 API로는 건드릴
@@ -146,7 +149,7 @@ public class TrainingScenarioController {
 
     // GET /api/v1/scenarios/{scenarioId}/fire-origin
     @Operation(
-            summary = "최초 발화점 목록 조회",
+            summary = "시나리오 최초 발화점 조회(표시용)",
             description = """
                     도면 관리에서 POST /api/v1/scenarios/{scenarioId}/fire-zones로 등록한
                     최초 발화점(FireZone.isManualAdd = true) 목록을 반환합니다.
