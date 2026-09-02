@@ -14,6 +14,18 @@ public record MonitoringFrameResponse(
         long capturedAt,
 
         @Schema(
+                description = "이 프레임이 속한 분석 구간의 시작 시각(Unix epoch milliseconds)",
+                example = "1787722090000"
+        )
+        long windowStart,
+
+        @Schema(
+                description = "이 프레임이 속한 분석 구간의 종료 시각(Unix epoch milliseconds)",
+                example = "1787722095000"
+        )
+        long windowEnd,
+
+        @Schema(
                 description = "프레임 이미지의 S3 presigned GET URL. 이미지 업로드가 아직 끝나지 않았으면 null",
                 example = "https://example-bucket.s3.amazonaws.com/training/session/monitoring/CCTV_001/frame.jpg",
                 nullable = true
@@ -41,6 +53,8 @@ public record MonitoringFrameResponse(
         return new MonitoringFrameResponse(
                 item.getEventId(),
                 item.getCapturedAt(),
+                item.getWindowStart(),
+                item.getWindowEnd(),
                 null,
                 null,
                 item.getPeakHeadcount(),
@@ -53,6 +67,8 @@ public record MonitoringFrameResponse(
         return new MonitoringFrameResponse(
                 item.getEventId(),
                 item.getCapturedAt(),
+                item.getWindowStart(),
+                item.getWindowEnd(),
                 presignedGetUrl.viewUrl(),
                 presignedGetUrl.expiresAt().toEpochMilli(),
                 item.getPeakHeadcount(),
