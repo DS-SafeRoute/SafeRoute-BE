@@ -43,6 +43,11 @@ public class MapGraphEditController {
                     이 노드가 대피 경로 계산(다익스트라)의 목적지 후보에 포함됩니다.
                     단, START 노드는 요청값과 관계없이 isExitTarget=false로 저장됩니다.
 
+                    START 노드는 특정 시나리오에 귀속되지 않는, 시나리오 설정 화면에서 선택
+                    가능한 훈련 시작점 후보입니다. 한 층에 여러 개 등록할 수 있으며, 실제로
+                    어떤 START를 사용할지는 시나리오 설정 단계에서 선택합니다. 이 API는 후보를
+                    등록할 뿐 특정 시나리오의 발화점이나 훈련 시작점을 저장하지 않습니다.
+
                     CCTV/IoT 유도등 같은 기기 위치 노드는 이 API가 아니라 각 기기 도메인의
                     등록 API를 통해 CUSTOM 타입으로 생성됩니다.
                     """
@@ -64,7 +69,8 @@ public class MapGraphEditController {
                     커스텀 편집 UI에서 노드를 드래그로 이동하거나 EXIT 대상 지정을 토글할 때
                     사용합니다. type을 생략하면 기존 유형을 유지합니다.
 
-                    한 층에는 START 노드를 하나만 지정할 수 있습니다. START는 항상
+                    한 층에 START 후보 노드를 여러 개 둘 수 있으므로, 다른 노드를 START로
+                    변경할 때 같은 층에 이미 START가 있어도 거부되지 않습니다. START는 항상
                     isExitTarget=false, EXIT는 항상 isExitTarget=true로 저장됩니다.
 
                     isExitTarget을 false로 바꾸는 요청은, 그 노드가 속한 층에 남은 EXIT 대상
