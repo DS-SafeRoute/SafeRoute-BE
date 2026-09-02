@@ -5,6 +5,8 @@ import com.saferoute.domain.building.dto.response.BuildingResponse;
 import com.saferoute.domain.building.dto.request.CreateBuildingRequest;
 import com.saferoute.domain.building.dto.request.UpdateBuildingRequest;
 import com.saferoute.domain.building.repository.BuildingRepository;
+import com.saferoute.domain.floor.repository.FloorRepository;
+import com.saferoute.domain.training.repository.TrainingScenarioRepository;
 import com.saferoute.domain.user.entity.User;
 import com.saferoute.domain.user.repository.UserRepository;
 import java.util.List;
@@ -14,7 +16,6 @@ import com.saferoute.global.api.error.BuildingErrorCode;
 import com.saferoute.global.api.error.UserErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +25,8 @@ public class BuildingService {
 
     private final BuildingRepository buildingRepository;
     private final UserRepository userRepository;
+    private final FloorRepository floorRepository;
+    private final TrainingScenarioRepository trainingScenarioRepository;
 
     @Transactional
     public BuildingResponse createBuilding(CreateBuildingRequest request, String email) {
@@ -62,17 +65,19 @@ public class BuildingService {
         findBuildingByIdAndEmail(buildingId, email).deactivate();
     }
 
-    // TrainingScenario.building 에는 CASCADE가 없으므로, 이 건물을 참조하는 훈련 기록이
-    // 하나라도 있으면 DB가 FK 위반으로 삭제를 막는다 — 그 경우 deactivateBuilding()을 쓸 것.
     @Transactional
     public void deleteBuilding(UUID buildingId, String email) {
         Building building = findBuildingByIdAndEmail(buildingId, email);
-        try {
-            buildingRepository.delete(building);
-            buildingRepository.flush(); // 트랜잭션 커밋 전에 FK 위반을 여기서 확인
-        } catch (DataIntegrityViolationException e) {
+
+        if (trainingScenarioRepository.existsByBuilding_Id(buildingId)) {
             throw new ApiException(BuildingErrorCode.BUILDING_HAS_TRAINING_HISTORY);
         }
+
+        // Floor 하위 도면 데이터는 DB ON DELETE CASCADE로 함께 정리된다.
+        // 건물을 삭제하기 전에 Floor FK를 먼저 제거해야 한다.
+        floorRepository.deleteAllByBuilding_Id(buildingId);
+        floorRepository.flush();
+        buildingRepository.delete(building);
     }
 
     private Building findBuildingByIdAndEmail(UUID buildingId, String email) {

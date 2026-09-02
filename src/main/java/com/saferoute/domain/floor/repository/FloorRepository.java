@@ -15,6 +15,7 @@ public interface FloorRepository extends JpaRepository<Floor, UUID> {
     Optional<Floor> findByIdAndBuilding_SchoolName(UUID id, String schoolName);
     Optional<Floor> findByBuilding_IdAndFloorNum(UUID buildingId, Integer floorNum);
     boolean existsByBuilding_IdAndFloorNum(UUID buildingId, Integer floorNum);
+    void deleteAllByBuilding_Id(UUID buildingId);
 
     // 노드 삭제 시 EXIT 카운트 검증과 삭제를 원자적으로 직렬화하기 위한 층 행 잠금
     @Lock(LockModeType.PESSIMISTIC_WRITE)
