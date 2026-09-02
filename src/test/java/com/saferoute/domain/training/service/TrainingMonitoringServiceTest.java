@@ -522,6 +522,30 @@ class TrainingMonitoringServiceTest {
     }
 
     @Test
+    void stale_판정은_기본값이_아닌_설정된_stateStaleAfterSec를_사용한다() {
+        stubSession(TrainingStatus.RUNNING);
+        Cctv cctv = cctv(3);
+        // 기본값(15초)이었다면 20초 전 관측은 stale이지만, stateStaleAfterSec를 30초로 설정하면 stale이 아니어야 한다.
+        long lastDetectedAt = Instant.now().toEpochMilli() - 20_000L;
+        CurrentCctvStateItem state = CurrentCctvStateItem.create(
+                SESSION_ID, "CCTV_001", 8.6, 12, 0.42, CongestionLevel.CROWDED, lastDetectedAt, 3L
+        );
+        CongestionConfig config = CongestionConfig.createDefault();
+        config.updateSettings(null, null, null, null, null, null, null, null, 30);
+        given(cctvJpaRepository
+                .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
+                        BUILDING_ID))
+                .willReturn(List.of(cctv));
+        given(currentCctvStateRepository.findAllBySessionId(SESSION_ID.toString()))
+                .willReturn(List.of(state));
+        given(congestionConfigService.getConfig()).willReturn(config);
+
+        CurrentCctvStateResponse response = service.getCurrentStates(SESSION_ID, EMAIL).states().get(0);
+
+        assertThat(response.stale()).isFalse();
+    }
+
+    @Test
     void 활성_CCTV가_없으면_현재_상태_조회도_빈_목록을_반환한다() {
         stubSession(TrainingStatus.RUNNING);
         given(cctvJpaRepository
