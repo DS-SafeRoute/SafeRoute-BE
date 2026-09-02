@@ -1,21 +1,12 @@
 package com.saferoute.domain.training.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
 
-import com.saferoute.domain.building.entity.Building;
-import com.saferoute.domain.evacuation.graph.entity.MapNode;
-import com.saferoute.domain.evacuation.graph.entity.NodeType;
-import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
-import com.saferoute.domain.evacuation.grid.entity.FloorGridCell;
-import com.saferoute.domain.evacuation.grid.repository.FloorGridCellRepository;
-import com.saferoute.domain.floor.entity.Floor;
-import com.saferoute.domain.training.dto.CreateFireZoneRequest;
+import com.saferoute.domain.training.dto.FireZoneResponse;
 import com.saferoute.domain.training.entity.FireZone;
-import com.saferoute.domain.training.entity.ScenarioStatus;
 import com.saferoute.domain.training.entity.TrainingScenario;
 import com.saferoute.domain.training.repository.FireZoneRepository;
 import com.saferoute.domain.training.repository.TrainingScenarioRepository;
@@ -33,6 +24,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+// 최초 발화점 등록(designateOrigin)은 ScenarioEvacuationSetupServiceTest로 이전되었다.
+// 이 테스트는 남은 조회 전용 메서드만 다룬다.
 @ExtendWith(MockitoExtension.class)
 class FireZoneServiceTest {
 
@@ -47,117 +40,62 @@ class FireZoneServiceTest {
     @Mock
     private TrainingScenarioRepository scenarioRepository;
     @Mock
-    private FloorGridCellRepository gridCellRepository;
-    @Mock
-    private MapNodeJpaRepository mapNodeRepository;
-    @Mock
     private SchoolContextService schoolContextService;
 
     private final UUID scenarioId = UUID.randomUUID();
-    private final UUID buildingId = UUID.randomUUID();
-    private final UUID floorId = UUID.randomUUID();
-    private final UUID gridCellId = UUID.randomUUID();
-    private TrainingScenario scenario;
-    private FloorGridCell cell;
-    private Floor floor;
 
     @BeforeEach
     void setUp() {
-        scenario = mock(TrainingScenario.class);
-        cell = mock(FloorGridCell.class);
-        floor = mock(Floor.class);
-        Building building = mock(Building.class);
-
         given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
-        given(scenarioRepository.findForUpdateByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
-                .willReturn(Optional.of(scenario));
-        given(scenario.getStatus()).willReturn(ScenarioStatus.READY);
-        org.mockito.Mockito.lenient().when(gridCellRepository.findById(gridCellId)).thenReturn(Optional.of(cell));
-        org.mockito.Mockito.lenient().when(scenario.getBuildingId()).thenReturn(buildingId);
-        org.mockito.Mockito.lenient().when(cell.getFloor()).thenReturn(floor);
-        org.mockito.Mockito.lenient().when(floor.getId()).thenReturn(floorId);
-        org.mockito.Mockito.lenient().when(floor.getBuilding()).thenReturn(building);
-        org.mockito.Mockito.lenient().when(building.getId()).thenReturn(buildingId);
     }
 
     @Test
-    @DisplayName("발화점을 등록하면 같은 층의 START 노드를 시나리오에 연결한다")
-    void designateOrigin_assignsStartNodeOnSameFloor() {
-        MapNode startNode = mock(MapNode.class);
-        given(mapNodeRepository.findAllByFloor_IdAndType(floorId, NodeType.START))
-                .willReturn(List.of(startNode));
-        given(fireZoneRepository.save(org.mockito.ArgumentMatchers.any(FireZone.class)))
-                .willAnswer(invocation -> invocation.getArgument(0));
+    @DisplayName("수동으로 지정한 최초 발화점만 조회한다")
+    void getFireOrigins_returnsManualOriginsOnly() {
+        given(scenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
+                .willReturn(Optional.of(mock(TrainingScenario.class)));
+        given(fireZoneRepository.findByScenario_IdAndIsManualAddTrue(scenarioId))
+                .willReturn(List.of(mock(FireZone.class)));
 
-        fireZoneService.designateOrigin(scenarioId, new CreateFireZoneRequest(gridCellId), EMAIL);
+        List<FireZoneResponse> response = fireZoneService.getFireOrigins(scenarioId, EMAIL);
 
-        verify(scenario).assignStartNode(startNode);
-        verify(cell).markFired();
-        verify(fireZoneRepository).save(org.mockito.ArgumentMatchers.any(FireZone.class));
+        assertThat(response).hasSize(1);
     }
 
     @Test
-    @DisplayName("시나리오에 최초 발화점이 이미 있으면 추가로 등록할 수 없다")
-    void designateOrigin_alreadyConfigured_throwsBeforeMutation() {
-        given(fireZoneRepository.existsByScenario_IdAndIsManualAddTrue(scenarioId)).willReturn(true);
+    @DisplayName("다른 학교 소속 시나리오의 발화점은 조회할 수 없다")
+    void getFireOrigins_otherSchool_throws() {
+        given(scenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
+                .willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> fireZoneService.designateOrigin(
-                scenarioId, new CreateFireZoneRequest(gridCellId), EMAIL))
+        assertThatThrownBy(() -> fireZoneService.getFireOrigins(scenarioId, EMAIL))
                 .isInstanceOf(ApiException.class)
                 .extracting(exception -> ((ApiException) exception).getErrorCode())
-                .isEqualTo(TrainingErrorCode.FIRE_ORIGIN_ALREADY_CONFIGURED);
-
-        verify(gridCellRepository, never()).findById(gridCellId);
-        verify(cell, never()).markFired();
-        verify(scenario, never()).assignStartNode(org.mockito.ArgumentMatchers.any());
-        verify(fireZoneRepository, never()).save(org.mockito.ArgumentMatchers.any());
+                .isEqualTo(TrainingErrorCode.TRAINING_SCENARIO_NOT_FOUND);
     }
 
     @Test
-    @DisplayName("발화 층에 START 노드가 없으면 발화점을 등록할 수 없다")
-    void designateOrigin_startNodeNotFound_throws() {
-        given(mapNodeRepository.findAllByFloor_IdAndType(floorId, NodeType.START)).willReturn(List.of());
+    @DisplayName("시나리오의 전체 FireZone을 세대순으로 조회한다")
+    void getFireZones_returnsAllOrderedBySpreadGeneration() {
+        given(scenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
+                .willReturn(Optional.of(mock(TrainingScenario.class)));
+        given(fireZoneRepository.findByScenario_IdOrderBySpreadGenerationAscAddedAtAsc(scenarioId))
+                .willReturn(List.of(mock(FireZone.class), mock(FireZone.class)));
 
-        assertThatThrownBy(() -> fireZoneService.designateOrigin(
-                scenarioId, new CreateFireZoneRequest(gridCellId), EMAIL))
-                .isInstanceOf(ApiException.class)
-                .extracting(exception -> ((ApiException) exception).getErrorCode())
-                .isEqualTo(TrainingErrorCode.FLOOR_START_NODE_NOT_FOUND);
+        List<FireZoneResponse> response = fireZoneService.getFireZones(scenarioId, EMAIL);
 
-        verify(cell, never()).markFired();
-        verify(fireZoneRepository, never()).save(org.mockito.ArgumentMatchers.any());
+        assertThat(response).hasSize(2);
     }
 
     @Test
-    @DisplayName("발화 층에 START 노드가 여러 개면 발화점을 등록할 수 없다")
-    void designateOrigin_duplicatedStartNodes_throws() {
-        given(mapNodeRepository.findAllByFloor_IdAndType(floorId, NodeType.START))
-                .willReturn(List.of(mock(MapNode.class), mock(MapNode.class)));
+    @DisplayName("다른 학교 소속 시나리오의 화재구역은 조회할 수 없다")
+    void getFireZones_otherSchool_throws() {
+        given(scenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
+                .willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> fireZoneService.designateOrigin(
-                scenarioId, new CreateFireZoneRequest(gridCellId), EMAIL))
+        assertThatThrownBy(() -> fireZoneService.getFireZones(scenarioId, EMAIL))
                 .isInstanceOf(ApiException.class)
                 .extracting(exception -> ((ApiException) exception).getErrorCode())
-                .isEqualTo(TrainingErrorCode.FLOOR_START_NODE_DUPLICATED);
-
-        verify(cell, never()).markFired();
-        verify(fireZoneRepository, never()).save(org.mockito.ArgumentMatchers.any());
-    }
-
-    @Test
-    @DisplayName("READY가 아닌 시나리오의 발화점은 변경할 수 없다")
-    void designateOrigin_scenarioNotReady_throwsBeforeMutation() {
-        given(scenario.getStatus()).willReturn(ScenarioStatus.IN_PROGRESS);
-
-        assertThatThrownBy(() -> fireZoneService.designateOrigin(
-                scenarioId, new CreateFireZoneRequest(gridCellId), EMAIL))
-                .isInstanceOf(ApiException.class)
-                .extracting(exception -> ((ApiException) exception).getErrorCode())
-                .isEqualTo(TrainingErrorCode.INVALID_STATUS_TRANSITION);
-
-        verify(gridCellRepository, never()).findById(gridCellId);
-        verify(cell, never()).markFired();
-        verify(scenario, never()).assignStartNode(org.mockito.ArgumentMatchers.any());
-        verify(fireZoneRepository, never()).save(org.mockito.ArgumentMatchers.any());
+                .isEqualTo(TrainingErrorCode.TRAINING_SCENARIO_NOT_FOUND);
     }
 }

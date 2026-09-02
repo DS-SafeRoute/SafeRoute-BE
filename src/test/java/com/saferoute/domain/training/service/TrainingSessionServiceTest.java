@@ -14,6 +14,7 @@ import com.saferoute.domain.building.repository.BuildingRepository;
 import com.saferoute.domain.device.service.IoTLightService;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.evacuation.graph.entity.NodeType;
+import com.saferoute.domain.evacuation.grid.entity.FloorGridCell;
 import com.saferoute.domain.evacuation.recalculation.dto.response.CurrentRouteResponse;
 import com.saferoute.domain.evacuation.recalculation.service.RouteRecalculationService;
 import com.saferoute.domain.evacuation.service.EvacuationRoute;
@@ -292,7 +293,9 @@ class TrainingSessionServiceTest {
         given(scenario.getId()).willReturn(scenarioId);
         given(scenario.getStartNode()).willReturn(startNode);
         FireZone fireOrigin = mock(FireZone.class);
+        FloorGridCell fireCell = mock(FloorGridCell.class);
         given(fireOrigin.getFloorId()).willReturn(floorId);
+        given(fireOrigin.getGridCell()).willReturn(fireCell);
         given(fireZoneRepository.findByScenario_IdAndIsManualAddTrue(scenarioId))
                 .willReturn(List.of(fireOrigin));
         TrainingSession session =
@@ -308,6 +311,8 @@ class TrainingSessionServiceTest {
         verify(trainingEventPublisher, times(1)).publishTrainingStatusUpdatedAfterCommit(session);
         verify(scenario, times(1)).markInProgress();
         verify(ioTLightService).applyRouteGuidance(List.of(startNodeId, exitNodeId));
+        // 설정 단계에서는 isFired를 바꾸지 않으므로, 실제 화재 셀 활성화는 훈련 시작 시점에 일어나야 한다.
+        verify(fireCell).markFired();
     }
 
     @Test
@@ -370,7 +375,9 @@ class TrainingSessionServiceTest {
         given(scenario.getId()).willReturn(scenarioId);
         given(scenario.getStartNode()).willReturn(startNode);
         FireZone fireOrigin = mock(FireZone.class);
+        FloorGridCell fireCell = mock(FloorGridCell.class);
         given(fireOrigin.getFloorId()).willReturn(floorId);
+        given(fireOrigin.getGridCell()).willReturn(fireCell);
         given(fireZoneRepository.findByScenario_IdAndIsManualAddTrue(scenarioId))
                 .willReturn(List.of(fireOrigin));
         TrainingSession session =
