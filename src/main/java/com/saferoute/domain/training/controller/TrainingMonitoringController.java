@@ -4,6 +4,8 @@ import com.saferoute.domain.training.dto.CurrentCctvStateListApiResponse;
 import com.saferoute.domain.training.dto.CurrentCctvStateListResponse;
 import com.saferoute.domain.training.dto.MonitoringCameraListApiResponse;
 import com.saferoute.domain.training.dto.MonitoringCameraListResponse;
+import com.saferoute.domain.training.dto.MonitoringContextApiResponse;
+import com.saferoute.domain.training.dto.MonitoringContextResponse;
 import com.saferoute.domain.training.dto.MonitoringEventListApiResponse;
 import com.saferoute.domain.training.dto.MonitoringEventListResponse;
 import com.saferoute.domain.training.dto.MonitoringFrameListApiResponse;
@@ -216,6 +218,133 @@ public class TrainingMonitoringController {
     }
 
     @Operation(
+            summary = "모니터링 세션 정보 조회",
+            description = """
+                    모니터링 상세 화면 헤더에 필요한 세션 기본 정보(시나리오명, 건물명, 상태,
+                    시작/종료 시각, 경과 시간)와 전역 설정값(저장 간격, CCTV 현재 상태 stale
+                    판정 기준)을 한 번에 반환합니다.
+
+                    startedAt/endedAt은 훈련 전체의 시작/종료 시각입니다. 프레임 목록
+                    (GET .../monitoring/cameras/{cctvId}/frames)의 windowStart/windowEnd
+                    (개별 프레임의 분석 구간)와는 다른 시간 축이므로 혼동하지 마세요.
+
+                    이 API는 다른 모니터링 조회 API와 동일하게 RUNNING 세션만 허용합니다(종료된
+                    세션 조회는 별도 이슈에서 다룰 예정입니다). elapsedSeconds는 현재 시각과
+                    startedAt의 차이이며 호출 시점마다 계속 늘어나는 값입니다.
+
+                    snapshotIntervalSec, stateStaleAfterSec는 세션별 값이 아니라 전역 혼잡 설정
+                    (CongestionConfig)의 현재 값입니다. 훈련 진행 중 관리자가 설정을 바꾸면
+                    이 API가 반환하는 값도 함께 바뀝니다.
+                    """
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200",
+                    description = "모니터링 세션 정보 조회 성공",
+                    content = @Content(
+                            mediaType = "application/json",
+                            schema = @io.swagger.v3.oas.annotations.media.Schema(
+                                    implementation = MonitoringContextApiResponse.class
+                            ),
+                            examples = @ExampleObject(
+                                    name = "진행 중인 세션",
+                                    value = """
+                                            {
+                                              "isSuccess": true,
+                                              "code": "TRAINING_SUCCESS_011",
+                                              "message": "모니터링 세션 정보 조회에 성공했습니다.",
+                                              "result": {
+                                                "sessionId": "d669294e-55e1-4c00-bf67-229d89b76948",
+                                                "scenarioName": "3학년 A동 화재 대피 훈련",
+                                                "buildingName": "A동",
+                                                "status": "RUNNING",
+                                                "startedAt": 1787722000000,
+                                                "endedAt": null,
+                                                "elapsedSeconds": 95,
+                                                "snapshotIntervalSec": 5,
+                                                "stateStaleAfterSec": 15
+                                              }
+                                            }
+                                            """
+                            )
+                    )
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "JWT가 없거나 유효하지 않음",
+                    content = @Content(
+                            mediaType = "application/json",
+                            examples = @ExampleObject(value = """
+                                    {
+                                      "isSuccess": false,
+                                      "code": "COMMON401",
+                                      "message": "인증이 필요합니다."
+                                    }
+                                    """)
+                    )
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403",
+                    description = "MANAGER 권한이 없음",
+                    content = @Content(
+                            mediaType = "application/json",
+                            examples = @ExampleObject(value = """
+                                    {
+                                      "isSuccess": false,
+                                      "code": "COMMON403",
+                                      "message": "접근 권한이 없습니다."
+                                    }
+                                    """)
+                    )
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404",
+                    description = "세션이 없거나 요청자와 다른 학교의 세션",
+                    content = @Content(
+                            mediaType = "application/json",
+                            examples = @ExampleObject(value = """
+                                    {
+                                      "isSuccess": false,
+                                      "code": "TRAINING001",
+                                      "message": "훈련 세션을 찾을 수 없습니다."
+                                    }
+                                    """)
+                    )
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "409",
+                    description = "훈련 세션이 RUNNING 상태가 아님",
+                    content = @Content(
+                            mediaType = "application/json",
+                            examples = @ExampleObject(value = """
+                                    {
+                                      "isSuccess": false,
+                                      "code": "TRAINING006",
+                                      "message": "진행 중인 훈련 세션을 찾을 수 없습니다."
+                                    }
+                                    """)
+                    )
+            )
+    })
+    @GetMapping("/context")
+    public ResponseEntity<ApiResponse<MonitoringContextResponse>> getContext(
+            @Parameter(
+                    description = "조회할 RUNNING 훈련 세션의 UUID",
+                    required = true,
+                    example = "d669294e-55e1-4c00-bf67-229d89b76948"
+            )
+            @PathVariable UUID sessionId,
+            Authentication authentication
+    ) {
+        MonitoringContextResponse response =
+                trainingMonitoringService.getContext(sessionId, authentication.getName());
+        return ResponseEntity.ok(ApiResponse.success(
+                TrainingSuccessCode.MONITORING_CONTEXT_FOUND,
+                response
+        ));
+    }
+
+    @Operation(
             summary = "CCTV별 현재 혼잡 상태 조회",
             description = """
                     실행 중인 훈련 세션의 건물에 설치된 활성 CCTV별 현재 혼잡 상태를 반환합니다.
@@ -398,6 +527,11 @@ public class TrainingMonitoringController {
                     각 프레임의 imageUrl은 S3 presigned GET URL이며 영구 URL이 아닙니다.
                     이미지 업로드가 아직 끝나지 않은 프레임은 imageUrl, urlExpiresAt이 null로
                     반환됩니다. capturedAt은 Unix epoch milliseconds 단위입니다.
+
+                    windowStart/windowEnd는 이 프레임이 대표하는 분석 구간(보통 5초)의
+                    시작/종료 시각이고, capturedAt은 그 구간을 대표해 저장된 프레임이 실제로
+                    촬영된 시각입니다. 훈련 전체의 시작/종료 시각(GET .../monitoring/context의
+                    startedAt/endedAt)과는 다른 시간 축이므로 혼동하지 마세요.
                     """
     )
     @ApiResponses({
@@ -423,6 +557,8 @@ public class TrainingMonitoringController {
                                                   {
                                                     "frameId": "3c9f7e2a-3b39-4f0a-9f0a-6a2b6b1f5a11",
                                                     "capturedAt": 1787722095000,
+                                                    "windowStart": 1787722090000,
+                                                    "windowEnd": 1787722095000,
                                                     "imageUrl": "https://example-bucket.s3.amazonaws.com/training/session/monitoring/CCTV_001/frame.jpg",
                                                     "urlExpiresAt": 1787725695000,
                                                     "headcount": 12,

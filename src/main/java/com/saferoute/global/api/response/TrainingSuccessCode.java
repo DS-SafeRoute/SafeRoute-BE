@@ -38,6 +38,11 @@ public enum TrainingSuccessCode implements BaseCode {
             HttpStatus.OK,
             "TRAINING_SUCCESS_010",
             "CCTV 현재 혼잡 상태 조회에 성공했습니다."
+    ),
+    MONITORING_CONTEXT_FOUND(
+            HttpStatus.OK,
+            "TRAINING_SUCCESS_011",
+            "모니터링 세션 정보 조회에 성공했습니다."
     );
 
     private final HttpStatus httpStatus;
