@@ -133,6 +133,23 @@ class ScenarioEvacuationSetupServiceTest {
     }
 
     @Test
+    @DisplayName("다른 학교 소속 시나리오는 설정할 수 없다")
+    void setup_otherSchool_throws() {
+        given(scenarioRepository.findForUpdateByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
+                .willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> scenarioEvacuationSetupService.setup(scenarioId, request, EMAIL))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(TrainingErrorCode.TRAINING_SCENARIO_NOT_FOUND);
+
+        verify(gridCellRepository, never()).findById(any());
+        verify(mapNodeRepository, never()).findById(any());
+        verify(scenario, never()).assignStartNode(any());
+        verify(fireZoneRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("발화점 셀이 존재하지 않으면 설정할 수 없다")
     void setup_gridCellNotFound_throws() {
         given(gridCellRepository.findById(gridCellId)).willReturn(Optional.empty());
