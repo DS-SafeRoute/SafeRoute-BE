@@ -41,7 +41,7 @@ public class ScenarioEvacuationSetupService {
             UUID scenarioId, CreateScenarioEvacuationSetupRequest request, String email) {
         String schoolName = schoolContextService.getSchoolName(email);
         TrainingScenario scenario = scenarioRepository
-                .findForUpdateByIdAndBuilding_SchoolName(scenarioId, schoolName)
+                .findForUpdateByIdAndAdmin_SchoolName(scenarioId, schoolName)
                 .orElseThrow(() -> new ApiException(TrainingErrorCode.TRAINING_SCENARIO_NOT_FOUND));
 
         if (scenario.getStatus() != ScenarioStatus.READY) {
@@ -83,7 +83,7 @@ public class ScenarioEvacuationSetupService {
     @Transactional(readOnly = true)
     public ScenarioEvacuationSetupResponse get(UUID scenarioId, String email) {
         String schoolName = schoolContextService.getSchoolName(email);
-        TrainingScenario scenario = scenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, schoolName)
+        TrainingScenario scenario = scenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, schoolName)
                 .orElseThrow(() -> new ApiException(TrainingErrorCode.TRAINING_SCENARIO_NOT_FOUND));
 
         MapNode startNode = scenario.getStartNode();

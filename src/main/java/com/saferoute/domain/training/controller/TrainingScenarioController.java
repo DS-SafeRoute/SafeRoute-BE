@@ -1,6 +1,6 @@
 package com.saferoute.domain.training.controller;
 
-import com.saferoute.domain.training.dto.CreateScenarioRequest;
+import com.saferoute.domain.training.dto.CreateScenarioDraftRequest;
 import com.saferoute.domain.training.dto.FireZoneResponse;
 import com.saferoute.domain.training.dto.ScenarioResponse;
 import com.saferoute.domain.training.dto.UpdateScenarioRequest;
@@ -37,7 +37,9 @@ public class TrainingScenarioController {
     @Operation(
             summary = "훈련 시나리오 목록 조회",
             description = """
-                    요청자 학교 소속의 모든 훈련 시나리오를 생성일 최신순으로 반환합니다.
+                    요청자 학교 소속의 모든 훈련 시나리오를 생성일 최신순으로 반환합니다. 아직
+                    건물을 지정하지 않은 DRAFT 시나리오도 작성자(admin) 소속 기준으로 함께
+                    조회됩니다.
 
                     각 시나리오의 deletable은 해당 시나리오에 연결된 훈련 세션이 하나도 없을 때만
                     true입니다. 세션이 하나라도 있으면 과거 훈련 기록 보존을 위해 삭제가
@@ -45,8 +47,10 @@ public class TrainingScenarioController {
                     합니다. reportId는 해당 시나리오의 훈련 리포트가 이미 생성되어 있으면 그
                     id를, 아직 없으면 null을 반환합니다.
 
-                    status 필드는 연결된 세션의 생명주기에 따라 서버가 자동으로 갱신하는 값으로,
-                    이 API로 직접 변경할 수 없습니다.
+                    status 필드는 DRAFT/READY 사이는 이 도메인의 상태 전환 API(POST .../drafts,
+                    POST .../ready)로, 그 이후(IN_PROGRESS/COMPLETED/ERROR)는 연결된 세션의
+                    생명주기에 따라 서버가 자동으로 갱신합니다. 이 목록 조회 API로 직접 바꿀 수는
+                    없습니다.
                     """
     )
     @GetMapping
@@ -59,7 +63,8 @@ public class TrainingScenarioController {
             summary = "훈련 시나리오 단건 조회",
             description = """
                     요청자 학교 소속 시나리오 중 scenarioId에 해당하는 시나리오 상세 정보를
-                    반환합니다.
+                    반환합니다. DRAFT 시나리오는 건물이 없을 수 있어 작성자(admin) 소속 기준으로
+                    조회됩니다.
 
                     목록 조회와 달리 deletable, reportId 필드는 항상 null로 반환되므로 이 값은
                     목록 조회(GET /api/v1/scenarios) 결과를 사용해야 합니다.
@@ -74,33 +79,33 @@ public class TrainingScenarioController {
         return ResponseEntity.ok(scenarioService.getScenario(scenarioId, authentication.getName()));
     }
 
-    // POST /api/v1/scenarios
+    // POST /api/v1/scenarios/drafts
     @Operation(
-            summary = "훈련 시나리오 생성",
+            summary = "훈련 시나리오 DRAFT 생성",
             description = """
-                    새 훈련 시나리오를 생성합니다. buildingId, adminId는 모두 요청자와 같은
-                    학교 소속이어야 하며, 두 값 중 하나라도 조건을 만족하지 못하면 생성에 실패합니다.
+                    시나리오 작성 화면에 진입할 때 미완성 상태로 임시 저장합니다. name,
+                    buildingId, expectedParticipants, scheduledAt을 포함한 모든 필드가
+                    선택값이며, 비워 둔 필드는 null로 저장됩니다.
 
-                    fireSpreadSpeed를 지정하지 않으면 MEDIUM으로 기본 처리됩니다. 이 값은
-                    시나리오 전체에 하나로 적용되며(발화점별 개별 지정 불가), 훈련 시작 후 화재
-                    확산 시뮬레이션의 tick 간격을 결정합니다(FAST가 가장 빠르게 확산).
+                    작성자(admin)는 요청 바디로 받지 않고 JWT 인증 사용자로 고정됩니다.
+                    isTemplate을 지정하지 않으면 false, fireSpreadSpeed를 지정하지 않으면
+                    MEDIUM으로 기본 처리됩니다.
 
-                    startNodeId는 이 API로 받지 않습니다. 시나리오 설정 화면에서
-                    POST /api/v1/scenarios/{scenarioId}/evacuation-setup으로 발화점(격자 셀)과
-                    함께 START 후보 노드를 선택해야 시나리오에 연결됩니다. targetEvacuationSec도
-                    선택값입니다.
+                    buildingId를 지정하면 요청자와 같은 학교 소속 건물이어야 하며, 조건을
+                    만족하지 못하면 생성에 실패합니다.
 
-                    생성 직후 시나리오의 상태는 READY이지만 바로 실행할 수는 없습니다.
-                    evacuation-setup으로 발화점과 훈련 시작점이 함께 설정되어야 훈련을
-                    시작할 수 있습니다. 초안(DRAFT) 저장 플로우는 아직 지원하지 않습니다.
+                    생성 직후 상태는 DRAFT이며, 발화점·START 설정(evacuation-setup), 훈련
+                    세션 생성 등 훈련 실행과 관련된 API는 DRAFT 상태에서 모두 차단됩니다(409).
+                    PATCH /api/v1/scenarios/{scenarioId}로 나머지 필드를 채운 뒤
+                    POST /api/v1/scenarios/{scenarioId}/ready로 작성을 완료해야 합니다.
                     """
     )
-    @PostMapping
-    public ResponseEntity<ScenarioResponse> createScenario(
-            @Valid @RequestBody CreateScenarioRequest request,
+    @PostMapping("/drafts")
+    public ResponseEntity<ScenarioResponse> createDraft(
+            @Valid @RequestBody CreateScenarioDraftRequest request,
             Authentication authentication) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(scenarioService.createScenario(request, authentication.getName()));
+                .body(scenarioService.createDraft(request, authentication.getName()));
     }
 
     // PATCH /api/v1/scenarios/{scenarioId}
@@ -110,14 +115,13 @@ public class TrainingScenarioController {
                     요청 바디에 값이 채워진 필드만 부분 수정합니다. null인 필드는 기존 값을
                     그대로 유지하므로, 값을 지우고 싶다고 해서 null을 보내면 변경되지 않습니다.
 
-                    startNodeId는 이 API로 변경하지 않습니다. POST .../evacuation-setup으로
-                    설정한 값이 그대로 유지됩니다. buildingId, adminId, status는 이 API로
-                    변경할 수 없습니다.
+                    DRAFT/READY 상태에서만 수정할 수 있습니다. IN_PROGRESS/COMPLETED/ERROR
+                    상태의 시나리오를 수정하려 하면 409로 거부됩니다.
 
-                    시나리오의 status(READY/IN_PROGRESS/COMPLETED/ERROR)는 연결된 훈련
-                    세션의 생명주기에 따라 서버가 자동으로 전이시키는 값이라 이 API로는 건드릴
-                    수 없습니다. 이미 훈련 세션이 시작된 시나리오를 수정할 때의 부작용(예: 진행
-                    중인 세션과의 정합성) 검증은 이 API에 포함되어 있지 않습니다.
+                    buildingId는 이 API로 지정·변경할 수 있습니다(요청자와 같은 학교 소속
+                    건물이어야 함). adminId, status는 이 API로 변경할 수 없습니다. startNodeId도
+                    이 API로 변경하지 않으며, POST .../evacuation-setup으로 설정한 값이 그대로
+                    유지됩니다.
                     """
     )
     @PatchMapping("/{scenarioId}")
@@ -126,6 +130,31 @@ public class TrainingScenarioController {
             @Valid @RequestBody UpdateScenarioRequest request,
             Authentication authentication) {
         return ResponseEntity.ok(scenarioService.updateScenario(scenarioId, request, authentication.getName()));
+    }
+
+    // POST /api/v1/scenarios/{scenarioId}/ready
+    @Operation(
+            summary = "훈련 시나리오 작성 완료 (DRAFT → READY)",
+            description = """
+                    DRAFT 시나리오의 기본 정보 작성을 완료하고 READY로 전환합니다. DRAFT가
+                    아닌 시나리오에 호출하면 409(INVALID_STATUS_TRANSITION)로 거부됩니다.
+
+                    name, buildingId, expectedParticipants, scheduledAt, adminId,
+                    fireSpreadSpeed가 모두 채워져 있어야 하며(targetEvacuationSec은 선택값),
+                    하나라도 비어 있으면 400(TRAINING_SCENARIO_REQUIRED_FIELD_MISSING)과 함께
+                    result.missingFields에 누락된 필드 이름 목록을 반환합니다.
+
+                    이 API는 발화점(fire origin)이나 훈련 시작점(START 노드) 설정을 요구하지
+                    않습니다. READY 전환 이후 시나리오 설정 화면(재사용 캔버스)에서
+                    POST /api/v1/scenarios/{scenarioId}/evacuation-setup으로 별도로
+                    설정합니다.
+                    """
+    )
+    @PostMapping("/{scenarioId}/ready")
+    public ResponseEntity<ScenarioResponse> readyScenario(
+            @PathVariable UUID scenarioId,
+            Authentication authentication) {
+        return ResponseEntity.ok(scenarioService.readyScenario(scenarioId, authentication.getName()));
     }
 
     // DELETE /api/v1/scenarios/{scenarioId}

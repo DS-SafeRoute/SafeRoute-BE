@@ -192,7 +192,8 @@ class TrainingSessionServiceTest {
         given(manager.getRole()).willReturn(UserRole.MANAGER);
         given(userRepository.findByIdAndSchoolName(adminId, SCHOOL_NAME)).willReturn(Optional.of(manager));
         TrainingScenario scenario = mock(TrainingScenario.class);
-        given(trainingScenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
+        given(scenario.getStatus()).willReturn(com.saferoute.domain.training.entity.ScenarioStatus.READY);
+        given(trainingScenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
                 .willReturn(Optional.of(scenario));
         given(trainingSessionRepository.saveAndFlush(any(TrainingSession.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
@@ -208,6 +209,29 @@ class TrainingSessionServiceTest {
     }
 
     @Test
+    @DisplayName("작성이 완료되지 않은(DRAFT) 시나리오로는 세션을 생성할 수 없다")
+    void create_draftScenario_throwsScenarioDraftNotAllowed() {
+        UUID adminId = UUID.randomUUID();
+        UUID scenarioId = UUID.randomUUID();
+        User manager = mock(User.class);
+        given(manager.getRole()).willReturn(UserRole.MANAGER);
+        given(userRepository.findByIdAndSchoolName(adminId, SCHOOL_NAME)).willReturn(Optional.of(manager));
+        TrainingScenario scenario = mock(TrainingScenario.class);
+        given(scenario.getStatus()).willReturn(com.saferoute.domain.training.entity.ScenarioStatus.DRAFT);
+        given(trainingScenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
+                .willReturn(Optional.of(scenario));
+
+        CreateSessionRequest request = new CreateSessionRequest(adminId);
+
+        assertThatThrownBy(() -> trainingSessionService.create(request, scenarioId, EMAIL))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(TrainingErrorCode.SCENARIO_DRAFT_NOT_ALLOWED);
+        verify(trainingSessionRepository, never()).existsByScenario_Id(any());
+        verify(trainingSessionRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
     @DisplayName("이미 세션이 존재하는 시나리오로는 세션을 또 생성할 수 없다")
     void create_scenarioAlreadyHasSession_throwsException() {
         UUID adminId = UUID.randomUUID();
@@ -215,8 +239,10 @@ class TrainingSessionServiceTest {
         User manager = mock(User.class);
         given(manager.getRole()).willReturn(UserRole.MANAGER);
         given(userRepository.findByIdAndSchoolName(adminId, SCHOOL_NAME)).willReturn(Optional.of(manager));
-        given(trainingScenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
-                .willReturn(Optional.of(mock(TrainingScenario.class)));
+        TrainingScenario scenario = mock(TrainingScenario.class);
+        given(scenario.getStatus()).willReturn(com.saferoute.domain.training.entity.ScenarioStatus.READY);
+        given(trainingScenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
+                .willReturn(Optional.of(scenario));
         given(trainingSessionRepository.existsByScenario_Id(scenarioId)).willReturn(true);
 
         CreateSessionRequest request = new CreateSessionRequest(adminId);
@@ -236,8 +262,10 @@ class TrainingSessionServiceTest {
         User manager = mock(User.class);
         given(manager.getRole()).willReturn(UserRole.MANAGER);
         given(userRepository.findByIdAndSchoolName(adminId, SCHOOL_NAME)).willReturn(Optional.of(manager));
-        given(trainingScenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
-                .willReturn(Optional.of(mock(TrainingScenario.class)));
+        TrainingScenario scenario = mock(TrainingScenario.class);
+        given(scenario.getStatus()).willReturn(com.saferoute.domain.training.entity.ScenarioStatus.READY);
+        given(trainingScenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
+                .willReturn(Optional.of(scenario));
         given(trainingSessionRepository.existsByScenario_Id(scenarioId)).willReturn(false);
         given(trainingSessionRepository.saveAndFlush(any()))
                 .willThrow(new org.springframework.dao.DataIntegrityViolationException("unique constraint"));
@@ -260,7 +288,7 @@ class TrainingSessionServiceTest {
         given(userRepository.findByIdAndSchoolName(adminId, SCHOOL_NAME))
                 .willReturn(Optional.of(manager));
         given(trainingScenarioRepository
-                .findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
+                .findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
                 .willReturn(Optional.empty());
         CreateSessionRequest request = new CreateSessionRequest(adminId);
 

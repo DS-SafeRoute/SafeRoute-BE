@@ -11,12 +11,12 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface TrainingScenarioRepository extends JpaRepository<TrainingScenario, UUID> {
-    List<TrainingScenario> findAllByBuilding_SchoolNameOrderByCreatedAtDesc(String schoolName);
+    List<TrainingScenario> findAllByAdmin_SchoolNameOrderByCreatedAtDesc(String schoolName);
 
-    Optional<TrainingScenario> findByIdAndBuilding_SchoolName(UUID id, String schoolName);
+    Optional<TrainingScenario> findByIdAndAdmin_SchoolName(UUID id, String schoolName);
 
     boolean existsByBuilding_Id(UUID buildingId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    Optional<TrainingScenario> findForUpdateByIdAndBuilding_SchoolName(UUID id, String schoolName);
+    Optional<TrainingScenario> findForUpdateByIdAndAdmin_SchoolName(UUID id, String schoolName);
 }

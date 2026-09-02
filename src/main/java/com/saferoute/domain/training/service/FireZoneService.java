@@ -43,7 +43,7 @@ public class FireZoneService {
 
     private void validateScenarioForSchool(UUID scenarioId, String email) {
         String schoolName = schoolContextService.getSchoolName(email);
-        if (scenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, schoolName).isEmpty()) {
+        if (scenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, schoolName).isEmpty()) {
             throw new ApiException(TrainingErrorCode.TRAINING_SCENARIO_NOT_FOUND);
         }
     }

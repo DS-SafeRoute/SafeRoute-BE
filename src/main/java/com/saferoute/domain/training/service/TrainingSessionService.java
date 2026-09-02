@@ -15,6 +15,7 @@ import com.saferoute.domain.training.dto.TrainingSessionListResponse;
 import com.saferoute.domain.training.dto.TrainingSessionResponse;
 import com.saferoute.domain.training.dto.TrainingSessionSummaryResponse;
 import com.saferoute.domain.training.dto.TrainingStatusResponse;
+import com.saferoute.domain.training.entity.ScenarioStatus;
 import com.saferoute.domain.training.entity.TrainingScenario;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
@@ -70,8 +71,14 @@ public class TrainingSessionService {
     if (user.getRole() != UserRole.MANAGER) {
       throw new ApiException(ErrorCode.FORBIDDEN);
     }
-    TrainingScenario scenario = trainingScenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, schoolName)
+    TrainingScenario scenario = trainingScenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, schoolName)
         .orElseThrow(() -> new ApiException(TrainingErrorCode.TRAINING_SCENARIO_NOT_FOUND));
+
+    // 시나리오 작성이 아직 완료되지 않은(DRAFT) 상태에서는 발화점·START 설정 자체가
+    // 불가능하므로, 세션을 먼저 막아 이후의 evacuation-setup/훈련 시작 흐름도 함께 차단한다.
+    if (scenario.getStatus() == ScenarioStatus.DRAFT) {
+      throw new ApiException(TrainingErrorCode.SCENARIO_DRAFT_NOT_ALLOWED);
+    }
 
     if (trainingSessionRepository.existsByScenario_Id(scenarioId)) {
       throw new ApiException(TrainingErrorCode.SESSION_ALREADY_EXISTS);
