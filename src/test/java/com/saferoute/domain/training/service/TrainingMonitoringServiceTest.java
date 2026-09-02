@@ -48,6 +48,7 @@ import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.s3.dto.PresignedGetUrl;
 import com.saferoute.infrastructure.s3.service.S3PresignedUrlService;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -591,7 +592,9 @@ class TrainingMonitoringServiceTest {
         CongestionConfig config = CongestionConfig.createDefault();
         given(congestionConfigService.getConfig()).willReturn(config);
 
+        Instant before = Instant.now();
         MonitoringContextResponse response = service.getContext(SESSION_ID, EMAIL);
+        Instant after = Instant.now();
 
         assertThat(response.sessionId()).isEqualTo(SESSION_ID);
         assertThat(response.scenarioName()).isEqualTo("3학년 A동 화재 대피 훈련");
@@ -599,7 +602,13 @@ class TrainingMonitoringServiceTest {
         assertThat(response.status()).isEqualTo(TrainingStatus.RUNNING);
         assertThat(response.startedAt()).isEqualTo(startedAt.toEpochMilli());
         assertThat(response.endedAt()).isNull();
-        assertThat(response.elapsedSeconds()).isGreaterThanOrEqualTo(0L);
+        // Clock을 주입하지 않으므로(코드베이스 전체가 Instant.now()를 직접 쓰는 컨벤션) 정확히 하나의
+        // 값으로 고정할 수는 없지만, 호출 직전/직후로 경계를 좁혀 실제 경과 시간과 일치하는지 검증한다.
+        assertThat(response.elapsedSeconds())
+                .isBetween(
+                        Duration.between(startedAt, before).getSeconds(),
+                        Duration.between(startedAt, after).getSeconds()
+                );
         assertThat(response.snapshotIntervalSec()).isEqualTo(config.getSnapshotIntervalSec());
         assertThat(response.stateStaleAfterSec()).isEqualTo(config.getStateStaleAfterSec());
     }

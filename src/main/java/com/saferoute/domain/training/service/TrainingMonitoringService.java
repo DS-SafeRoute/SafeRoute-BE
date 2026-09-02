@@ -31,6 +31,7 @@ import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.s3.dto.PresignedGetUrl;
 import com.saferoute.infrastructure.s3.service.S3PresignedUrlService;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -88,7 +89,7 @@ public class TrainingMonitoringService {
     public MonitoringContextResponse getContext(UUID sessionId, String email) {
         TrainingSession session = findRunningSessionForSchool(sessionId, email);
         CongestionConfig config = congestionConfigService.getConfig();
-        long elapsedSeconds = Instant.now().getEpochSecond() - session.getStartedAt().getEpochSecond();
+        long elapsedSeconds = Duration.between(session.getStartedAt(), Instant.now()).getSeconds();
 
         return new MonitoringContextResponse(
                 session.getId(),
