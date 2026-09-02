@@ -101,6 +101,10 @@ public class TrainingScenarioService {
         }
 
         Building building = resolveBuilding(request.getBuildingId(), schoolName);
+        if (building != null && scenario.getStartNode() != null
+                && !building.getId().equals(scenario.getBuildingId())) {
+            throw new ApiException(TrainingErrorCode.SCENARIO_EVACUATION_SETUP_ALREADY_EXISTS);
+        }
         scenario.update(
                 request.getName(),
                 request.getExpectedParticipants(),
@@ -162,7 +166,7 @@ public class TrainingScenarioService {
 
     private List<String> collectMissingRequiredFields(TrainingScenario scenario) {
         List<String> missingFields = new ArrayList<>();
-        if (scenario.getName() == null) {
+        if (scenario.getName() == null || scenario.getName().isBlank()) {
             missingFields.add("name");
         }
         if (scenario.getBuildingId() == null) {

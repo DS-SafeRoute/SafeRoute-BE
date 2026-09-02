@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 
 import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.building.repository.BuildingRepository;
+import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.report.repository.TrainingReportRepository;
 import com.saferoute.domain.training.dto.CreateScenarioDraftRequest;
 import com.saferoute.domain.training.dto.ScenarioResponse;
@@ -170,6 +171,61 @@ class TrainingScenarioServiceTest {
                 .isEqualTo(TrainingErrorCode.INVALID_STATUS_TRANSITION);
     }
 
+    @Test
+    @DisplayName("발화점·START 설정이 완료된 시나리오는 다른 건물로 변경할 수 없다")
+    void updateScenario_setupCompleted_rejectsDifferentBuilding() {
+        UUID scenarioId = UUID.randomUUID();
+        UUID currentBuildingId = UUID.randomUUID();
+        UUID newBuildingId = UUID.randomUUID();
+        Building currentBuilding = mock(Building.class);
+        given(currentBuilding.getId()).willReturn(currentBuildingId);
+        MapNode startNode = mock(MapNode.class);
+        TrainingScenario scenario = TrainingScenario.create(
+                "테스트 시나리오", 10, 300, Instant.now(), false, FireSpreadSpeed.MEDIUM,
+                currentBuilding, mock(User.class), startNode);
+        ReflectionTestUtils.setField(scenario, "id", scenarioId);
+        Building newBuilding = mock(Building.class);
+        given(newBuilding.getId()).willReturn(newBuildingId);
+        UpdateScenarioRequest request = new UpdateScenarioRequest(
+                null, newBuildingId, null, null, null, null, null);
+        given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
+        given(scenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
+                .willReturn(Optional.of(scenario));
+        given(buildingRepository.findByIdAndSchoolNameForUpdate(newBuildingId, SCHOOL_NAME))
+                .willReturn(Optional.of(newBuilding));
+
+        assertThatThrownBy(() -> trainingScenarioService.updateScenario(scenarioId, request, EMAIL))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(TrainingErrorCode.SCENARIO_EVACUATION_SETUP_ALREADY_EXISTS);
+    }
+
+    @Test
+    @DisplayName("발화점·START 설정이 완료된 시나리오도 같은 건물로 재지정하는 수정은 허용된다")
+    void updateScenario_setupCompleted_allowsSameBuilding() {
+        UUID scenarioId = UUID.randomUUID();
+        UUID buildingId = UUID.randomUUID();
+        Building building = mock(Building.class);
+        given(building.getId()).willReturn(buildingId);
+        MapNode startNode = mock(MapNode.class);
+        TrainingScenario scenario = TrainingScenario.create(
+                "테스트 시나리오", 10, 300, Instant.now(), false, FireSpreadSpeed.MEDIUM,
+                building, mock(User.class), startNode);
+        ReflectionTestUtils.setField(scenario, "id", scenarioId);
+        UpdateScenarioRequest request = new UpdateScenarioRequest(
+                "이름만 변경", buildingId, null, null, null, null, null);
+        given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
+        given(scenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
+                .willReturn(Optional.of(scenario));
+        given(buildingRepository.findByIdAndSchoolNameForUpdate(buildingId, SCHOOL_NAME))
+                .willReturn(Optional.of(building));
+
+        ScenarioResponse response = trainingScenarioService.updateScenario(scenarioId, request, EMAIL);
+
+        assertThat(response.getName()).isEqualTo("이름만 변경");
+        assertThat(response.getBuildingId()).isEqualTo(buildingId);
+    }
+
     // === readyScenario ===
 
     @Test
@@ -212,6 +268,34 @@ class TrainingScenarioServiceTest {
                     Map<String, List<String>> result = (Map<String, List<String>>) apiException.getResult();
                     assertThat(result.get("missingFields"))
                             .contains("name", "buildingId", "expectedParticipants", "scheduledAt");
+                });
+    }
+
+    @Test
+    @DisplayName("공백만 있는 이름은 채워진 것으로 보지 않고 READY 전환을 거부한다")
+    void readyScenario_blankName_treatedAsMissing() {
+        UUID scenarioId = UUID.randomUUID();
+        Building building = mock(Building.class);
+        given(building.getId()).willReturn(UUID.randomUUID());
+        User admin = mock(User.class);
+        given(admin.getId()).willReturn(UUID.randomUUID());
+        TrainingScenario scenario = TrainingScenario.create(
+                "  ", 10, 300, Instant.now(), false, FireSpreadSpeed.MEDIUM, building, admin, null);
+        ReflectionTestUtils.setField(scenario, "id", scenarioId);
+        ReflectionTestUtils.setField(scenario, "status", ScenarioStatus.DRAFT);
+        given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
+        given(scenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
+                .willReturn(Optional.of(scenario));
+
+        assertThatThrownBy(() -> trainingScenarioService.readyScenario(scenarioId, EMAIL))
+                .isInstanceOf(ApiException.class)
+                .satisfies(exception -> {
+                    ApiException apiException = (ApiException) exception;
+                    assertThat(apiException.getErrorCode())
+                            .isEqualTo(TrainingErrorCode.TRAINING_SCENARIO_REQUIRED_FIELD_MISSING);
+                    @SuppressWarnings("unchecked")
+                    Map<String, List<String>> result = (Map<String, List<String>>) apiException.getResult();
+                    assertThat(result.get("missingFields")).containsExactly("name");
                 });
     }
 

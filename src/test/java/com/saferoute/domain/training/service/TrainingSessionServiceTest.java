@@ -192,6 +192,7 @@ class TrainingSessionServiceTest {
         given(manager.getRole()).willReturn(UserRole.MANAGER);
         given(userRepository.findByIdAndSchoolName(adminId, SCHOOL_NAME)).willReturn(Optional.of(manager));
         TrainingScenario scenario = mock(TrainingScenario.class);
+        given(scenario.getStatus()).willReturn(com.saferoute.domain.training.entity.ScenarioStatus.READY);
         given(trainingScenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
                 .willReturn(Optional.of(scenario));
         given(trainingSessionRepository.saveAndFlush(any(TrainingSession.class)))
@@ -238,8 +239,10 @@ class TrainingSessionServiceTest {
         User manager = mock(User.class);
         given(manager.getRole()).willReturn(UserRole.MANAGER);
         given(userRepository.findByIdAndSchoolName(adminId, SCHOOL_NAME)).willReturn(Optional.of(manager));
+        TrainingScenario scenario = mock(TrainingScenario.class);
+        given(scenario.getStatus()).willReturn(com.saferoute.domain.training.entity.ScenarioStatus.READY);
         given(trainingScenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
-                .willReturn(Optional.of(mock(TrainingScenario.class)));
+                .willReturn(Optional.of(scenario));
         given(trainingSessionRepository.existsByScenario_Id(scenarioId)).willReturn(true);
 
         CreateSessionRequest request = new CreateSessionRequest(adminId);
@@ -259,8 +262,10 @@ class TrainingSessionServiceTest {
         User manager = mock(User.class);
         given(manager.getRole()).willReturn(UserRole.MANAGER);
         given(userRepository.findByIdAndSchoolName(adminId, SCHOOL_NAME)).willReturn(Optional.of(manager));
+        TrainingScenario scenario = mock(TrainingScenario.class);
+        given(scenario.getStatus()).willReturn(com.saferoute.domain.training.entity.ScenarioStatus.READY);
         given(trainingScenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
-                .willReturn(Optional.of(mock(TrainingScenario.class)));
+                .willReturn(Optional.of(scenario));
         given(trainingSessionRepository.existsByScenario_Id(scenarioId)).willReturn(false);
         given(trainingSessionRepository.saveAndFlush(any()))
                 .willThrow(new org.springframework.dao.DataIntegrityViolationException("unique constraint"));
