@@ -1,14 +1,19 @@
 package com.saferoute.domain.training.service;
 
+import com.saferoute.domain.congestion.service.CongestionConfigService;
 import com.saferoute.domain.device.entity.Cctv;
 import com.saferoute.domain.device.repository.CctvJpaRepository;
 import com.saferoute.domain.evacuation.recalculation.entity.RouteRecalculation;
 import com.saferoute.domain.evacuation.recalculation.repository.RouteRecalculationRepository;
+import com.saferoute.domain.telemetry.dynamo.entity.CurrentCctvStateItem;
 import com.saferoute.domain.telemetry.dynamo.entity.LatestMonitoringCaptureItem;
 import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import com.saferoute.domain.telemetry.dynamo.repository.CongestionEventRepository;
+import com.saferoute.domain.telemetry.dynamo.repository.CurrentCctvStateRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.LatestMonitoringCaptureRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
+import com.saferoute.domain.training.dto.CurrentCctvStateListResponse;
+import com.saferoute.domain.training.dto.CurrentCctvStateResponse;
 import com.saferoute.domain.training.dto.MonitoringCameraListResponse;
 import com.saferoute.domain.training.dto.MonitoringCameraResponse;
 import com.saferoute.domain.training.dto.MonitoringEventListResponse;
@@ -24,6 +29,7 @@ import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.s3.dto.PresignedGetUrl;
 import com.saferoute.infrastructure.s3.service.S3PresignedUrlService;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -46,9 +52,11 @@ public class TrainingMonitoringService {
     private final LatestMonitoringCaptureRepository latestMonitoringCaptureRepository;
     private final ObservationRepository observationRepository;
     private final CongestionEventRepository congestionEventRepository;
+    private final CurrentCctvStateRepository currentCctvStateRepository;
     private final RouteRecalculationRepository routeRecalculationRepository;
     private final S3PresignedUrlService s3PresignedUrlService;
     private final SchoolContextService schoolContextService;
+    private final CongestionConfigService congestionConfigService;
 
     public MonitoringCameraListResponse getCameras(UUID sessionId, String email) {
         TrainingSession session = findRunningSessionForSchool(sessionId, email);
@@ -70,6 +78,44 @@ public class TrainingMonitoringService {
                 .map(cctv -> toResponse(cctv, capturesByCctvCode.get(cctv.getCode())))
                 .toList();
         return new MonitoringCameraListResponse(sessionId, cameras);
+    }
+
+    // 상태가 아직 없는 CCTV도 목록에서 누락하지 않고 stale=true인 null 상태로 반환한다.
+    // 기준 데이터가 5초 주기 Observation이므로, 마지막 관측 이후 stateStaleAfterSec가 지났으면
+    // congestionLevel 등이 남아있어도 stale=true로 표시해 "오래된 정보를 NORMAL로 오인"하는 것을 막는다.
+    public CurrentCctvStateListResponse getCurrentStates(UUID sessionId, String email) {
+        TrainingSession session = findRunningSessionForSchool(sessionId, email);
+        UUID buildingId = session.getScenario().getBuilding().getId();
+        List<Cctv> cctvs = cctvJpaRepository
+                .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
+                        buildingId);
+        long observedAt = Instant.now().toEpochMilli();
+        if (cctvs.isEmpty()) {
+            return new CurrentCctvStateListResponse(sessionId, observedAt, List.of());
+        }
+
+        int stateStaleAfterSec = congestionConfigService.getConfig().getStateStaleAfterSec();
+        Map<String, CurrentCctvStateItem> statesByCctvCode =
+                currentCctvStateRepository.findAllBySessionId(sessionId.toString()).stream()
+                        .collect(Collectors.toMap(
+                                CurrentCctvStateItem::getCctvCode,
+                                Function.identity()
+                        ));
+
+        List<CurrentCctvStateResponse> states = cctvs.stream()
+                .map(cctv -> toStateResponse(cctv, statesByCctvCode.get(cctv.getCode()), observedAt, stateStaleAfterSec))
+                .toList();
+        return new CurrentCctvStateListResponse(sessionId, observedAt, states);
+    }
+
+    private CurrentCctvStateResponse toStateResponse(
+            Cctv cctv, CurrentCctvStateItem item, long observedAt, int stateStaleAfterSec
+    ) {
+        if (item == null) {
+            return CurrentCctvStateResponse.withoutState(cctv);
+        }
+        boolean stale = observedAt - item.getLastDetectedAt() > stateStaleAfterSec * 1_000L;
+        return CurrentCctvStateResponse.withState(cctv, item, stale);
     }
 
     public MonitoringFrameListResponse getFrames(

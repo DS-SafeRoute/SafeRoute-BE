@@ -6,6 +6,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.saferoute.domain.congestion.entity.CongestionLevel;
+import com.saferoute.domain.training.dto.CurrentCctvStateListResponse;
+import com.saferoute.domain.training.dto.CurrentCctvStateResponse;
 import com.saferoute.domain.training.dto.MonitoringCameraListResponse;
 import com.saferoute.domain.training.dto.MonitoringCameraResponse;
 import com.saferoute.domain.training.dto.MonitoringEventListResponse;
@@ -225,6 +227,94 @@ class TrainingMonitoringControllerTest {
                 .andExpect(jsonPath("$.code").value("S3_ERROR_005"))
                 .andExpect(jsonPath("$.message")
                         .value("S3 이미지 조회 URL 발급에 실패했습니다."));
+    }
+
+    @Test
+    void CCTV별_현재_혼잡_상태를_공통_응답으로_반환한다() throws Exception {
+        CurrentCctvStateResponse state = new CurrentCctvStateResponse(
+                CCTV_ID,
+                "CCTV_001",
+                "CAM-1",
+                "A동",
+                "3층",
+                "A동 3층",
+                8.6,
+                12,
+                0.42,
+                CongestionLevel.CROWDED,
+                1_787_722_095_000L,
+                false,
+                3L
+        );
+        given(trainingMonitoringService.getCurrentStates(SESSION_ID, EMAIL))
+                .willReturn(new CurrentCctvStateListResponse(SESSION_ID, 1_787_722_095_000L, List.of(state)));
+
+        mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/current-states", SESSION_ID)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.code").value("TRAINING_SUCCESS_010"))
+                .andExpect(jsonPath("$.result.sessionId").value(SESSION_ID.toString()))
+                .andExpect(jsonPath("$.result.observedAt").value(1_787_722_095_000L))
+                .andExpect(jsonPath("$.result.states[0].cctvId").value(CCTV_ID.toString()))
+                .andExpect(jsonPath("$.result.states[0].cctvCode").value("CCTV_001"))
+                .andExpect(jsonPath("$.result.states[0].avgHeadcount").value(8.6))
+                .andExpect(jsonPath("$.result.states[0].peakHeadcount").value(12))
+                .andExpect(jsonPath("$.result.states[0].density").value(0.42))
+                .andExpect(jsonPath("$.result.states[0].congestionLevel").value("CROWDED"))
+                .andExpect(jsonPath("$.result.states[0].lastDetectedAt").value(1_787_722_095_000L))
+                .andExpect(jsonPath("$.result.states[0].stale").value(false))
+                .andExpect(jsonPath("$.result.states[0].configVersion").value(3));
+    }
+
+    @Test
+    void 상태가_없는_CCTV는_null_필드와_stale_true로_반환한다() throws Exception {
+        CurrentCctvStateResponse state = new CurrentCctvStateResponse(
+                CCTV_ID,
+                "CCTV_002",
+                "CAM-2",
+                "A동",
+                "1층",
+                "A동 1층",
+                null,
+                null,
+                null,
+                null,
+                null,
+                true,
+                null
+        );
+        given(trainingMonitoringService.getCurrentStates(SESSION_ID, EMAIL))
+                .willReturn(new CurrentCctvStateListResponse(SESSION_ID, 1_787_722_095_000L, List.of(state)));
+
+        mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/current-states", SESSION_ID)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.states[0].avgHeadcount").value((Object) null))
+                .andExpect(jsonPath("$.result.states[0].congestionLevel").value((Object) null))
+                .andExpect(jsonPath("$.result.states[0].stale").value(true));
+    }
+
+    @Test
+    void 현재_상태_조회시_세션을_찾을_수_없으면_404를_반환한다() throws Exception {
+        given(trainingMonitoringService.getCurrentStates(SESSION_ID, EMAIL))
+                .willThrow(new ApiException(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND));
+
+        mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/current-states", SESSION_ID)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("TRAINING001"));
+    }
+
+    @Test
+    void 현재_상태_조회시_실행_중인_세션이_아니면_409를_반환한다() throws Exception {
+        given(trainingMonitoringService.getCurrentStates(SESSION_ID, EMAIL))
+                .willThrow(new ApiException(TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND));
+
+        mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/current-states", SESSION_ID)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("TRAINING006"));
     }
 
     @Test
