@@ -200,6 +200,10 @@ public class TrainingSessionController {
 
           정상 종료 여부는 관리자가 직접 끝내는 강제 종료(force-end)와 구분됩니다. 정상
           종료는 시나리오를 COMPLETED로, 강제 종료는 ERROR로 남긴다는 점이 다릅니다.
+
+          응답의 endedAt에 방금 기록된 종료 시각이 그대로 담겨 오므로, 화면은 별도 조회 없이
+          이 값을 바로 표시하면 됩니다. 단, 새로고침 후 세션을 다시 조회해 종료 시각을
+          복구하는 API는 아직 없습니다.
           """
   )
   @PostMapping("/{sessionId}/end")
@@ -220,6 +224,10 @@ public class TrainingSessionController {
           정상 종료(end)와 동일하게 시나리오의 화재 셀 초기화, 대기 중인 경로 재탐색 요청
           무효화, 유도등 평상시 복구가 함께 일어나지만, 시나리오 status는 COMPLETED가 아니라
           ERROR로 표시되어 정상 종료와 구분됩니다.
+
+          응답의 endedAt에 방금 기록된 강제 종료 시각이 그대로 담겨 오므로, 화면은 별도 조회
+          없이 이 값을 바로 표시하면 됩니다. 단, 새로고침 후 세션을 다시 조회해 종료 시각을
+          복구하는 API는 아직 없습니다.
           """
   )
   @PostMapping("/{sessionId}/force-end")
