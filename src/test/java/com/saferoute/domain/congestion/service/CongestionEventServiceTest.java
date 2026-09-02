@@ -34,7 +34,6 @@ import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventItem;
 import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventType;
 import com.saferoute.domain.telemetry.dynamo.entity.EventProcessingStatus;
 import com.saferoute.domain.telemetry.dynamo.repository.CongestionEventRepository;
-import com.saferoute.domain.telemetry.dynamo.repository.CurrentCctvStateRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.IdempotentSaveResult;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
@@ -65,9 +64,6 @@ class CongestionEventServiceTest {
 
     @Mock
     private CongestionEventRepository congestionEventRepository;
-
-    @Mock
-    private CurrentCctvStateRepository currentCctvStateRepository;
 
     @Mock
     private TrainingSessionRepository trainingSessionRepository;
@@ -219,7 +215,6 @@ class CongestionEventServiceTest {
         service.reportCongestionEvent(cctv, request(5));
 
         verify(routeRecalculationService, never()).trigger(any(), any(), any(), any(), any(), anyDouble());
-        verify(currentCctvStateRepository).updateIfLatest(any());
     }
 
     @Test
