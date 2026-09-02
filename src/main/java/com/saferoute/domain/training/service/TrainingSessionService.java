@@ -163,6 +163,12 @@ public class TrainingSessionService {
     if (fireOrigins.stream().anyMatch(origin -> !startFloorId.equals(origin.getFloorId()))) {
       throw new ApiException(TrainingErrorCode.FIRE_ORIGIN_START_FLOOR_MISMATCH);
     }
+
+    // 발화점 설정(POST .../evacuation-setup)은 시나리오별 정적 데이터만 저장하고 셀을 실제
+    // 화재 상태로 바꾸지 않는다. isFired는 훈련 중에만 의미 있는 동적 상태이므로 여기,
+    // 훈련이 실제로 시작되는 시점에 최초 발화점 셀을 활성화한다.
+    fireOrigins.forEach(origin -> origin.getGridCell().markFired());
+
     EvacuationRoute initialRoute =
         evacuationRouteService.findShortestRoute(startFloorId, startNode.getId());
 
