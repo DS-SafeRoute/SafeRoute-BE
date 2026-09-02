@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.building.entity.BuildingType;
 import com.saferoute.domain.building.repository.BuildingRepository;
-import com.saferoute.domain.training.dto.CreateScenarioRequest;
+import com.saferoute.domain.training.dto.CreateScenarioDraftRequest;
 import com.saferoute.domain.training.entity.FireSpreadSpeed;
 import com.saferoute.domain.training.repository.TrainingScenarioRepository;
 import com.saferoute.domain.training.service.TrainingScenarioService;
@@ -60,7 +60,7 @@ class BuildingScenarioConcurrencyIntegrationTest {
         try {
             Future<Void> creation = executor.submit(() -> {
                 transactionTemplate.executeWithoutResult(status -> {
-                    scenarioService.createScenario(fixture.request(), fixture.email());
+                    scenarioService.createDraft(fixture.request(), fixture.email());
                     scenarioCreated.countDown();
                     await(allowScenarioCommit);
                 });
@@ -116,7 +116,7 @@ class BuildingScenarioConcurrencyIntegrationTest {
             Future<ApiException> creation = executor.submit(() -> {
                 creationStarted.countDown();
                 try {
-                    scenarioService.createScenario(fixture.request(), fixture.email());
+                    scenarioService.createDraft(fixture.request(), fixture.email());
                     return null;
                 } catch (ApiException exception) {
                     return exception;
@@ -153,14 +153,13 @@ class BuildingScenarioConcurrencyIntegrationTest {
                 "서울특별시 성북구 안전로 1",
                 BuildingType.CLASSROOM,
                 schoolName));
-        CreateScenarioRequest request = new CreateScenarioRequest(
+        CreateScenarioDraftRequest request = new CreateScenarioDraftRequest(
                 "정기 훈련",
                 building.getId(),
                 50,
                 300,
                 Instant.now().plusSeconds(3600),
                 false,
-                admin.getId(),
                 FireSpreadSpeed.MEDIUM);
         return new Fixture(email, building.getId(), request);
     }
@@ -176,6 +175,6 @@ class BuildingScenarioConcurrencyIntegrationTest {
         }
     }
 
-    private record Fixture(String email, UUID buildingId, CreateScenarioRequest request) {
+    private record Fixture(String email, UUID buildingId, CreateScenarioDraftRequest request) {
     }
 }

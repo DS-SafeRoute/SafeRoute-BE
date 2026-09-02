@@ -148,6 +148,9 @@ public class TrainingSessionController {
           신규 세션은 항상 SCHEDULED 상태와 startedAt=null로 생성됩니다. RUNNING 상태와
           실제 시작 시각은 시작 API(POST /api/v1/sessions/{sessionId}/start)를 호출할 때만
           서버가 설정합니다.
+
+          작성이 완료되지 않은(DRAFT) 시나리오에는 세션을 생성할 수 없습니다(409). 시나리오를
+          POST /api/v1/scenarios/{scenarioId}/ready로 먼저 READY 전환해야 합니다.
           """
   )
   @PostMapping("/{scenarioId}")

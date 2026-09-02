@@ -81,7 +81,7 @@ class ScenarioEvacuationSetupServiceTest {
         request = new CreateScenarioEvacuationSetupRequest(gridCellId, startNodeId);
 
         given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
-        lenient().when(scenarioRepository.findForUpdateByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
+        lenient().when(scenarioRepository.findForUpdateByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
                 .thenReturn(Optional.of(scenario));
         lenient().when(scenario.getStatus()).thenReturn(ScenarioStatus.READY);
         lenient().when(scenario.getId()).thenReturn(scenarioId);
@@ -135,7 +135,7 @@ class ScenarioEvacuationSetupServiceTest {
     @Test
     @DisplayName("다른 학교 소속 시나리오는 설정할 수 없다")
     void setup_otherSchool_throws() {
-        given(scenarioRepository.findForUpdateByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
+        given(scenarioRepository.findForUpdateByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
                 .willReturn(Optional.empty());
 
         assertThatThrownBy(() -> scenarioEvacuationSetupService.setup(scenarioId, request, EMAIL))
@@ -294,7 +294,7 @@ class ScenarioEvacuationSetupServiceTest {
     @Test
     @DisplayName("설정 전 조회는 fireOrigin/startNode가 모두 null인 200 응답이다")
     void get_notConfigured_returnsNullFields() {
-        given(scenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
+        given(scenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
                 .willReturn(Optional.of(scenario));
         given(scenario.getStartNode()).willReturn(null);
         given(fireZoneRepository.findByScenario_IdAndIsManualAddTrue(scenarioId)).willReturn(List.of());
@@ -311,7 +311,7 @@ class ScenarioEvacuationSetupServiceTest {
     @DisplayName("설정 후 조회는 발화점·시작점·좌표를 함께 반환한다")
     void get_configured_returnsFields() {
         stubNodeFixtureDetails();
-        given(scenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
+        given(scenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
                 .willReturn(Optional.of(scenario));
         given(scenario.getStartNode()).willReturn(startNode);
         FireZone fireOrigin = mock(FireZone.class);
@@ -330,7 +330,7 @@ class ScenarioEvacuationSetupServiceTest {
     @Test
     @DisplayName("다른 학교 소속 시나리오의 설정은 조회할 수 없다")
     void get_otherSchool_throws() {
-        given(scenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
+        given(scenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
                 .willReturn(Optional.empty());
 
         assertThatThrownBy(() -> scenarioEvacuationSetupService.get(scenarioId, EMAIL))

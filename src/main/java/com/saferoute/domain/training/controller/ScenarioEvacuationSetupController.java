@@ -39,9 +39,13 @@ public class ScenarioEvacuationSetupController {
                     등록해 둔 NodeType.START 후보 노드 중 하나의 ID입니다. 이 API는 임의 좌표로
                     새 노드를 만들지 않으며, 두 값은 반드시 같은 층·같은 건물에 있어야 합니다.
 
-                    시나리오 상태가 READY가 아니거나, 이미 발화점·시작점 설정이 완료된
-                    시나리오에 다시 요청하면 실패합니다(409). 설정 후 수정·삭제 API는 제공하지
-                    않으므로, 값을 바꾸려면 시나리오를 새로 만들어야 합니다.
+                    시나리오 상태가 READY가 아니거나(작성이 아직 끝나지 않은 DRAFT 포함), 이미
+                    발화점·시작점 설정이 완료된 시나리오에 다시 요청하면 실패합니다(409). 설정
+                    후 수정·삭제 API는 제공하지 않으므로, 값을 바꾸려면 시나리오를 새로 만들어야
+                    합니다.
+
+                    DRAFT 시나리오는 POST /api/v1/scenarios/{scenarioId}/ready로 먼저 READY
+                    전환해야 이 API를 호출할 수 있습니다.
 
                     이 API는 FloorGridCell.isFired를 true로 바꾸지 않습니다. 발화점은 시나리오별
                     정적 설정이고, isFired는 실제 훈련 중에만 의미 있는 동적 상태이기 때문입니다.

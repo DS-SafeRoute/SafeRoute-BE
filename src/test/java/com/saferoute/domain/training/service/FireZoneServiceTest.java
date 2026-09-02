@@ -52,7 +52,7 @@ class FireZoneServiceTest {
     @Test
     @DisplayName("수동으로 지정한 최초 발화점만 조회한다")
     void getFireOrigins_returnsManualOriginsOnly() {
-        given(scenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
+        given(scenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
                 .willReturn(Optional.of(mock(TrainingScenario.class)));
         given(fireZoneRepository.findByScenario_IdAndIsManualAddTrue(scenarioId))
                 .willReturn(List.of(mock(FireZone.class)));
@@ -65,7 +65,7 @@ class FireZoneServiceTest {
     @Test
     @DisplayName("다른 학교 소속 시나리오의 발화점은 조회할 수 없다")
     void getFireOrigins_otherSchool_throws() {
-        given(scenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
+        given(scenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
                 .willReturn(Optional.empty());
 
         assertThatThrownBy(() -> fireZoneService.getFireOrigins(scenarioId, EMAIL))
@@ -77,7 +77,7 @@ class FireZoneServiceTest {
     @Test
     @DisplayName("시나리오의 전체 FireZone을 세대순으로 조회한다")
     void getFireZones_returnsAllOrderedBySpreadGeneration() {
-        given(scenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
+        given(scenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
                 .willReturn(Optional.of(mock(TrainingScenario.class)));
         given(fireZoneRepository.findByScenario_IdOrderBySpreadGenerationAscAddedAtAsc(scenarioId))
                 .willReturn(List.of(mock(FireZone.class), mock(FireZone.class)));
@@ -90,7 +90,7 @@ class FireZoneServiceTest {
     @Test
     @DisplayName("다른 학교 소속 시나리오의 화재구역은 조회할 수 없다")
     void getFireZones_otherSchool_throws() {
-        given(scenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
+        given(scenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
                 .willReturn(Optional.empty());
 
         assertThatThrownBy(() -> fireZoneService.getFireZones(scenarioId, EMAIL))
