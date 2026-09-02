@@ -232,9 +232,9 @@ public class TrainingSessionController {
       description = """
           이 세션에 대해 "지금 안내되고 있는" 대피 경로 하나를 노드 목록과 총 가중치로
           반환합니다. 가장 최근 승인된 경로 재탐색이 있으면 그 경로(fromApprovedRecalculation
-          =true)를, 없으면 도면 관리에서 발화층에 지정한 대표 START 노드를
-          기준으로 새로 계산한 최단 경로
-          (fromApprovedRecalculation=false)를 반환합니다.
+          =true)를, 없으면 시나리오 설정(POST .../evacuation-setup)에서 선택한 startNode를
+          기준으로 새로 계산한 최단 경로(fromApprovedRecalculation=false, source=INITIAL)를
+          반환합니다. 두 경우 모두 경로의 첫 노드는 항상 이 시나리오의 startNodeId입니다.
 
           세션 상태(RUNNING 여부)는 검증하지 않습니다. 아직 시작 전(SCHEDULED)인 세션은
           승인된 재탐색이 있을 수 없으므로 자연히 최단 경로가 반환되고, 이미 종료된
@@ -245,7 +245,7 @@ public class TrainingSessionController {
           훈련 진행 화면은 일반 최단 경로 API에 startNodeId를 직접 전달하지 않고 이 세션 기준
           API를 사용합니다.
 
-          시나리오에 발화층의 START 노드가 연결되어 있지 않으면 실패합니다.
+          시나리오에 evacuation-setup으로 설정된 startNode가 없으면 실패합니다.
           """
   )
   @GetMapping("/{sessionId}/current-route")
