@@ -236,6 +236,11 @@ public class TrainingSessionController {
           승인된 재탐색이 있을 수 없으므로 자연히 최단 경로가 반환되고, 이미 종료된
           (COMPLETED/ERROR) 세션은 종료 시점까지의 마지막 승인 경로가 그대로 반환됩니다.
 
+          시나리오 작성 완료 후 SCHEDULED 세션을 생성하고, 생성 응답의 sessionId로 이 API를
+          호출하면 훈련 시작 전에도 경로 미리보기를 표시할 수 있습니다. 시나리오 미리보기와
+          훈련 진행 화면은 일반 최단 경로 API에 startNodeId를 직접 전달하지 않고 이 세션 기준
+          API를 사용합니다.
+
           시나리오에 발화층의 START 노드가 연결되어 있지 않으면 실패합니다.
           """
   )
