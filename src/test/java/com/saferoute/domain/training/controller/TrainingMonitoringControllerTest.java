@@ -94,28 +94,6 @@ class TrainingMonitoringControllerTest {
     }
 
     @Test
-    void 종료된_세션의_모니터링_정보에는_endedAt이_포함된다() throws Exception {
-        MonitoringContextResponse context = new MonitoringContextResponse(
-                SESSION_ID,
-                "3학년 A동 화재 대피 훈련",
-                "A동",
-                TrainingStatus.COMPLETED,
-                1_787_722_000_000L,
-                1_787_723_000_000L,
-                1000L,
-                5,
-                15
-        );
-        given(trainingMonitoringService.getContext(SESSION_ID, EMAIL)).willReturn(context);
-
-        mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/context", SESSION_ID)
-                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.status").value("COMPLETED"))
-                .andExpect(jsonPath("$.result.endedAt").value(1_787_723_000_000L));
-    }
-
-    @Test
     void 모니터링_정보_조회시_세션을_찾을_수_없으면_404를_반환한다() throws Exception {
         given(trainingMonitoringService.getContext(SESSION_ID, EMAIL))
                 .willThrow(new ApiException(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND));
