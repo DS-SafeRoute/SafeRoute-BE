@@ -101,7 +101,7 @@ class TelemetryItemTest {
     @Test
     void 현재_상태는_세션과_CCTV로_키를_만들고_TTL이_없다() {
         CurrentCctvStateItem item = CurrentCctvStateItem.create(
-                SESSION_ID, "CCTV_001", 9, 4.5, CongestionLevel.CROWDED,
+                SESSION_ID, "CCTV_001", 8.6, 9, 4.5, CongestionLevel.CROWDED,
                 1_786_500_002_300L, 1L
         );
 
