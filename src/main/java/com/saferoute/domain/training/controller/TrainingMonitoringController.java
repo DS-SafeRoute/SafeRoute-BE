@@ -1,5 +1,7 @@
 package com.saferoute.domain.training.controller;
 
+import com.saferoute.domain.training.dto.CurrentCctvStateListApiResponse;
+import com.saferoute.domain.training.dto.CurrentCctvStateListResponse;
 import com.saferoute.domain.training.dto.MonitoringCameraListApiResponse;
 import com.saferoute.domain.training.dto.MonitoringCameraListResponse;
 import com.saferoute.domain.training.dto.MonitoringEventListApiResponse;
@@ -30,7 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @Tag(
         name = "훈련 모니터링",
-        description = "실행 중인 훈련의 카메라별 최신 주기 캡처 조회 API"
+        description = "실행 중인 훈련의 카메라별 최신 주기 캡처, CCTV별 현재 혼잡 상태, 프레임, 이벤트 타임라인 조회 API"
 )
 @RestController
 @RequestMapping("/api/v1/sessions/{sessionId}/monitoring")
@@ -209,6 +211,176 @@ public class TrainingMonitoringController {
                 trainingMonitoringService.getCameras(sessionId, authentication.getName());
         return ResponseEntity.ok(ApiResponse.success(
                 TrainingSuccessCode.MONITORING_CAMERA_LIST_FOUND,
+                response
+        ));
+    }
+
+    @Operation(
+            summary = "CCTV별 현재 혼잡 상태 조회",
+            description = """
+                    실행 중인 훈련 세션의 건물에 설치된 활성 CCTV별 현재 혼잡 상태를 반환합니다.
+
+                    기준 데이터는 5초 주기 Observation입니다. 혼잡 시작/상승/해소 즉시 이벤트는
+                    이 상태를 갱신하지 않으며, 이벤트 타임라인(GET /monitoring/events)과 WebSocket
+                    알림에만 반영됩니다.
+
+                    avgHeadcount는 최근 5초 관측 구간의 평균 인원, peakHeadcount는 같은 구간의
+                    순간 최대 인원입니다. density와 congestionLevel은 서버가 계산한 값을 그대로
+                    반환합니다.
+
+                    아직 상태가 없는 CCTV도 목록에서 누락되지 않고 avgHeadcount 등이 모두 null인
+                    상태로 포함되며, 이때 stale은 항상 true입니다. 마지막 관측(lastDetectedAt) 이후
+                    설정된 stateStaleAfterSec가 지난 CCTV도 stale이 true로 반환되므로, 클라이언트는
+                    congestionLevel이 남아있더라도 stale이 true면 이를 NORMAL이 아니라 '정보 없음/
+                    오래됨'으로 표시해야 합니다.
+                    """
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200",
+                    description = "CCTV별 현재 혼잡 상태 조회 성공",
+                    content = @Content(
+                            mediaType = "application/json",
+                            schema = @io.swagger.v3.oas.annotations.media.Schema(
+                                    implementation = CurrentCctvStateListApiResponse.class
+                            ),
+                            examples = {
+                                    @ExampleObject(
+                                            name = "상태가 있는 CCTV",
+                                            value = """
+                                                    {
+                                                      "isSuccess": true,
+                                                      "code": "TRAINING_SUCCESS_010",
+                                                      "message": "CCTV 현재 혼잡 상태 조회에 성공했습니다.",
+                                                      "result": {
+                                                        "sessionId": "d669294e-55e1-4c00-bf67-229d89b76948",
+                                                        "observedAt": 1787722095000,
+                                                        "states": [
+                                                          {
+                                                            "cctvId": "67b86e33-7874-494c-855f-e591e7847c09",
+                                                            "cctvCode": "CCTV_001",
+                                                            "cctvName": "CAM-1",
+                                                            "buildingName": "A동",
+                                                            "floorName": "3층",
+                                                            "location": "A동 3층",
+                                                            "avgHeadcount": 8.6,
+                                                            "peakHeadcount": 12,
+                                                            "density": 0.42,
+                                                            "congestionLevel": "CROWDED",
+                                                            "lastDetectedAt": 1787722095000,
+                                                            "stale": false,
+                                                            "configVersion": 3
+                                                          }
+                                                        ]
+                                                      }
+                                                    }
+                                                    """
+                                    ),
+                                    @ExampleObject(
+                                            name = "상태가 없거나 오래된 CCTV",
+                                            value = """
+                                                    {
+                                                      "isSuccess": true,
+                                                      "code": "TRAINING_SUCCESS_010",
+                                                      "message": "CCTV 현재 혼잡 상태 조회에 성공했습니다.",
+                                                      "result": {
+                                                        "sessionId": "d669294e-55e1-4c00-bf67-229d89b76948",
+                                                        "observedAt": 1787722095000,
+                                                        "states": [
+                                                          {
+                                                            "cctvId": "8b767966-b423-4d1b-bc2a-4107de97ad72",
+                                                            "cctvCode": "CCTV_002",
+                                                            "cctvName": "CAM-2",
+                                                            "buildingName": "A동",
+                                                            "floorName": "1층",
+                                                            "location": "A동 1층",
+                                                            "avgHeadcount": null,
+                                                            "peakHeadcount": null,
+                                                            "density": null,
+                                                            "congestionLevel": null,
+                                                            "lastDetectedAt": null,
+                                                            "stale": true,
+                                                            "configVersion": null
+                                                          }
+                                                        ]
+                                                      }
+                                                    }
+                                                    """
+                                    )
+                            }
+                    )
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "JWT가 없거나 유효하지 않음",
+                    content = @Content(
+                            mediaType = "application/json",
+                            examples = @ExampleObject(value = """
+                                    {
+                                      "isSuccess": false,
+                                      "code": "COMMON401",
+                                      "message": "인증이 필요합니다."
+                                    }
+                                    """)
+                    )
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403",
+                    description = "MANAGER 권한이 없음",
+                    content = @Content(
+                            mediaType = "application/json",
+                            examples = @ExampleObject(value = """
+                                    {
+                                      "isSuccess": false,
+                                      "code": "COMMON403",
+                                      "message": "접근 권한이 없습니다."
+                                    }
+                                    """)
+                    )
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404",
+                    description = "세션이 없거나 요청자와 다른 학교의 세션",
+                    content = @Content(
+                            mediaType = "application/json",
+                            examples = @ExampleObject(value = """
+                                    {
+                                      "isSuccess": false,
+                                      "code": "TRAINING001",
+                                      "message": "훈련 세션을 찾을 수 없습니다."
+                                    }
+                                    """)
+                    )
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "409",
+                    description = "훈련 세션이 RUNNING 상태가 아님",
+                    content = @Content(
+                            mediaType = "application/json",
+                            examples = @ExampleObject(value = """
+                                    {
+                                      "isSuccess": false,
+                                      "code": "TRAINING006",
+                                      "message": "진행 중인 훈련 세션을 찾을 수 없습니다."
+                                    }
+                                    """)
+                    )
+            )
+    })
+    @GetMapping("/current-states")
+    public ResponseEntity<ApiResponse<CurrentCctvStateListResponse>> getCurrentStates(
+            @Parameter(
+                    description = "조회할 RUNNING 훈련 세션의 UUID",
+                    required = true,
+                    example = "d669294e-55e1-4c00-bf67-229d89b76948"
+            )
+            @PathVariable UUID sessionId,
+            Authentication authentication
+    ) {
+        CurrentCctvStateListResponse response =
+                trainingMonitoringService.getCurrentStates(sessionId, authentication.getName());
+        return ResponseEntity.ok(ApiResponse.success(
+                TrainingSuccessCode.MONITORING_CURRENT_STATE_LIST_FOUND,
                 response
         ));
     }

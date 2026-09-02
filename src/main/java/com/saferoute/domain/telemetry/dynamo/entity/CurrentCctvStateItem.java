@@ -13,7 +13,8 @@ public class CurrentCctvStateItem {
     private String sk;
     private String trainingSessionId;
     private String cctvCode;
-    private Integer headcount;
+    private Double avgHeadcount;
+    private Integer peakHeadcount;
     private Double density;
     private CongestionLevel congestionLevel;
     private Long lastDetectedAt;
@@ -22,10 +23,13 @@ public class CurrentCctvStateItem {
     public CurrentCctvStateItem() {
     }
 
+    // 기준 데이터는 5초 주기 Observation으로 통일한다 - 즉시 혼잡 이벤트(CongestionEventService)는
+    // 더 이상 이 아이템을 직접 갱신하지 않는다 (이벤트 타임라인/재탐색 트리거/WebSocket 알림 용도로만 쓰임).
     public static CurrentCctvStateItem create(
             UUID trainingSessionId,
             String cctvCode,
-            Integer headcount,
+            Double avgHeadcount,
+            Integer peakHeadcount,
             Double density,
             CongestionLevel congestionLevel,
             long lastDetectedAt,
@@ -34,7 +38,8 @@ public class CurrentCctvStateItem {
         CurrentCctvStateItem item = new CurrentCctvStateItem();
         item.trainingSessionId = trainingSessionId.toString();
         item.cctvCode = cctvCode;
-        item.headcount = headcount;
+        item.avgHeadcount = avgHeadcount;
+        item.peakHeadcount = peakHeadcount;
         item.density = density;
         item.congestionLevel = congestionLevel;
         item.lastDetectedAt = lastDetectedAt;
@@ -66,8 +71,11 @@ public class CurrentCctvStateItem {
     public String getCctvCode() { return cctvCode; }
     public void setCctvCode(String cctvCode) { this.cctvCode = cctvCode; }
 
-    public Integer getHeadcount() { return headcount; }
-    public void setHeadcount(Integer headcount) { this.headcount = headcount; }
+    public Double getAvgHeadcount() { return avgHeadcount; }
+    public void setAvgHeadcount(Double avgHeadcount) { this.avgHeadcount = avgHeadcount; }
+
+    public Integer getPeakHeadcount() { return peakHeadcount; }
+    public void setPeakHeadcount(Integer peakHeadcount) { this.peakHeadcount = peakHeadcount; }
 
     public Double getDensity() { return density; }
     public void setDensity(Double density) { this.density = density; }

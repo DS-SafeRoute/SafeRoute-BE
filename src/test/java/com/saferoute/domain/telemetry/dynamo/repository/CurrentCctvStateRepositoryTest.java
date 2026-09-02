@@ -95,7 +95,7 @@ class CurrentCctvStateRepositoryTest {
 
     private CurrentCctvStateItem item(String cctvCode, long timestamp) {
         return CurrentCctvStateItem.create(
-                SESSION_ID, cctvCode, 9, 4.5, CongestionLevel.CROWDED, timestamp, 1L
+                SESSION_ID, cctvCode, 8.6, 12, 4.5, CongestionLevel.CROWDED, timestamp, 1L
         );
     }
 }

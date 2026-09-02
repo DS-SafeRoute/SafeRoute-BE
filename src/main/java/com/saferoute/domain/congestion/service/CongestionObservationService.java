@@ -173,7 +173,8 @@ public class CongestionObservationService {
         CurrentCctvStateItem stateItem = CurrentCctvStateItem.create(
                 sessionId,
                 cctvCode,
-                (int) Math.round(request.avgHeadcount()),
+                item.getAvgHeadcount(),
+                item.getPeakHeadcount(),
                 item.getDensity(),
                 item.getCongestionLevel(),
                 request.capturedAt(),

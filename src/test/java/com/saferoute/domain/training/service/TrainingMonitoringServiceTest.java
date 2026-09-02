@@ -7,6 +7,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.saferoute.domain.building.entity.Building;
+import com.saferoute.domain.congestion.entity.CongestionConfig;
+import com.saferoute.domain.congestion.service.CongestionConfigService;
 import com.saferoute.domain.device.entity.Cctv;
 import com.saferoute.domain.device.repository.CctvJpaRepository;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
@@ -17,11 +19,15 @@ import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.congestion.entity.CongestionLevel;
 import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventItem;
 import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventType;
+import com.saferoute.domain.telemetry.dynamo.entity.CurrentCctvStateItem;
 import com.saferoute.domain.telemetry.dynamo.entity.LatestMonitoringCaptureItem;
 import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import com.saferoute.domain.telemetry.dynamo.repository.CongestionEventRepository;
+import com.saferoute.domain.telemetry.dynamo.repository.CurrentCctvStateRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.LatestMonitoringCaptureRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
+import com.saferoute.domain.training.dto.CurrentCctvStateListResponse;
+import com.saferoute.domain.training.dto.CurrentCctvStateResponse;
 import com.saferoute.domain.training.dto.MonitoringCameraListResponse;
 import com.saferoute.domain.training.dto.MonitoringCameraResponse;
 import com.saferoute.domain.training.dto.MonitoringEventListResponse;
@@ -71,11 +77,15 @@ class TrainingMonitoringServiceTest {
     @Mock
     private CongestionEventRepository congestionEventRepository;
     @Mock
+    private CurrentCctvStateRepository currentCctvStateRepository;
+    @Mock
     private RouteRecalculationRepository routeRecalculationRepository;
     @Mock
     private S3PresignedUrlService s3PresignedUrlService;
     @Mock
     private SchoolContextService schoolContextService;
+    @Mock
+    private CongestionConfigService congestionConfigService;
 
     private TrainingMonitoringService service;
 
@@ -87,9 +97,11 @@ class TrainingMonitoringServiceTest {
                 latestMonitoringCaptureRepository,
                 observationRepository,
                 congestionEventRepository,
+                currentCctvStateRepository,
                 routeRecalculationRepository,
                 s3PresignedUrlService,
-                schoolContextService
+                schoolContextService,
+                congestionConfigService
         );
         given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
     }
@@ -427,6 +439,133 @@ class TrainingMonitoringServiceTest {
                         "errorCode",
                         TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND
                 );
+        verify(cctvJpaRepository, never())
+                .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
+                        org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void 현재_상태가_있는_CCTV는_avg_peak를_분리해서_반환한다() {
+        stubSession(TrainingStatus.RUNNING);
+        Cctv cctv = cctv(3);
+        // 기본 설정 stateStaleAfterSec=15초 - 방금 관측된 상태이므로 stale이 아니어야 한다.
+        long freshLastDetectedAt = Instant.now().toEpochMilli() - 1_000L;
+        CurrentCctvStateItem state = CurrentCctvStateItem.create(
+                SESSION_ID, "CCTV_001", 8.6, 12, 0.42, CongestionLevel.CROWDED, freshLastDetectedAt, 3L
+        );
+        given(cctvJpaRepository
+                .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
+                        BUILDING_ID))
+                .willReturn(List.of(cctv));
+        given(currentCctvStateRepository.findAllBySessionId(SESSION_ID.toString()))
+                .willReturn(List.of(state));
+        given(congestionConfigService.getConfig()).willReturn(CongestionConfig.createDefault());
+
+        CurrentCctvStateListResponse response = service.getCurrentStates(SESSION_ID, EMAIL);
+
+        assertThat(response.sessionId()).isEqualTo(SESSION_ID);
+        assertThat(response.states()).singleElement().satisfies(cctvState -> {
+            assertThat(cctvState.cctvCode()).isEqualTo("CCTV_001");
+            assertThat(cctvState.avgHeadcount()).isEqualTo(8.6);
+            assertThat(cctvState.peakHeadcount()).isEqualTo(12);
+            assertThat(cctvState.density()).isEqualTo(0.42);
+            assertThat(cctvState.congestionLevel()).isEqualTo(CongestionLevel.CROWDED);
+            assertThat(cctvState.lastDetectedAt()).isEqualTo(freshLastDetectedAt);
+            assertThat(cctvState.stale()).isFalse();
+            assertThat(cctvState.configVersion()).isEqualTo(3L);
+        });
+    }
+
+    @Test
+    void 상태가_없는_CCTV도_목록에서_누락하지_않고_stale로_반환한다() {
+        stubSession(TrainingStatus.RUNNING);
+        Cctv cctv = cctv(3);
+        given(cctvJpaRepository
+                .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
+                        BUILDING_ID))
+                .willReturn(List.of(cctv));
+        given(currentCctvStateRepository.findAllBySessionId(SESSION_ID.toString()))
+                .willReturn(List.of());
+        given(congestionConfigService.getConfig()).willReturn(CongestionConfig.createDefault());
+
+        CurrentCctvStateResponse state = service.getCurrentStates(SESSION_ID, EMAIL).states().get(0);
+
+        assertThat(state.avgHeadcount()).isNull();
+        assertThat(state.peakHeadcount()).isNull();
+        assertThat(state.density()).isNull();
+        assertThat(state.congestionLevel()).isNull();
+        assertThat(state.lastDetectedAt()).isNull();
+        assertThat(state.stale()).isTrue();
+    }
+
+    @Test
+    void stateStaleAfterSec를_초과한_상태는_stale로_반환한다() {
+        stubSession(TrainingStatus.RUNNING);
+        Cctv cctv = cctv(3);
+        // 기본 설정 stateStaleAfterSec=15초. lastDetectedAt을 현재로부터 20초 전으로 만들어 stale 유도.
+        long staleLastDetectedAt = Instant.now().toEpochMilli() - 20_000L;
+        CurrentCctvStateItem state = CurrentCctvStateItem.create(
+                SESSION_ID, "CCTV_001", 8.6, 12, 0.42, CongestionLevel.CROWDED, staleLastDetectedAt, 3L
+        );
+        given(cctvJpaRepository
+                .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
+                        BUILDING_ID))
+                .willReturn(List.of(cctv));
+        given(currentCctvStateRepository.findAllBySessionId(SESSION_ID.toString()))
+                .willReturn(List.of(state));
+        given(congestionConfigService.getConfig()).willReturn(CongestionConfig.createDefault());
+
+        CurrentCctvStateResponse response = service.getCurrentStates(SESSION_ID, EMAIL).states().get(0);
+
+        assertThat(response.stale()).isTrue();
+        assertThat(response.congestionLevel()).isEqualTo(CongestionLevel.CROWDED);
+    }
+
+    @Test
+    void stale_판정은_기본값이_아닌_설정된_stateStaleAfterSec를_사용한다() {
+        stubSession(TrainingStatus.RUNNING);
+        Cctv cctv = cctv(3);
+        // 기본값(15초)이었다면 20초 전 관측은 stale이지만, stateStaleAfterSec를 30초로 설정하면 stale이 아니어야 한다.
+        long lastDetectedAt = Instant.now().toEpochMilli() - 20_000L;
+        CurrentCctvStateItem state = CurrentCctvStateItem.create(
+                SESSION_ID, "CCTV_001", 8.6, 12, 0.42, CongestionLevel.CROWDED, lastDetectedAt, 3L
+        );
+        CongestionConfig config = CongestionConfig.createDefault();
+        config.updateSettings(null, null, null, null, null, null, null, null, 30);
+        given(cctvJpaRepository
+                .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
+                        BUILDING_ID))
+                .willReturn(List.of(cctv));
+        given(currentCctvStateRepository.findAllBySessionId(SESSION_ID.toString()))
+                .willReturn(List.of(state));
+        given(congestionConfigService.getConfig()).willReturn(config);
+
+        CurrentCctvStateResponse response = service.getCurrentStates(SESSION_ID, EMAIL).states().get(0);
+
+        assertThat(response.stale()).isFalse();
+    }
+
+    @Test
+    void 활성_CCTV가_없으면_현재_상태_조회도_빈_목록을_반환한다() {
+        stubSession(TrainingStatus.RUNNING);
+        given(cctvJpaRepository
+                .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
+                        BUILDING_ID))
+                .willReturn(List.of());
+
+        CurrentCctvStateListResponse response = service.getCurrentStates(SESSION_ID, EMAIL);
+
+        assertThat(response.states()).isEmpty();
+        verify(currentCctvStateRepository, never()).findAllBySessionId(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void 현재_상태_조회는_실행_중이_아닌_세션은_거부한다() {
+        stubSession(TrainingStatus.COMPLETED);
+
+        assertThatThrownBy(() -> service.getCurrentStates(SESSION_ID, EMAIL))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND);
         verify(cctvJpaRepository, never())
                 .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
                         org.mockito.ArgumentMatchers.any());

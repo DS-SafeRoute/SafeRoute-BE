@@ -14,10 +14,8 @@ import com.saferoute.domain.evacuation.recalculation.service.RouteRecalculationS
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventItem;
 import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventType;
-import com.saferoute.domain.telemetry.dynamo.entity.CurrentCctvStateItem;
 import com.saferoute.domain.telemetry.dynamo.entity.EventProcessingStatus;
 import com.saferoute.domain.telemetry.dynamo.repository.CongestionEventRepository;
-import com.saferoute.domain.telemetry.dynamo.repository.CurrentCctvStateRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.IdempotentSaveResult;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
@@ -47,7 +45,6 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 public class CongestionEventService {
 
     private final CongestionEventRepository congestionEventRepository;
-    private final CurrentCctvStateRepository currentCctvStateRepository;
     private final TrainingSessionRepository trainingSessionRepository;
     private final CctvGridCellRepository cctvGridCellRepository;
     private final MapEdgeGridCellRepository mapEdgeGridCellRepository;
@@ -106,7 +103,9 @@ public class CongestionEventService {
 
         try {
             List<MapEdge> affectedEdges = resolveAffectedEdges(cctv.getId());
-            updateCurrentState(session.getId(), cctv.getCode(), request, saveResult.item());
+            // 현재 상태(CurrentCctvStateItem)는 5초 주기 Observation만을 기준 데이터로 삼는다.
+            // 즉시 이벤트는 여기서 상태를 갱신하지 않고 타임라인/재탐색 트리거/WebSocket 발행에만 쓰인다
+            // (CongestionObservationService.updateCurrentState 참고).
 
             CongestionLevel savedLevel = saveResult.item().getCongestionLevel();
             RecalculationTriggerType triggerType = mapTriggerType(saveResult.item().getEventType());
@@ -168,24 +167,6 @@ public class CongestionEventService {
         }
         return congestionEventRepository.updateEventStatus(
                 item.getEventId(), current, EventProcessingStatus.PROCESSING);
-    }
-
-    private void updateCurrentState(
-            UUID sessionId, String cctvCode, ReportCongestionEventRequest request, CongestionEventItem item
-    ) {
-        CurrentCctvStateItem stateItem = CurrentCctvStateItem.create(
-                sessionId,
-                cctvCode,
-                request.headcount(),
-                item.getDensity(),
-                item.getCongestionLevel(),
-                request.detectedAt(),
-                request.configVersion()
-        );
-        // 오래된 이벤트가 최신 상태를 덮어쓰지 않도록 조건부 갱신 (detectedAt 기준). 실패해도 이벤트 저장 자체는 유지한다.
-        if (!currentCctvStateRepository.updateIfLatest(stateItem)) {
-            log.debug("더 최신 상태가 있어 CCTV 현재 상태 갱신을 건너뜀: cctvCode={}", cctvCode);
-        }
     }
 
     private void validateEventIdentity(
