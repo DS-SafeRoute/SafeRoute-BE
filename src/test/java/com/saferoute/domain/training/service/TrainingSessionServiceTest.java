@@ -33,7 +33,6 @@ import com.saferoute.domain.user.entity.User;
 import com.saferoute.domain.user.entity.UserRole;
 import com.saferoute.domain.user.repository.UserRepository;
 import com.saferoute.domain.user.service.SchoolContextService;
-import com.saferoute.global.api.code.ErrorCode;
 import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
@@ -170,23 +169,28 @@ class TrainingSessionServiceTest {
     // === create ===
 
     @Test
-    @DisplayName("RUNNING 상태로 세션을 생성할 때 시작 시각이 없으면 예외가 발생한다")
-    void create_runningWithoutStartedAt_throwsException() {
+    @DisplayName("세션을 생성하면 항상 SCHEDULED 상태이고 시작 시각은 비어 있다")
+    void create_alwaysCreatesScheduledSessionWithoutStartedAt() {
         UUID adminId = UUID.randomUUID();
         UUID scenarioId = UUID.randomUUID();
 
         User manager = mock(User.class);
         given(manager.getRole()).willReturn(UserRole.MANAGER);
         given(userRepository.findByIdAndSchoolName(adminId, SCHOOL_NAME)).willReturn(Optional.of(manager));
+        TrainingScenario scenario = mock(TrainingScenario.class);
         given(trainingScenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
-                .willReturn(Optional.of(mock(TrainingScenario.class)));
+                .willReturn(Optional.of(scenario));
+        given(trainingSessionRepository.saveAndFlush(any(TrainingSession.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
 
-        CreateSessionRequest request = new CreateSessionRequest(TrainingStatus.RUNNING, null, adminId);
+        CreateSessionRequest request = new CreateSessionRequest(adminId);
 
-        assertThatThrownBy(() -> trainingSessionService.create(request, scenarioId, EMAIL))
-                .isInstanceOf(ApiException.class)
-                .extracting(exception -> ((ApiException) exception).getErrorCode())
-                .isEqualTo(ErrorCode.INVALID_INPUT);
+        trainingSessionService.create(request, scenarioId, EMAIL);
+
+        var sessionCaptor = org.mockito.ArgumentCaptor.forClass(TrainingSession.class);
+        verify(trainingSessionRepository).saveAndFlush(sessionCaptor.capture());
+        assertThat(sessionCaptor.getValue().getStatus()).isEqualTo(TrainingStatus.SCHEDULED);
+        assertThat(sessionCaptor.getValue().getStartedAt()).isNull();
     }
 
     @Test
@@ -201,7 +205,7 @@ class TrainingSessionServiceTest {
                 .willReturn(Optional.of(mock(TrainingScenario.class)));
         given(trainingSessionRepository.existsByScenario_Id(scenarioId)).willReturn(true);
 
-        CreateSessionRequest request = new CreateSessionRequest(TrainingStatus.SCHEDULED, null, adminId);
+        CreateSessionRequest request = new CreateSessionRequest(adminId);
 
         assertThatThrownBy(() -> trainingSessionService.create(request, scenarioId, EMAIL))
                 .isInstanceOf(ApiException.class)
@@ -224,7 +228,7 @@ class TrainingSessionServiceTest {
         given(trainingSessionRepository.saveAndFlush(any()))
                 .willThrow(new org.springframework.dao.DataIntegrityViolationException("unique constraint"));
 
-        CreateSessionRequest request = new CreateSessionRequest(TrainingStatus.SCHEDULED, null, adminId);
+        CreateSessionRequest request = new CreateSessionRequest(adminId);
 
         assertThatThrownBy(() -> trainingSessionService.create(request, scenarioId, EMAIL))
                 .isInstanceOf(ApiException.class)
@@ -244,8 +248,7 @@ class TrainingSessionServiceTest {
         given(trainingScenarioRepository
                 .findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
                 .willReturn(Optional.empty());
-        CreateSessionRequest request =
-                new CreateSessionRequest(TrainingStatus.SCHEDULED, null, adminId);
+        CreateSessionRequest request = new CreateSessionRequest(adminId);
 
         assertThatThrownBy(() -> trainingSessionService.create(request, scenarioId, EMAIL))
                 .isInstanceOf(ApiException.class)

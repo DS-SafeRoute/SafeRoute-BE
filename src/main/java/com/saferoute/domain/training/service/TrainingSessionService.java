@@ -77,21 +77,7 @@ public class TrainingSessionService {
       throw new ApiException(TrainingErrorCode.SESSION_ALREADY_EXISTS);
     }
 
-    if (request.getStatus() == TrainingStatus.RUNNING && request.getStartedAt() == null) {
-      throw new ApiException(ErrorCode.INVALID_INPUT);
-    }
-
-    if (request.getStatus() == TrainingStatus.RUNNING
-        && hasRunningSession(scenario.getBuildingId())) {
-      throw new ApiException(TrainingErrorCode.RUNNING_SESSION_ALREADY_EXISTS);
-    }
-
-    TrainingSession trainingSession = TrainingSession.create(
-        request.getStatus(),
-        request.getStartedAt(),
-        user,
-        scenario
-    );
+    TrainingSession trainingSession = TrainingSession.schedule(user, scenario);
 
     // existsByScenario_Id 체크와 save는 원자적이지 않아 동시 요청이 둘 다 통과할 수 있다.
     // 이 경우 뒤늦게 실패하는 쪽은 UNIQUE 제약 위반으로 걸러지므로, saveAndFlush로 INSERT를

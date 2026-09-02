@@ -15,6 +15,7 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import java.util.UUID;
 
 import lombok.RequiredArgsConstructor;
@@ -142,16 +143,14 @@ public class TrainingSessionController {
           재훈련이 필요하면 세션이 아니라 시나리오를 새로 만들어야 합니다.
 
           adminId는 요청자와 같은 학교 소속이면서 MANAGER 권한을 가진 사용자여야 합니다.
-
-          status를 RUNNING으로 생성하려면 startedAt을 함께 지정해야 합니다. status를
-          SCHEDULED로 생성하는 경우가 일반적인 흐름이며, 이때는 실제 시작 시각이 아직 없으므로
-          이후 시작 API(POST /api/v1/sessions/{sessionId}/start) 호출 시 서버가 시작
-          시각을 다시 기록합니다.
+          신규 세션은 항상 SCHEDULED 상태와 startedAt=null로 생성됩니다. RUNNING 상태와
+          실제 시작 시각은 시작 API(POST /api/v1/sessions/{sessionId}/start)를 호출할 때만
+          서버가 설정합니다.
           """
   )
   @PostMapping("/{scenarioId}")
   public ResponseEntity<TrainingSessionResponse> createTrainingSession(
-      @RequestBody CreateSessionRequest request,
+      @Valid @RequestBody CreateSessionRequest request,
       @PathVariable("scenarioId") UUID scenarioId,
       Authentication authentication) {
     return ResponseEntity.ok(trainingSessionService.create(request, scenarioId, authentication.getName()));
