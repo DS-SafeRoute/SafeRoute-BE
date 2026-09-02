@@ -16,6 +16,12 @@ public interface BuildingRepository
 
     Optional<Building> findByIdAndSchoolName(UUID id, String schoolName);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select b from Building b where b.id = :buildingId and b.schoolName = :schoolName")
+    Optional<Building> findByIdAndSchoolNameForUpdate(
+            @Param("buildingId") UUID buildingId,
+            @Param("schoolName") String schoolName);
+
     // 같은 건물의 서로 다른 세션이 동시에 시작되는 경쟁을 건물 행 하나로 직렬화한다.
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select b from Building b where b.id = :buildingId")

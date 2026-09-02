@@ -67,7 +67,7 @@ public class BuildingService {
 
     @Transactional
     public void deleteBuilding(UUID buildingId, String email) {
-        Building building = findBuildingByIdAndEmail(buildingId, email);
+        Building building = findBuildingByIdAndEmailForUpdate(buildingId, email);
 
         if (trainingScenarioRepository.existsByBuilding_Id(buildingId)) {
             throw new ApiException(BuildingErrorCode.BUILDING_HAS_TRAINING_HISTORY);
@@ -83,6 +83,12 @@ public class BuildingService {
     private Building findBuildingByIdAndEmail(UUID buildingId, String email) {
         String schoolName = findUserByEmail(email).getSchoolName();
         return buildingRepository.findByIdAndSchoolName(buildingId, schoolName)
+                .orElseThrow(() -> new ApiException(BuildingErrorCode.BUILDING_NOT_FOUND));
+    }
+
+    private Building findBuildingByIdAndEmailForUpdate(UUID buildingId, String email) {
+        String schoolName = findUserByEmail(email).getSchoolName();
+        return buildingRepository.findByIdAndSchoolNameForUpdate(buildingId, schoolName)
                 .orElseThrow(() -> new ApiException(BuildingErrorCode.BUILDING_NOT_FOUND));
     }
 

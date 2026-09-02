@@ -86,7 +86,8 @@ class TrainingScenarioServiceTest {
         CreateScenarioRequest request = new CreateScenarioRequest(
                 "정기 훈련", buildingId, 52, null, Instant.now(), false, adminId, FireSpreadSpeed.MEDIUM);
         given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
-        given(buildingRepository.findByIdAndSchoolName(buildingId, SCHOOL_NAME)).willReturn(Optional.of(building));
+        given(buildingRepository.findByIdAndSchoolNameForUpdate(buildingId, SCHOOL_NAME))
+                .willReturn(Optional.of(building));
         given(userRepository.findByIdAndSchoolName(adminId, SCHOOL_NAME)).willReturn(Optional.of(admin));
         given(scenarioRepository.save(org.mockito.ArgumentMatchers.any(TrainingScenario.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));

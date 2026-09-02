@@ -100,7 +100,7 @@ class BuildingServiceTest {
         UUID buildingId = UUID.randomUUID();
         Building building = Building.create(
                 "공학관", "서울특별시 성북구 안전로 1", BuildingType.CLASSROOM, SCHOOL_NAME);
-        given(buildingRepository.findByIdAndSchoolName(buildingId, SCHOOL_NAME))
+        given(buildingRepository.findByIdAndSchoolNameForUpdate(buildingId, SCHOOL_NAME))
                 .willReturn(Optional.of(building));
         given(trainingScenarioRepository.existsByBuilding_Id(buildingId)).willReturn(false);
 
@@ -117,7 +117,7 @@ class BuildingServiceTest {
         UUID buildingId = UUID.randomUUID();
         Building building = Building.create(
                 "공학관", "서울특별시 성북구 안전로 1", BuildingType.CLASSROOM, SCHOOL_NAME);
-        given(buildingRepository.findByIdAndSchoolName(buildingId, SCHOOL_NAME))
+        given(buildingRepository.findByIdAndSchoolNameForUpdate(buildingId, SCHOOL_NAME))
                 .willReturn(Optional.of(building));
         given(trainingScenarioRepository.existsByBuilding_Id(buildingId)).willReturn(true);
 
