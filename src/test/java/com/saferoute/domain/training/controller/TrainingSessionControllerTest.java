@@ -67,31 +67,35 @@ class TrainingSessionControllerTest {
     // === getSessions ===
 
     @Test
-    @DisplayName("GET /sessions?status=RUNNING - 세션 목록을 공통 응답으로 반환한다")
+    @DisplayName("GET /sessions?status=SCHEDULED - 세션 목록에 scenarioId를 포함한다")
     void getSessions_success() throws Exception {
+        UUID scenarioId = UUID.randomUUID();
         UUID buildingId = UUID.randomUUID();
         TrainingSessionSummaryResponse summary = new TrainingSessionSummaryResponse(
                 sessionId,
+                scenarioId,
                 "3학년 A동 화재 대피 훈련",
                 buildingId,
                 "A동",
-                TrainingStatus.RUNNING,
-                Instant.parse("2026-08-26T05:26:00Z")
+                TrainingStatus.SCHEDULED,
+                null
         );
-        given(trainingSessionService.getSessions(TrainingStatus.RUNNING, EMAIL))
+        given(trainingSessionService.getSessions(TrainingStatus.SCHEDULED, EMAIL))
                 .willReturn(new TrainingSessionListResponse(List.of(summary)));
 
         mockMvc.perform(get("/api/v1/sessions")
-                        .param("status", "RUNNING")
+                        .param("status", "SCHEDULED")
                         .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true))
                 .andExpect(jsonPath("$.code").value("TRAINING_SUCCESS_008"))
                 .andExpect(jsonPath("$.result.sessions[0].sessionId").value(sessionId.toString()))
+                .andExpect(jsonPath("$.result.sessions[0].scenarioId").value(scenarioId.toString()))
                 .andExpect(jsonPath("$.result.sessions[0].scenarioName").value("3학년 A동 화재 대피 훈련"))
                 .andExpect(jsonPath("$.result.sessions[0].buildingId").value(buildingId.toString()))
                 .andExpect(jsonPath("$.result.sessions[0].buildingName").value("A동"))
-                .andExpect(jsonPath("$.result.sessions[0].status").value("RUNNING"));
+                .andExpect(jsonPath("$.result.sessions[0].status").value("SCHEDULED"))
+                .andExpect(jsonPath("$.result.sessions[0].startedAt").doesNotExist());
     }
 
     @Test

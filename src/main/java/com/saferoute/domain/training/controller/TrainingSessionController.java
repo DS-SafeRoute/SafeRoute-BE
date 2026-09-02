@@ -68,11 +68,12 @@ public class TrainingSessionController {
                               "sessions": [
                                 {
                                   "sessionId": "d669294e-55e1-4c00-bf67-229d89b76948",
+                                  "scenarioId": "746d0249-c6c2-4a61-a233-44f35c04dc49",
                                   "scenarioName": "3학년 A동 화재 대피 훈련",
                                   "buildingId": "b5a6e5b0-1e3a-4b8a-9b8a-6a2b6b1f5a11",
                                   "buildingName": "A동",
-                                  "status": "RUNNING",
-                                  "startedAt": "2026-08-26T05:26:00Z"
+                                  "status": "SCHEDULED",
+                                  "startedAt": null
                                 }
                               ]
                             }

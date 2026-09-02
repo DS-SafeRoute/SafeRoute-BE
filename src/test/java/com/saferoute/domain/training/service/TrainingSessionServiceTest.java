@@ -123,34 +123,36 @@ class TrainingSessionServiceTest {
     // === getSessions ===
 
     @Test
-    @DisplayName("요청자 학교의 상태별 세션 목록을 최신순으로 반환한다")
-    void getSessions_returnsSummariesForRequesterSchool() {
+    @DisplayName("요청자 학교의 SCHEDULED 세션 목록에 실제 시나리오 ID를 포함한다")
+    void getSessions_scheduledIncludesScenarioId() {
         UUID buildingId = UUID.randomUUID();
+        UUID scenarioId = UUID.randomUUID();
         Building building = mock(Building.class);
         given(building.getId()).willReturn(buildingId);
         given(building.getName()).willReturn("A동");
         TrainingScenario scenario = mock(TrainingScenario.class);
+        given(scenario.getId()).willReturn(scenarioId);
         given(scenario.getName()).willReturn("3학년 A동 화재 대피 훈련");
         given(scenario.getBuilding()).willReturn(building);
-        Instant startedAt = Instant.parse("2026-08-26T05:26:00Z");
         TrainingSession session =
-                TrainingSession.create(TrainingStatus.RUNNING, startedAt, mock(User.class), scenario);
+                TrainingSession.schedule(mock(User.class), scenario);
         ReflectionTestUtils.setField(session, "id", sessionId);
         given(trainingSessionRepository
                 .findAllByStatusAndScenario_Building_SchoolNameOrderByStartedAtDesc(
-                        TrainingStatus.RUNNING, SCHOOL_NAME))
+                        TrainingStatus.SCHEDULED, SCHOOL_NAME))
                 .willReturn(List.of(session));
 
-        TrainingSessionListResponse response = trainingSessionService.getSessions(TrainingStatus.RUNNING, EMAIL);
+        TrainingSessionListResponse response = trainingSessionService.getSessions(TrainingStatus.SCHEDULED, EMAIL);
 
         assertThat(response.sessions()).hasSize(1);
         TrainingSessionSummaryResponse summary = response.sessions().get(0);
         assertThat(summary.sessionId()).isEqualTo(sessionId);
+        assertThat(summary.scenarioId()).isEqualTo(scenarioId);
         assertThat(summary.scenarioName()).isEqualTo("3학년 A동 화재 대피 훈련");
         assertThat(summary.buildingId()).isEqualTo(buildingId);
         assertThat(summary.buildingName()).isEqualTo("A동");
-        assertThat(summary.status()).isEqualTo(TrainingStatus.RUNNING);
-        assertThat(summary.startedAt()).isEqualTo(startedAt);
+        assertThat(summary.status()).isEqualTo(TrainingStatus.SCHEDULED);
+        assertThat(summary.startedAt()).isNull();
     }
 
     @Test
