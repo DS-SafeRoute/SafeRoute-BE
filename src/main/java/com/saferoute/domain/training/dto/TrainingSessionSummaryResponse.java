@@ -11,6 +11,9 @@ public record TrainingSessionSummaryResponse(
         @Schema(description = "훈련 세션 ID", example = "d669294e-55e1-4c00-bf67-229d89b76948")
         UUID sessionId,
 
+        @Schema(description = "훈련 시나리오 ID", example = "746d0249-c6c2-4a61-a233-44f35c04dc49")
+        UUID scenarioId,
+
         @Schema(description = "훈련 시나리오 이름", example = "3학년 A동 화재 대피 훈련")
         String scenarioName,
 
@@ -30,6 +33,7 @@ public record TrainingSessionSummaryResponse(
     public static TrainingSessionSummaryResponse from(TrainingSession session) {
         return new TrainingSessionSummaryResponse(
                 session.getId(),
+                session.getScenario().getId(),
                 session.getScenario().getName(),
                 session.getScenario().getBuilding().getId(),
                 session.getScenario().getBuilding().getName(),

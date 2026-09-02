@@ -33,7 +33,6 @@ import com.saferoute.domain.user.entity.User;
 import com.saferoute.domain.user.entity.UserRole;
 import com.saferoute.domain.user.repository.UserRepository;
 import com.saferoute.domain.user.service.SchoolContextService;
-import com.saferoute.global.api.code.ErrorCode;
 import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
@@ -124,34 +123,47 @@ class TrainingSessionServiceTest {
     // === getSessions ===
 
     @Test
-    @DisplayName("요청자 학교의 상태별 세션 목록을 최신순으로 반환한다")
-    void getSessions_returnsSummariesForRequesterSchool() {
+    @DisplayName("SCHEDULED 세션 목록을 생성 시각 기준 최신순으로 반환한다")
+    void getSessions_scheduledOrdersByCreatedAtDescending() {
         UUID buildingId = UUID.randomUUID();
+        UUID newestScenarioId = UUID.randomUUID();
+        UUID olderScenarioId = UUID.randomUUID();
         Building building = mock(Building.class);
         given(building.getId()).willReturn(buildingId);
         given(building.getName()).willReturn("A동");
-        TrainingScenario scenario = mock(TrainingScenario.class);
-        given(scenario.getName()).willReturn("3학년 A동 화재 대피 훈련");
-        given(scenario.getBuilding()).willReturn(building);
-        Instant startedAt = Instant.parse("2026-08-26T05:26:00Z");
-        TrainingSession session =
-                TrainingSession.create(TrainingStatus.RUNNING, startedAt, mock(User.class), scenario);
-        ReflectionTestUtils.setField(session, "id", sessionId);
+
+        TrainingScenario newestScenario = mock(TrainingScenario.class);
+        given(newestScenario.getId()).willReturn(newestScenarioId);
+        given(newestScenario.getName()).willReturn("최신 훈련");
+        given(newestScenario.getBuilding()).willReturn(building);
+        TrainingSession newestSession = TrainingSession.schedule(mock(User.class), newestScenario);
+        ReflectionTestUtils.setField(newestSession, "id", sessionId);
+        ReflectionTestUtils.setField(newestSession, "createdAt", Instant.parse("2026-09-03T10:00:00Z"));
+
+        TrainingScenario olderScenario = mock(TrainingScenario.class);
+        given(olderScenario.getId()).willReturn(olderScenarioId);
+        given(olderScenario.getName()).willReturn("이전 훈련");
+        given(olderScenario.getBuilding()).willReturn(building);
+        TrainingSession olderSession = TrainingSession.schedule(mock(User.class), olderScenario);
+        ReflectionTestUtils.setField(olderSession, "id", UUID.randomUUID());
+        ReflectionTestUtils.setField(olderSession, "createdAt", Instant.parse("2026-09-02T10:00:00Z"));
+
         given(trainingSessionRepository
-                .findAllByStatusAndScenario_Building_SchoolNameOrderByStartedAtDesc(
-                        TrainingStatus.RUNNING, SCHOOL_NAME))
-                .willReturn(List.of(session));
+                .findAllByStatusAndScenario_Building_SchoolNameOrderByCreatedAtDesc(
+                        TrainingStatus.SCHEDULED, SCHOOL_NAME))
+                .willReturn(List.of(newestSession, olderSession));
 
-        TrainingSessionListResponse response = trainingSessionService.getSessions(TrainingStatus.RUNNING, EMAIL);
+        TrainingSessionListResponse response = trainingSessionService.getSessions(TrainingStatus.SCHEDULED, EMAIL);
 
-        assertThat(response.sessions()).hasSize(1);
-        TrainingSessionSummaryResponse summary = response.sessions().get(0);
-        assertThat(summary.sessionId()).isEqualTo(sessionId);
-        assertThat(summary.scenarioName()).isEqualTo("3학년 A동 화재 대피 훈련");
-        assertThat(summary.buildingId()).isEqualTo(buildingId);
-        assertThat(summary.buildingName()).isEqualTo("A동");
-        assertThat(summary.status()).isEqualTo(TrainingStatus.RUNNING);
-        assertThat(summary.startedAt()).isEqualTo(startedAt);
+        assertThat(response.sessions())
+                .extracting(TrainingSessionSummaryResponse::scenarioId)
+                .containsExactly(newestScenarioId, olderScenarioId);
+        assertThat(response.sessions())
+                .extracting(TrainingSessionSummaryResponse::startedAt)
+                .containsOnlyNulls();
+        verify(trainingSessionRepository)
+                .findAllByStatusAndScenario_Building_SchoolNameOrderByCreatedAtDesc(
+                        TrainingStatus.SCHEDULED, SCHOOL_NAME);
     }
 
     @Test
@@ -170,23 +182,28 @@ class TrainingSessionServiceTest {
     // === create ===
 
     @Test
-    @DisplayName("RUNNING 상태로 세션을 생성할 때 시작 시각이 없으면 예외가 발생한다")
-    void create_runningWithoutStartedAt_throwsException() {
+    @DisplayName("세션을 생성하면 항상 SCHEDULED 상태이고 시작 시각은 비어 있다")
+    void create_alwaysCreatesScheduledSessionWithoutStartedAt() {
         UUID adminId = UUID.randomUUID();
         UUID scenarioId = UUID.randomUUID();
 
         User manager = mock(User.class);
         given(manager.getRole()).willReturn(UserRole.MANAGER);
         given(userRepository.findByIdAndSchoolName(adminId, SCHOOL_NAME)).willReturn(Optional.of(manager));
+        TrainingScenario scenario = mock(TrainingScenario.class);
         given(trainingScenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
-                .willReturn(Optional.of(mock(TrainingScenario.class)));
+                .willReturn(Optional.of(scenario));
+        given(trainingSessionRepository.saveAndFlush(any(TrainingSession.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
 
-        CreateSessionRequest request = new CreateSessionRequest(TrainingStatus.RUNNING, null, adminId);
+        CreateSessionRequest request = new CreateSessionRequest(adminId);
 
-        assertThatThrownBy(() -> trainingSessionService.create(request, scenarioId, EMAIL))
-                .isInstanceOf(ApiException.class)
-                .extracting(exception -> ((ApiException) exception).getErrorCode())
-                .isEqualTo(ErrorCode.INVALID_INPUT);
+        trainingSessionService.create(request, scenarioId, EMAIL);
+
+        var sessionCaptor = org.mockito.ArgumentCaptor.forClass(TrainingSession.class);
+        verify(trainingSessionRepository).saveAndFlush(sessionCaptor.capture());
+        assertThat(sessionCaptor.getValue().getStatus()).isEqualTo(TrainingStatus.SCHEDULED);
+        assertThat(sessionCaptor.getValue().getStartedAt()).isNull();
     }
 
     @Test
@@ -201,7 +218,7 @@ class TrainingSessionServiceTest {
                 .willReturn(Optional.of(mock(TrainingScenario.class)));
         given(trainingSessionRepository.existsByScenario_Id(scenarioId)).willReturn(true);
 
-        CreateSessionRequest request = new CreateSessionRequest(TrainingStatus.SCHEDULED, null, adminId);
+        CreateSessionRequest request = new CreateSessionRequest(adminId);
 
         assertThatThrownBy(() -> trainingSessionService.create(request, scenarioId, EMAIL))
                 .isInstanceOf(ApiException.class)
@@ -224,7 +241,7 @@ class TrainingSessionServiceTest {
         given(trainingSessionRepository.saveAndFlush(any()))
                 .willThrow(new org.springframework.dao.DataIntegrityViolationException("unique constraint"));
 
-        CreateSessionRequest request = new CreateSessionRequest(TrainingStatus.SCHEDULED, null, adminId);
+        CreateSessionRequest request = new CreateSessionRequest(adminId);
 
         assertThatThrownBy(() -> trainingSessionService.create(request, scenarioId, EMAIL))
                 .isInstanceOf(ApiException.class)
@@ -244,8 +261,7 @@ class TrainingSessionServiceTest {
         given(trainingScenarioRepository
                 .findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
                 .willReturn(Optional.empty());
-        CreateSessionRequest request =
-                new CreateSessionRequest(TrainingStatus.SCHEDULED, null, adminId);
+        CreateSessionRequest request = new CreateSessionRequest(adminId);
 
         assertThatThrownBy(() -> trainingSessionService.create(request, scenarioId, EMAIL))
                 .isInstanceOf(ApiException.class)

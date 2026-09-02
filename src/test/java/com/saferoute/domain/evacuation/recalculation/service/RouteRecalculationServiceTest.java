@@ -27,6 +27,7 @@ import com.saferoute.domain.evacuation.service.EvacuationRouteService;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.training.entity.TrainingScenario;
 import com.saferoute.domain.training.entity.TrainingSession;
+import com.saferoute.domain.training.entity.TrainingStatus;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.user.entity.User;
 import com.saferoute.domain.user.repository.UserRepository;
@@ -513,13 +514,17 @@ class RouteRecalculationServiceTest {
     }
 
     @Test
-    @DisplayName("승인된 재탐색이 없으면 시나리오의 대표 startNode 기준 최단 경로를 반환한다")
-    void getCurrentRoute_withoutApprovedRecalculation_returnsShortestRoute() {
-        UUID recSessionId = session.getId();
+    @DisplayName("SCHEDULED 세션에 승인된 재탐색이 없으면 대표 START 기준 INITIAL 경로를 반환한다")
+    void getCurrentRoute_scheduledWithoutApprovedRecalculation_returnsInitialRoute() {
+        UUID recSessionId = UUID.randomUUID();
         UUID scenarioId = UUID.randomUUID();
         UUID buildingId = UUID.randomUUID();
+        Instant createdAt = Instant.now();
+        TrainingSession scheduledSession = TrainingSession.schedule(mock(User.class), scenario);
+        ReflectionTestUtils.setField(scheduledSession, "id", recSessionId);
+        ReflectionTestUtils.setField(scheduledSession, "createdAt", createdAt);
         given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(recSessionId, SCHOOL_NAME))
-                .willReturn(Optional.of(session));
+                .willReturn(Optional.of(scheduledSession));
         given(routeRecalculationRepository.findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(
                 recSessionId, RecalculationStatus.APPROVED))
                 .willReturn(Optional.empty());
@@ -534,8 +539,6 @@ class RouteRecalculationServiceTest {
         given(exitNode.getX()).willReturn(0.8);
         given(exitNode.getY()).willReturn(0.3);
 
-        Instant startedAt = Instant.now();
-        given(session.getStartedAt()).willReturn(startedAt);
         given(evacuationRouteService.findShortestRoute(floorId, startNodeId))
                 .willReturn(new EvacuationRoute(List.of(representativeStart, exitNode), 9.5));
 
@@ -550,7 +553,9 @@ class RouteRecalculationServiceTest {
         assertThat(response.path()).extracting(CurrentRouteResponse.NodePoint::nodeId)
                 .containsExactly(startNodeId, exitNodeId);
         assertThat(response.totalWeight()).isEqualTo(9.5);
-        assertThat(response.updatedAt()).isEqualTo(startedAt);
+        assertThat(response.updatedAt()).isEqualTo(createdAt);
+        assertThat(scheduledSession.getStatus()).isEqualTo(TrainingStatus.SCHEDULED);
+        assertThat(scheduledSession.getStartedAt()).isNull();
     }
 
     @Test

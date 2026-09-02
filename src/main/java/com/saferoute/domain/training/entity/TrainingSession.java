@@ -36,7 +36,7 @@ public class TrainingSession {
     @Column(name = "training_status", nullable = false, length = 20)
     private TrainingStatus status;
 
-    @Column(name = "started_at", nullable = false)
+    @Column(name = "started_at")
     private Instant startedAt;
 
     @Column(name = "ended_at")
@@ -88,6 +88,10 @@ public class TrainingSession {
     // 훈련 세션 생성용 정적 팩토리 메서드
     public static TrainingSession create(TrainingStatus status, Instant startedAt, User admin, TrainingScenario scenario) {
         return new TrainingSession(status, startedAt, admin, scenario);
+    }
+
+    public static TrainingSession schedule(User admin, TrainingScenario scenario) {
+        return new TrainingSession(TrainingStatus.SCHEDULED, null, admin, scenario);
     }
 
     // 관리자가 훈련 시작 버튼을 누른 시각으로 실제 시작 시각을 갱신하며 RUNNING으로 전이한다.

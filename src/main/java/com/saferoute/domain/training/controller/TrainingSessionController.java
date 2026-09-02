@@ -15,6 +15,7 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import java.util.UUID;
 
 import lombok.RequiredArgsConstructor;
@@ -39,7 +40,8 @@ public class TrainingSessionController {
   @Operation(
       summary = "상태별 훈련 세션 목록 조회",
       description = """
-              요청자 학교 소속 훈련 세션을 상태로 필터링해 최신 시작 순으로 반환합니다.
+              요청자 학교 소속 훈련 세션을 상태로 필터링해 반환합니다. SCHEDULED 세션은
+              생성 시각 최신순으로, 그 외 상태는 실제 훈련 시작 시각 최신순으로 정렬합니다.
 
               모니터링 화면에 진입할 sessionId를 얻는 용도로 사용합니다.
               예: GET /api/v1/sessions?status=RUNNING
@@ -67,11 +69,12 @@ public class TrainingSessionController {
                               "sessions": [
                                 {
                                   "sessionId": "d669294e-55e1-4c00-bf67-229d89b76948",
+                                  "scenarioId": "746d0249-c6c2-4a61-a233-44f35c04dc49",
                                   "scenarioName": "3학년 A동 화재 대피 훈련",
                                   "buildingId": "b5a6e5b0-1e3a-4b8a-9b8a-6a2b6b1f5a11",
                                   "buildingName": "A동",
-                                  "status": "RUNNING",
-                                  "startedAt": "2026-08-26T05:26:00Z"
+                                  "status": "SCHEDULED",
+                                  "startedAt": null
                                 }
                               ]
                             }
@@ -142,16 +145,14 @@ public class TrainingSessionController {
           재훈련이 필요하면 세션이 아니라 시나리오를 새로 만들어야 합니다.
 
           adminId는 요청자와 같은 학교 소속이면서 MANAGER 권한을 가진 사용자여야 합니다.
-
-          status를 RUNNING으로 생성하려면 startedAt을 함께 지정해야 합니다. status를
-          SCHEDULED로 생성하는 경우가 일반적인 흐름이며, 이때는 실제 시작 시각이 아직 없으므로
-          이후 시작 API(POST /api/v1/sessions/{sessionId}/start) 호출 시 서버가 시작
-          시각을 다시 기록합니다.
+          신규 세션은 항상 SCHEDULED 상태와 startedAt=null로 생성됩니다. RUNNING 상태와
+          실제 시작 시각은 시작 API(POST /api/v1/sessions/{sessionId}/start)를 호출할 때만
+          서버가 설정합니다.
           """
   )
   @PostMapping("/{scenarioId}")
   public ResponseEntity<TrainingSessionResponse> createTrainingSession(
-      @RequestBody CreateSessionRequest request,
+      @Valid @RequestBody CreateSessionRequest request,
       @PathVariable("scenarioId") UUID scenarioId,
       Authentication authentication) {
     return ResponseEntity.ok(trainingSessionService.create(request, scenarioId, authentication.getName()));
@@ -235,6 +236,11 @@ public class TrainingSessionController {
           세션 상태(RUNNING 여부)는 검증하지 않습니다. 아직 시작 전(SCHEDULED)인 세션은
           승인된 재탐색이 있을 수 없으므로 자연히 최단 경로가 반환되고, 이미 종료된
           (COMPLETED/ERROR) 세션은 종료 시점까지의 마지막 승인 경로가 그대로 반환됩니다.
+
+          시나리오 작성 완료 후 SCHEDULED 세션을 생성하고, 생성 응답의 sessionId로 이 API를
+          호출하면 훈련 시작 전에도 경로 미리보기를 표시할 수 있습니다. 시나리오 미리보기와
+          훈련 진행 화면은 일반 최단 경로 API에 startNodeId를 직접 전달하지 않고 이 세션 기준
+          API를 사용합니다.
 
           시나리오에 발화층의 START 노드가 연결되어 있지 않으면 실패합니다.
           """

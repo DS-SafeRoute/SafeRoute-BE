@@ -296,7 +296,7 @@ public class RouteRecalculationService {
                 CurrentRouteResponse.RouteSource.INITIAL,
                 path,
                 directRoute.totalWeight(),
-                session.getStartedAt());
+                session.getCreatedAt());
     }
 
     // RouteRecalculation은 노드 id만 저장하므로(@ElementCollection), 도면에 그릴 이름/타입/좌표를
