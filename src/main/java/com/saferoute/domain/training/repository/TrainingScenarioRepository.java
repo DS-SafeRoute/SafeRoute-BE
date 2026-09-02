@@ -15,6 +15,8 @@ public interface TrainingScenarioRepository extends JpaRepository<TrainingScenar
 
     Optional<TrainingScenario> findByIdAndBuilding_SchoolName(UUID id, String schoolName);
 
+    boolean existsByBuilding_Id(UUID buildingId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<TrainingScenario> findForUpdateByIdAndBuilding_SchoolName(UUID id, String schoolName);
 }

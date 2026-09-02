@@ -71,7 +71,7 @@ public class TrainingScenarioService {
     @Transactional
     public ScenarioResponse createScenario(CreateScenarioRequest request, String email) {
         String schoolName = schoolContextService.getSchoolName(email);
-        Building building = buildingRepository.findByIdAndSchoolName(request.getBuildingId(), schoolName)
+        Building building = buildingRepository.findByIdAndSchoolNameForUpdate(request.getBuildingId(), schoolName)
                 .orElseThrow(() -> new ApiException(BuildingErrorCode.BUILDING_NOT_FOUND));
         User admin = userRepository.findByIdAndSchoolName(request.getAdminId(), schoolName)
                 .orElseThrow(() -> new ApiException(UserErrorCode.USER_NOT_FOUND));
