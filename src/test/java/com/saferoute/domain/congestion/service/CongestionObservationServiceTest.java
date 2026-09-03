@@ -38,6 +38,7 @@ import com.saferoute.domain.telemetry.dynamo.repository.CurrentCctvStateReposito
 import com.saferoute.domain.telemetry.dynamo.repository.GeneralMonitoringEventRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.IdempotentSaveResult;
 import com.saferoute.domain.telemetry.dynamo.repository.LatestMonitoringCaptureRepository;
+import com.saferoute.domain.telemetry.dynamo.repository.ObservationCountRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
@@ -65,6 +66,9 @@ class CongestionObservationServiceTest {
 
     @Mock
     private ObservationRepository observationRepository;
+
+    @Mock
+    private ObservationCountRepository observationCountRepository;
 
     @Mock
     private GeneralMonitoringEventRepository generalMonitoringEventRepository;
@@ -288,6 +292,7 @@ class CongestionObservationServiceTest {
         assertThat(result.created()).isFalse();
         verify(trainingEventPublisher, never()).publishCongestionUpdated(any(), any(), any());
         verify(routeRecalculationService, never()).trigger(any(), any(), any(), any(), any(), anyDouble());
+        verify(observationCountRepository, never()).increment(anyString(), anyString());
     }
 
     @Test
@@ -517,6 +522,38 @@ class CongestionObservationServiceTest {
         givenAffectedEdges();
         given(generalMonitoringEventRepository.saveIfAbsent(any()))
                 .willThrow(new RuntimeException("dynamo unavailable"));
+
+        var result = service.reportObservation(cctv, request(5.0));
+
+        assertThat(result.created()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Observation이 새로 저장되면 세션+CCTV별 카운터를 증가시킨다")
+    void reportObservation_incrementsObservationCountWhenNewlyCreated() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        givenProcessingClaimed();
+        givenAffectedEdges();
+
+        service.reportObservation(cctv, request(5.0));
+
+        verify(observationCountRepository).increment(sessionId.toString(), "CCTV_001");
+    }
+
+    @Test
+    @DisplayName("카운터 증가가 실패해도 Observation 저장 자체는 실패하지 않는다")
+    void reportObservation_swallowsExceptionFromObservationCountRepository() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        givenProcessingClaimed();
+        givenAffectedEdges();
+        org.mockito.Mockito.doThrow(new RuntimeException("dynamo unavailable"))
+                .when(observationCountRepository).increment(anyString(), anyString());
 
         var result = service.reportObservation(cctv, request(5.0));
 

@@ -27,6 +27,9 @@ public record MonitoringFrameListResponse(
         String nextCursor,
 
         @Schema(description = "다음 페이지 존재 여부", example = "true")
-        boolean hasNext
+        boolean hasNext,
+
+        @Schema(description = "이 세션+CCTV 조합의 전체 저장 프레임(Observation) 개수", example = "137")
+        long totalCount
 ) {
 }

@@ -13,6 +13,7 @@ import com.saferoute.domain.telemetry.dynamo.repository.CongestionEventRepositor
 import com.saferoute.domain.telemetry.dynamo.repository.CurrentCctvStateRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.GeneralMonitoringEventRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.LatestMonitoringCaptureRepository;
+import com.saferoute.domain.telemetry.dynamo.repository.ObservationCountRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
 import com.saferoute.domain.training.dto.CurrentCctvStateListResponse;
 import com.saferoute.domain.training.dto.CurrentCctvStateResponse;
@@ -54,6 +55,7 @@ public class TrainingMonitoringService {
     private final CctvJpaRepository cctvJpaRepository;
     private final LatestMonitoringCaptureRepository latestMonitoringCaptureRepository;
     private final ObservationRepository observationRepository;
+    private final ObservationCountRepository observationCountRepository;
     private final CongestionEventRepository congestionEventRepository;
     private final GeneralMonitoringEventRepository generalMonitoringEventRepository;
     private final CurrentCctvStateRepository currentCctvStateRepository;
@@ -176,7 +178,11 @@ public class TrainingMonitoringService {
                         items.get(items.size() - 1).getEventId())
                 : null;
 
-        return new MonitoringFrameListResponse(sessionId, cctvId, frames, nextCursor, hasNext);
+        long totalCount = observationCountRepository.find(sessionId.toString(), cctv.getCode())
+                .orElseGet(() -> observationCountRepository
+                        .countAllBySessionIdAndCctvCode(sessionId.toString(), cctv.getCode()));
+
+        return new MonitoringFrameListResponse(sessionId, cctvId, frames, nextCursor, hasNext, totalCount);
     }
 
     // 혼잡 감지 이벤트(CongestionEventItem), 경로 재탐색 이벤트(RouteRecalculation), 일반 모니터링

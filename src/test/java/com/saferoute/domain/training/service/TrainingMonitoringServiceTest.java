@@ -28,6 +28,7 @@ import com.saferoute.domain.telemetry.dynamo.repository.CongestionEventRepositor
 import com.saferoute.domain.telemetry.dynamo.repository.CurrentCctvStateRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.GeneralMonitoringEventRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.LatestMonitoringCaptureRepository;
+import com.saferoute.domain.telemetry.dynamo.repository.ObservationCountRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
 import com.saferoute.domain.training.dto.CurrentCctvStateListResponse;
 import com.saferoute.domain.training.dto.CurrentCctvStateResponse;
@@ -80,6 +81,8 @@ class TrainingMonitoringServiceTest {
     @Mock
     private ObservationRepository observationRepository;
     @Mock
+    private ObservationCountRepository observationCountRepository;
+    @Mock
     private CongestionEventRepository congestionEventRepository;
     @Mock
     private GeneralMonitoringEventRepository generalMonitoringEventRepository;
@@ -103,6 +106,7 @@ class TrainingMonitoringServiceTest {
                 cctvJpaRepository,
                 latestMonitoringCaptureRepository,
                 observationRepository,
+                observationCountRepository,
                 congestionEventRepository,
                 generalMonitoringEventRepository,
                 currentCctvStateRepository,
@@ -793,6 +797,41 @@ class TrainingMonitoringServiceTest {
         assertThat(frame.imageUrl()).isNull();
         assertThat(frame.urlExpiresAt()).isNull();
         verify(s3PresignedUrlService, never()).createGetUrl(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void 카운터_아이템이_있으면_그_값을_totalCount로_사용한다() {
+        stubSession(TrainingStatus.RUNNING);
+        frameCctv();
+        given(observationRepository.findPageBySessionIdAndCctvCode(
+                SESSION_ID.toString(), "CCTV_001", 21, null, null))
+                .willReturn(List.of());
+        given(observationCountRepository.find(SESSION_ID.toString(), "CCTV_001"))
+                .willReturn(Optional.of(137L));
+
+        MonitoringFrameListResponse response = service.getFrames(SESSION_ID, CCTV_ID, 20, null, EMAIL);
+
+        assertThat(response.totalCount()).isEqualTo(137L);
+        verify(observationCountRepository, never())
+                .countAllBySessionIdAndCctvCode(org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void 카운터_아이템이_없으면_전체_카운트_조회로_totalCount를_계산한다() {
+        stubSession(TrainingStatus.RUNNING);
+        frameCctv();
+        given(observationRepository.findPageBySessionIdAndCctvCode(
+                SESSION_ID.toString(), "CCTV_001", 21, null, null))
+                .willReturn(List.of());
+        given(observationCountRepository.find(SESSION_ID.toString(), "CCTV_001"))
+                .willReturn(Optional.empty());
+        given(observationCountRepository.countAllBySessionIdAndCctvCode(SESSION_ID.toString(), "CCTV_001"))
+                .willReturn(42L);
+
+        MonitoringFrameListResponse response = service.getFrames(SESSION_ID, CCTV_ID, 20, null, EMAIL);
+
+        assertThat(response.totalCount()).isEqualTo(42L);
     }
 
     @Test
