@@ -216,9 +216,10 @@ public class TrainingMonitoringController {
                     (GET .../monitoring/cameras/{cctvId}/frames)의 windowStart/windowEnd
                     (개별 프레임의 분석 구간)와는 다른 시간 축이므로 혼동하지 마세요.
 
-                    이 API는 다른 모니터링 조회 API와 동일하게 RUNNING 세션만 허용합니다(종료된
-                    세션 조회는 별도 이슈에서 다룰 예정입니다). elapsedSeconds는 현재 시각과
-                    startedAt의 차이이며 호출 시점마다 계속 늘어나는 값입니다.
+                    이 API는 다른 모니터링 조회 API와 동일하게 세션 상태와 무관하게 조회할 수
+                    있습니다. 아직 시작 전(SCHEDULED)인 세션은 startedAt/elapsedSeconds가 모두
+                    null입니다. RUNNING이면 elapsedSeconds가 현재 시각 기준으로 계속 늘어나고,
+                    종료된 세션이면 종료 시각 기준으로 고정된 값이 반환됩니다.
 
                     snapshotIntervalSec, stateStaleAfterSec는 세션별 값이 아니라 전역 혼잡 설정
                     (CongestionConfig)의 현재 값입니다. 훈련 진행 중 관리자가 설정을 바꾸면
@@ -298,26 +299,12 @@ public class TrainingMonitoringController {
                                     }
                                     """)
                     )
-            ),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "409",
-                    description = "훈련 세션이 RUNNING 상태가 아님",
-                    content = @Content(
-                            mediaType = "application/json",
-                            examples = @ExampleObject(value = """
-                                    {
-                                      "isSuccess": false,
-                                      "code": "TRAINING006",
-                                      "message": "진행 중인 훈련 세션을 찾을 수 없습니다."
-                                    }
-                                    """)
-                    )
             )
     })
     @GetMapping("/context")
     public ResponseEntity<ApiResponse<MonitoringContextResponse>> getContext(
             @Parameter(
-                    description = "조회할 RUNNING 훈련 세션의 UUID",
+                    description = "조회할 훈련 세션의 UUID (세션 상태와 무관하게 조회 가능)",
                     required = true,
                     example = "d669294e-55e1-4c00-bf67-229d89b76948"
             )

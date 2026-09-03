@@ -83,20 +83,24 @@ public class TrainingMonitoringService {
     }
 
     // 모니터링 상세 화면 헤더에 필요한 세션 기본 정보 + 전역 설정값(저장 간격, stale 기준)을
-    // 한 번에 제공한다. RUNNING 세션만 허용하는 다른 모니터링 조회 API와 동일한 제약을 쓰며,
-    // 종료된 세션 조회 허용 여부는 별도 이슈에서 다룬다.
+    // 한 번에 제공한다. 다른 모니터링 조회 API와 동일하게 세션 상태와 무관하게 조회 가능하다.
+    // 아직 시작 전(SCHEDULED)인 세션은 startedAt/elapsedSeconds가 모두 null이다.
     public MonitoringContextResponse getContext(UUID sessionId, String email) {
-        TrainingSession session = findRunningSessionForSchool(sessionId, email);
+        TrainingSession session = findSessionForSchool(sessionId, email);
         CongestionConfig config = congestionConfigService.getConfig();
-        long elapsedSeconds = Duration.between(session.getStartedAt(), Instant.now()).getSeconds();
+        Instant startedAt = session.getStartedAt();
+        Instant endedAt = session.getEndedAt();
+        Long elapsedSeconds = startedAt == null
+                ? null
+                : Duration.between(startedAt, endedAt != null ? endedAt : Instant.now()).getSeconds();
 
         return new MonitoringContextResponse(
                 session.getId(),
                 session.getScenario().getName(),
                 session.getScenario().getBuilding().getName(),
                 session.getStatus(),
-                session.getStartedAt().toEpochMilli(),
-                session.getEndedAt() != null ? session.getEndedAt().toEpochMilli() : null,
+                startedAt != null ? startedAt.toEpochMilli() : null,
+                endedAt != null ? endedAt.toEpochMilli() : null,
                 elapsedSeconds,
                 config.getSnapshotIntervalSec(),
                 config.getStateStaleAfterSec()

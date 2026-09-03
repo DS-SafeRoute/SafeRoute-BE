@@ -105,17 +105,6 @@ class TrainingMonitoringControllerTest {
     }
 
     @Test
-    void 모니터링_정보_조회시_실행_중인_세션이_아니면_409를_반환한다() throws Exception {
-        given(trainingMonitoringService.getContext(SESSION_ID, EMAIL))
-                .willThrow(new ApiException(TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND));
-
-        mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/context", SESSION_ID)
-                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("TRAINING006"));
-    }
-
-    @Test
     void 카메라별_최신_캡처_목록을_공통_응답으로_반환한다() throws Exception {
         MonitoringCameraResponse firstCamera = new MonitoringCameraResponse(
                 CCTV_ID,
