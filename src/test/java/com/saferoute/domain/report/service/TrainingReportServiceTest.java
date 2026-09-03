@@ -155,8 +155,8 @@ class TrainingReportServiceTest {
         given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME))
                 .willReturn(Optional.of(session));
         given(trainingReportRepository.existsByTrainingSession_Id(sessionId)).willReturn(false);
-        given(congestionEventRepository.findAllBySessionId(sessionId.toString(), 5_000))
-                .willReturn(Collections.emptyList());
+        given(congestionEventRepository.countBottlenecksBySessionId(sessionId.toString()))
+                .willReturn(0);
         given(routeDeviationService.calculateForSession(sessionId, EMAIL))
                 .willReturn(new SessionDeviationResult(10, 0, 0.0));
         given(trainingReportChartService.buildCumulativeEvacuation(session, 50))
@@ -185,6 +185,36 @@ class TrainingReportServiceTest {
         ArgumentCaptor<TrainingReport> captor = ArgumentCaptor.forClass(TrainingReport.class);
         verify(trainingReportRepository).saveAndFlush(captor.capture());
         assertThat(captor.getValue().getTrainingSession()).isEqualTo(session);
+    }
+
+    @Test
+    @DisplayName("bottleneckCount는 저장소가 집계한 병목 횟수를 그대로 사용한다")
+    void generate_usesRepositoryBottleneckCountAsIs() {
+        Instant startedAt = Instant.parse("2026-01-01T00:00:00Z");
+        Instant endedAt = startedAt.plusSeconds(300);
+        TrainingSession session = endedSession(300, startedAt, endedAt);
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME))
+                .willReturn(Optional.of(session));
+        given(trainingReportRepository.existsByTrainingSession_Id(sessionId)).willReturn(false);
+        given(congestionEventRepository.countBottlenecksBySessionId(sessionId.toString()))
+                .willReturn(7);
+        given(routeDeviationService.calculateForSession(sessionId, EMAIL))
+                .willReturn(new SessionDeviationResult(10, 0, 0.0));
+        given(trainingReportChartService.buildCumulativeEvacuation(session, 50))
+                .willReturn(Collections.emptyList());
+        given(trainingReportChartService.buildZoneDensities(session))
+                .willReturn(Collections.emptyList());
+        given(trainingReportChartService.buildRecentEvacuationTimes(buildingId, 300))
+                .willReturn(Collections.emptyList());
+        given(trainingReportRepository.saveAndFlush(any())).willAnswer(invocation -> invocation.getArgument(0));
+
+        ReportResponse response = trainingReportService.generate(
+                sessionId, new GenerateReportRequest(50, 50), EMAIL);
+
+        assertThat(response.getBottleneckCount()).isEqualTo(7);
+        verify(congestionEventRepository).countBottlenecksBySessionId(sessionId.toString());
+        verify(congestionEventRepository, never())
+                .findAllBySessionId(any(), org.mockito.ArgumentMatchers.anyInt());
     }
 
     @Test
