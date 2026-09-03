@@ -2,6 +2,7 @@ package com.saferoute.infrastructure.websocket.dto;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.saferoute.domain.congestion.entity.CongestionLevel;
 import com.saferoute.domain.congestion.dto.response.ObservationResponse;
 import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
@@ -11,6 +12,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class CongestionEventDataTest {
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private ObservationItem observationItem(String monitoringImageKey) {
         return ObservationItem.create(
@@ -81,5 +84,32 @@ class CongestionEventDataTest {
 
         assertThat(CongestionEventData.from(List.of(), withImage).hasMonitoringImage()).isTrue();
         assertThat(CongestionEventData.from(List.of(), withoutImage).hasMonitoringImage()).isFalse();
+    }
+
+    @Test
+    @DisplayName("JSON 직렬화 시 affectedEdgeIds 필드로 담기고, 예전 단일 edgeId 필드는 남지 않는다")
+    void serializesToJsonWithAffectedEdgeIdsAndNoLegacyEdgeIdField() throws Exception {
+        ObservationItem item = observationItem(null);
+        UUID edgeA = UUID.randomUUID();
+        CongestionEventData data = CongestionEventData.from(List.of(edgeA), item);
+
+        var json = objectMapper.readTree(objectMapper.writeValueAsString(data));
+
+        assertThat(json.has("affectedEdgeIds")).isTrue();
+        assertThat(json.get("affectedEdgeIds").isArray()).isTrue();
+        assertThat(json.get("affectedEdgeIds").get(0).asText()).isEqualTo(edgeA.toString());
+        assertThat(json.has("edgeId")).isFalse();
+        assertThat(json.get("density").asDouble()).isEqualTo(item.getDensity());
+        assertThat(json.get("configVersion").asLong()).isEqualTo(item.getConfigVersion());
+    }
+
+    @Test
+    @DisplayName("영향받는 Edge가 없어도 affectedEdgeIds는 null이 아닌 빈 배열로 직렬화된다")
+    void serializesEmptyEdgeListAsJsonArrayNotNull() throws Exception {
+        var json = objectMapper.readTree(objectMapper.writeValueAsString(
+                CongestionEventData.from(List.of(), observationItem(null))));
+
+        assertThat(json.get("affectedEdgeIds").isArray()).isTrue();
+        assertThat(json.get("affectedEdgeIds")).isEmpty();
     }
 }

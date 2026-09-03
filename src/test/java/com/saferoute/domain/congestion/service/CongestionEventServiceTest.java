@@ -217,6 +217,24 @@ class CongestionEventServiceTest {
     }
 
     @Test
+    @DisplayName("영향받는 Edge가 하나면 그 Edge 하나만 담아 한 번 발행한다")
+    void reportCongestionEvent_singleAffectedEdge_publishesOnceWithThatEdge() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        givenSaveCreatesItem();
+        givenProcessingClaimed();
+        UUID edgeAId = UUID.randomUUID();
+        givenAffectedEdges(edge(edgeAId));
+
+        service.reportCongestionEvent(cctv, request(13));
+
+        verify(trainingEventPublisher, times(1)).publishCongestionEventReceived(
+                eq(sessionId), eq(List.of(edgeAId)), any());
+    }
+
+    @Test
     @DisplayName("CCTV가 여러 Edge를 감시하면 CROWDED 이상일 때 Edge마다 재탐색을 트리거하되 발행은 이벤트당 한 번만 한다")
     void reportCongestionEvent_triggersRecalculationForEachAffectedEdgeButPublishesOnce() {
         TrainingSession session = mock(TrainingSession.class);

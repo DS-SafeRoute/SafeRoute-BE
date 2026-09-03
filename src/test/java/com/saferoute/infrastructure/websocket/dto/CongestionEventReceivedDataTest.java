@@ -2,6 +2,7 @@ package com.saferoute.infrastructure.websocket.dto;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.saferoute.domain.congestion.entity.CongestionLevel;
 import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventItem;
 import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventType;
@@ -11,6 +12,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class CongestionEventReceivedDataTest {
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private CongestionEventItem congestionEventItem() {
         return CongestionEventItem.received(
@@ -65,5 +68,19 @@ class CongestionEventReceivedDataTest {
                 CongestionEventReceivedData.from(List.of(edgeA, edgeA), congestionEventItem());
 
         assertThat(data.affectedEdgeIds()).containsExactly(edgeA);
+    }
+
+    @Test
+    @DisplayName("JSON 직렬화 시 affectedEdgeIds 필드로 담기고, 예전 단일 edgeId 필드는 남지 않는다")
+    void serializesToJsonWithAffectedEdgeIdsAndNoLegacyEdgeIdField() throws Exception {
+        UUID edgeA = UUID.randomUUID();
+        CongestionEventReceivedData data = CongestionEventReceivedData.from(List.of(edgeA), congestionEventItem());
+
+        var json = objectMapper.readTree(objectMapper.writeValueAsString(data));
+
+        assertThat(json.has("affectedEdgeIds")).isTrue();
+        assertThat(json.get("affectedEdgeIds").isArray()).isTrue();
+        assertThat(json.get("affectedEdgeIds").get(0).asText()).isEqualTo(edgeA.toString());
+        assertThat(json.has("edgeId")).isFalse();
     }
 }
