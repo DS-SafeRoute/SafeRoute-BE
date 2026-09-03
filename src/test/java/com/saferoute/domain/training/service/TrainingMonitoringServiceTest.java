@@ -20,10 +20,13 @@ import com.saferoute.domain.congestion.entity.CongestionLevel;
 import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventItem;
 import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventType;
 import com.saferoute.domain.telemetry.dynamo.entity.CurrentCctvStateItem;
+import com.saferoute.domain.telemetry.dynamo.entity.GeneralMonitoringEventItem;
+import com.saferoute.domain.telemetry.dynamo.entity.GeneralMonitoringEventType;
 import com.saferoute.domain.telemetry.dynamo.entity.LatestMonitoringCaptureItem;
 import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import com.saferoute.domain.telemetry.dynamo.repository.CongestionEventRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.CurrentCctvStateRepository;
+import com.saferoute.domain.telemetry.dynamo.repository.GeneralMonitoringEventRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.LatestMonitoringCaptureRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
 import com.saferoute.domain.training.dto.CurrentCctvStateListResponse;
@@ -79,6 +82,8 @@ class TrainingMonitoringServiceTest {
     @Mock
     private CongestionEventRepository congestionEventRepository;
     @Mock
+    private GeneralMonitoringEventRepository generalMonitoringEventRepository;
+    @Mock
     private CurrentCctvStateRepository currentCctvStateRepository;
     @Mock
     private RouteRecalculationRepository routeRecalculationRepository;
@@ -99,6 +104,7 @@ class TrainingMonitoringServiceTest {
                 latestMonitoringCaptureRepository,
                 observationRepository,
                 congestionEventRepository,
+                generalMonitoringEventRepository,
                 currentCctvStateRepository,
                 routeRecalculationRepository,
                 s3PresignedUrlService,
@@ -845,6 +851,68 @@ class TrainingMonitoringServiceTest {
     }
 
     @Test
+    void 일반_모니터링_이벤트도_시각_최신순으로_합쳐_반환한다() {
+        stubSession(TrainingStatus.RUNNING);
+        given(congestionEventRepository.findPageBySessionId(SESSION_ID.toString(), null, 21, null, null))
+                .willReturn(List.of());
+        given(routeRecalculationRepository.findAllByTrainingSession_IdOrderByRequestedAtDesc(SESSION_ID))
+                .willReturn(List.of());
+        GeneralMonitoringEventItem aiAnalysisStarted = generalEvent(
+                "CCTV_001", GeneralMonitoringEventType.AI_ANALYSIS_STARTED, 1_000L);
+        given(generalMonitoringEventRepository.findPageBySessionId(SESSION_ID.toString(), null, 21, null, null))
+                .willReturn(List.of(aiAnalysisStarted));
+
+        MonitoringEventListResponse response = service.getEvents(SESSION_ID, null, 20, null, EMAIL);
+
+        assertThat(response.events())
+                .extracting(MonitoringEventResponse::type, MonitoringEventResponse::occurredAt)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(MonitoringEventType.AI_ANALYSIS_STARTED, 1_000L)
+                );
+    }
+
+    @Test
+    void cctvCode를_일반_모니터링_이벤트_조회_조건으로도_전달한다() {
+        stubSession(TrainingStatus.RUNNING);
+        given(congestionEventRepository.findPageBySessionId(SESSION_ID.toString(), "CCTV_001", 21, null, null))
+                .willReturn(List.of());
+        given(routeRecalculationRepository.findAllByTrainingSession_IdOrderByRequestedAtDesc(SESSION_ID))
+                .willReturn(List.of());
+        given(generalMonitoringEventRepository
+                .findPageBySessionId(SESSION_ID.toString(), "CCTV_001", 21, null, null))
+                .willReturn(List.of());
+
+        service.getEvents(SESSION_ID, "CCTV_001", 20, null, EMAIL);
+
+        verify(generalMonitoringEventRepository)
+                .findPageBySessionId(SESSION_ID.toString(), "CCTV_001", 21, null, null);
+    }
+
+    @Test
+    void 혼잡_이벤트와_일반_모니터링_이벤트가_섞여도_시각순으로_정렬된다() {
+        stubSession(TrainingStatus.RUNNING);
+        CongestionEventItem congestionEvent = congestionEventItem(
+                "CCTV_001", CongestionEventType.CONGESTION_STARTED, 2_000L, CongestionLevel.CROWDED);
+        given(congestionEventRepository.findPageBySessionId(SESSION_ID.toString(), null, 21, null, null))
+                .willReturn(List.of(congestionEvent));
+        given(routeRecalculationRepository.findAllByTrainingSession_IdOrderByRequestedAtDesc(SESSION_ID))
+                .willReturn(List.of());
+        GeneralMonitoringEventItem routeDeviation = generalEvent(
+                "CCTV_002", GeneralMonitoringEventType.ROUTE_DEVIATION_DETECTED, 3_000L);
+        given(generalMonitoringEventRepository.findPageBySessionId(SESSION_ID.toString(), null, 21, null, null))
+                .willReturn(List.of(routeDeviation));
+
+        MonitoringEventListResponse response = service.getEvents(SESSION_ID, null, 20, null, EMAIL);
+
+        assertThat(response.events())
+                .extracting(MonitoringEventResponse::type, MonitoringEventResponse::occurredAt)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(MonitoringEventType.ROUTE_DEVIATION_DETECTED, 3_000L),
+                        org.assertj.core.groups.Tuple.tuple(MonitoringEventType.CONGESTION_STARTED, 2_000L)
+                );
+    }
+
+    @Test
     void 해소된_재탐색은_요청과_해소_두_이벤트로_나뉜다() {
         stubSession(TrainingStatus.RUNNING);
         given(congestionEventRepository.findPageBySessionId(SESSION_ID.toString(), null, 21, null, null))
@@ -963,6 +1031,12 @@ class TrainingMonitoringServiceTest {
         return CongestionEventItem.received(
                 UUID.randomUUID(), SESSION_ID, cctvCode, type, detectedAt,
                 5, 0.3, CongestionLevel.NORMAL, 0.5, level, 1L, null);
+    }
+
+    private GeneralMonitoringEventItem generalEvent(
+            String cctvCode, GeneralMonitoringEventType type, long occurredAt) {
+        return GeneralMonitoringEventItem.create(
+                UUID.randomUUID().toString(), SESSION_ID.toString(), cctvCode, type, occurredAt, null);
     }
 
     private RouteRecalculation recalculation(

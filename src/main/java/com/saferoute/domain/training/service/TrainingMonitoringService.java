@@ -11,6 +11,7 @@ import com.saferoute.domain.telemetry.dynamo.entity.LatestMonitoringCaptureItem;
 import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import com.saferoute.domain.telemetry.dynamo.repository.CongestionEventRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.CurrentCctvStateRepository;
+import com.saferoute.domain.telemetry.dynamo.repository.GeneralMonitoringEventRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.LatestMonitoringCaptureRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
 import com.saferoute.domain.training.dto.CurrentCctvStateListResponse;
@@ -54,6 +55,7 @@ public class TrainingMonitoringService {
     private final LatestMonitoringCaptureRepository latestMonitoringCaptureRepository;
     private final ObservationRepository observationRepository;
     private final CongestionEventRepository congestionEventRepository;
+    private final GeneralMonitoringEventRepository generalMonitoringEventRepository;
     private final CurrentCctvStateRepository currentCctvStateRepository;
     private final RouteRecalculationRepository routeRecalculationRepository;
     private final S3PresignedUrlService s3PresignedUrlService;
@@ -177,15 +179,16 @@ public class TrainingMonitoringService {
         return new MonitoringFrameListResponse(sessionId, cctvId, frames, nextCursor, hasNext);
     }
 
-    // 혼잡 감지 이벤트(CongestionEventItem)와 경로 재탐색 이벤트(RouteRecalculation)를 발생 시각
-    // 최신순으로 합쳐 커서 페이지네이션한다. 관측값(ObservationItem)은 5초 주기 스냅샷이라
-    // 타임라인에 넣으면 너무 촘촘해져서 제외한다 - "이벤트"로 부를 만한 STARTED/LEVEL_UP/ENDED
-    // 전환만 대상으로 한다. 재탐색 한 건은 요청 시점과(있다면) 해소 시점 두 항목으로 나뉠 수 있다.
+    // 혼잡 감지 이벤트(CongestionEventItem), 경로 재탐색 이벤트(RouteRecalculation), 일반 모니터링
+    // 이벤트(GeneralMonitoringEventItem - AI 분석 시작/경로 이탈 감지)를 발생 시각 최신순으로 합쳐
+    // 커서 페이지네이션한다. 관측값(ObservationItem)은 5초 주기 스냅샷이라 타임라인에 넣으면 너무
+    // 촘촘해져서 제외한다 - "이벤트"로 부를 만한 것들만 대상으로 한다. 재탐색 한 건은 요청 시점과
+    // (있다면) 해소 시점 두 항목으로 나뉠 수 있다.
     //
-    // 혼잡 이벤트(DynamoDB)는 세션당 수백 건까지도 쌓일 수 있어 커서 페이지네이션 + cctvCode
-    // DB 필터가 필요하다. 재탐색 이벤트(PostgreSQL)는 쿨다운으로 발생 빈도가 낮아 매 요청마다
-    // 전량 조회해도 무리가 없으므로 별도 페이지네이션 없이 가져온 뒤, 혼잡 이벤트와 동일한 커서
-    // 경계로 걸러 중복 없이 병합한다.
+    // 혼잡 이벤트/일반 모니터링 이벤트(둘 다 DynamoDB)는 세션당 수백 건까지도 쌓일 수 있어 커서
+    // 페이지네이션 + cctvCode DB 필터가 필요하다. 재탐색 이벤트(PostgreSQL)는 쿨다운으로 발생
+    // 빈도가 낮아 매 요청마다 전량 조회해도 무리가 없으므로 별도 페이지네이션 없이 가져온 뒤,
+    // 다른 두 소스와 동일한 커서 경계로 걸러 중복 없이 병합한다.
     public MonitoringEventListResponse getEvents(
             UUID sessionId, String cctvCode, int limit, String cursor, String email
     ) {
@@ -202,6 +205,12 @@ public class TrainingMonitoringService {
                 .map(MonitoringEventResponse::fromCongestionEvent)
                 .toList();
 
+        List<MonitoringEventResponse> generalEvents = generalMonitoringEventRepository
+                .findPageBySessionId(sessionId.toString(), cctvCode, limit + 1, beforeOccurredAt, beforeEventId)
+                .stream()
+                .map(MonitoringEventResponse::fromGeneralEvent)
+                .toList();
+
         List<MonitoringEventResponse> allRecalculationEvents = new ArrayList<>();
         routeRecalculationRepository.findAllByTrainingSession_IdOrderByRequestedAtDesc(sessionId).stream()
                 .filter(recalculation -> matchesCctv(recalculation.getCctvCode(), cctvCode))
@@ -212,8 +221,10 @@ public class TrainingMonitoringService {
                         .filter(event -> isBeforeCursor(event, beforeOccurredAt, beforeEventId))
                         .toList();
 
-        List<MonitoringEventResponse> merged = new ArrayList<>(congestionEvents.size() + recalculationEvents.size());
+        List<MonitoringEventResponse> merged = new ArrayList<>(
+                congestionEvents.size() + generalEvents.size() + recalculationEvents.size());
         merged.addAll(congestionEvents);
+        merged.addAll(generalEvents);
         merged.addAll(recalculationEvents);
         merged.sort(EVENT_ORDER);
 
