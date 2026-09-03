@@ -23,6 +23,7 @@ import com.saferoute.domain.telemetry.dynamo.repository.CurrentCctvStateReposito
 import com.saferoute.domain.telemetry.dynamo.repository.GeneralMonitoringEventRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.IdempotentSaveResult;
 import com.saferoute.domain.telemetry.dynamo.repository.LatestMonitoringCaptureRepository;
+import com.saferoute.domain.telemetry.dynamo.repository.ObservationCountRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
@@ -59,6 +60,7 @@ public class CongestionObservationService {
     private static final String JPEG_SUFFIX = ".jpg";
 
     private final ObservationRepository observationRepository;
+    private final ObservationCountRepository observationCountRepository;
     private final GeneralMonitoringEventRepository generalMonitoringEventRepository;
     private final LatestMonitoringCaptureRepository latestMonitoringCaptureRepository;
     private final CurrentCctvStateRepository currentCctvStateRepository;
@@ -115,6 +117,7 @@ public class CongestionObservationService {
         updateLatestMonitoringCapture(session.getId(), cctv.getCode(), request.capturedAt(), monitoringImageKey);
         tryCreateAiAnalysisStartedEvent(session.getId(), cctv.getCode(), request.capturedAt());
         routeDeviationService.evaluateObservation(cctv, saveResult.item());
+        tryIncrementObservationCount(saveResult, session.getId(), cctv.getCode());
 
         String processingOwner = UUID.randomUUID().toString();
         long processingStartedAt = Instant.now().toEpochMilli();
@@ -233,6 +236,24 @@ public class CongestionObservationService {
         } catch (RuntimeException exception) {
             log.error(
                     "AI_ANALYSIS_STARTED 이벤트 생성 중 오류: sessionId={}, cctvCode={}",
+                    sessionId, cctvCode, exception
+            );
+        }
+    }
+
+    // Observation이 이번에 새로 저장된 경우(중복 재시도가 아닌 경우)에만 세션+CCTV별 저장 개수 카운터를
+    // 1 증가시킨다. 실패해도 Observation 저장 자체(reportObservation() 전체)는 실패시키지 않는다.
+    private void tryIncrementObservationCount(
+            IdempotentSaveResult<ObservationItem> saveResult, UUID sessionId, String cctvCode
+    ) {
+        if (!saveResult.created()) {
+            return;
+        }
+        try {
+            observationCountRepository.increment(sessionId.toString(), cctvCode);
+        } catch (RuntimeException exception) {
+            log.error(
+                    "Observation 카운터 증가 중 오류: sessionId={}, cctvCode={}",
                     sessionId, cctvCode, exception
             );
         }

@@ -354,7 +354,7 @@ class TrainingMonitoringControllerTest {
         );
         given(trainingMonitoringService.getFrames(SESSION_ID, CCTV_ID, 20, null, EMAIL))
                 .willReturn(new MonitoringFrameListResponse(
-                        SESSION_ID, CCTV_ID, List.of(frame), "next-cursor", true
+                        SESSION_ID, CCTV_ID, List.of(frame), "next-cursor", true, 137L
                 ));
 
         mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/cameras/{cctvId}/frames",
@@ -377,13 +377,14 @@ class TrainingMonitoringControllerTest {
                 .andExpect(jsonPath("$.result.frames[0].density").value(0.42))
                 .andExpect(jsonPath("$.result.frames[0].congestionLevel").value("CROWDED"))
                 .andExpect(jsonPath("$.result.nextCursor").value("next-cursor"))
-                .andExpect(jsonPath("$.result.hasNext").value(true));
+                .andExpect(jsonPath("$.result.hasNext").value(true))
+                .andExpect(jsonPath("$.result.totalCount").value(137));
     }
 
     @Test
     void limit과_cursor_쿼리파라미터를_서비스에_그대로_전달한다() throws Exception {
         given(trainingMonitoringService.getFrames(SESSION_ID, CCTV_ID, 5, "prev-cursor", EMAIL))
-                .willReturn(new MonitoringFrameListResponse(SESSION_ID, CCTV_ID, List.of(), null, false));
+                .willReturn(new MonitoringFrameListResponse(SESSION_ID, CCTV_ID, List.of(), null, false, 0L));
 
         mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/cameras/{cctvId}/frames",
                         SESSION_ID, CCTV_ID)

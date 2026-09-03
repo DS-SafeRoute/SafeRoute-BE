@@ -532,7 +532,8 @@ public class TrainingMonitoringController {
                                                   }
                                                 ],
                                                 "nextCursor": "MTc4NzcyMjA5NTAwMA",
-                                                "hasNext": true
+                                                "hasNext": true,
+                                                "totalCount": 137
                                               }
                                             }
                                             """
