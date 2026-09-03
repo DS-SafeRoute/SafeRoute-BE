@@ -33,10 +33,6 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class TrainingReportService {
 
-  // 세션 하나에서 나올 수 있는 병목 이벤트 수의 실질적 상한. DynamoDB 쿼리는 한 번에 다 끌어와야 정확한
-  // 횟수를 셀 수 있어, 기본 페이지 제한(100)보다 넉넉하게 잡는다.
-  private static final int BOTTLENECK_QUERY_LIMIT = 5_000;
-
   private final TrainingReportRepository trainingReportRepository;
   private final TrainingSessionRepository trainingSessionRepository;
   private final CongestionEventRepository congestionEventRepository;
@@ -75,9 +71,9 @@ public class TrainingReportService {
     BigDecimal survivalRate = TrainingReportScoreCalculator.survivalRate(
         request.survivorCount(), request.participantCount());
 
-    int bottleneckCount = congestionEventRepository
-        .findAllBySessionId(sessionId.toString(), BOTTLENECK_QUERY_LIMIT)
-        .size();
+    // 병목은 CONGESTION_STARTED이면서 congestionLevel이 CROWDED/VERY_CROWDED로 판정된 경우만
+    // "병목 구간이 시작된 횟수"로 센다 - LEVEL_UP/ENDED는 같은 구간의 상태 변화라 제외한다.
+    int bottleneckCount = congestionEventRepository.countBottlenecksBySessionId(sessionId.toString());
     int bottleneckScore = TrainingReportScoreCalculator.bottleneckScore(bottleneckCount, evacuationSec);
 
     SessionDeviationResult deviation = routeDeviationService.calculateForSession(sessionId, email);
