@@ -605,6 +605,7 @@ class TrainingSessionServiceTest {
         assertThat(timedOut.getStatus()).isEqualTo(TrainingStatus.FAILED);
         verify(trainingEventPublisher, times(1)).publishTrainingStatusUpdatedAfterCommit(timedOut);
         verify(timedOut.getScenario(), times(1)).markTimeoutFailed();
+        verify(timedOut.getScenario(), never()).markError();
         verify(ioTLightService).resetToNormal(buildingId);
     }
 
