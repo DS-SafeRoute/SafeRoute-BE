@@ -7,7 +7,6 @@ import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -218,17 +217,20 @@ class CongestionEventServiceTest {
     }
 
     @Test
-    @DisplayName("CCTV가 여러 Edge를 감시하면 CROWDED 이상일 때 Edge마다 재탐색을 트리거하고 각각 발행한다")
-    void reportCongestionEvent_triggersRecalculationForEachAffectedEdge() {
+    @DisplayName("CCTV가 여러 Edge를 감시하면 CROWDED 이상일 때 Edge마다 재탐색을 트리거하되 발행은 이벤트당 한 번만 한다")
+    void reportCongestionEvent_triggersRecalculationForEachAffectedEdgeButPublishesOnce() {
         TrainingSession session = mock(TrainingSession.class);
         given(session.getId()).willReturn(sessionId);
         given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
                 sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
         givenSaveCreatesItem();
         givenProcessingClaimed();
-        MapEdge edgeA = edge(UUID.randomUUID());
-        MapEdge edgeB = edge(UUID.randomUUID());
+        UUID edgeAId = UUID.randomUUID();
+        UUID edgeBId = UUID.randomUUID();
+        MapEdge edgeA = edge(edgeAId);
+        MapEdge edgeB = edge(edgeBId);
         givenAffectedEdges(edgeA, edgeB);
+        List<UUID> expectedEdgeIds = List.of(edgeAId, edgeBId);
 
         // headcount=13 -> density=3.25 -> CROWDED
         service.reportCongestionEvent(cctv, request(13));
@@ -237,13 +239,13 @@ class CongestionEventServiceTest {
                 eq(RecalculationTriggerType.STARTED), eq("CCTV_001"), anyDouble());
         verify(routeRecalculationService).trigger(eq(session), eq(edgeB), eq(CongestionLevel.CROWDED),
                 eq(RecalculationTriggerType.STARTED), eq("CCTV_001"), anyDouble());
-        verify(trainingEventPublisher, times(2))
-                .publishCongestionEventReceived(eq(sessionId), any(), any());
+        verify(trainingEventPublisher, times(1))
+                .publishCongestionEventReceived(eq(sessionId), eq(expectedEdgeIds), any());
     }
 
     @Test
-    @DisplayName("매핑된 Edge가 없으면 edgeId 없이 한 번만 발행하고 재탐색은 트리거하지 않는다")
-    void reportCongestionEvent_noMappedEdges_publishesOnceWithoutEdgeId() {
+    @DisplayName("매핑된 Edge가 없으면 빈 affectedEdgeIds로 한 번만 발행하고 재탐색은 트리거하지 않는다")
+    void reportCongestionEvent_noMappedEdges_publishesOnceWithEmptyEdgeIds() {
         TrainingSession session = mock(TrainingSession.class);
         given(session.getId()).willReturn(sessionId);
         given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
@@ -257,7 +259,7 @@ class CongestionEventServiceTest {
         service.reportCongestionEvent(cctv, request(13));
 
         verify(routeRecalculationService, never()).trigger(any(), any(), any(), any(), any(), anyDouble());
-        verify(trainingEventPublisher).publishCongestionEventReceived(eq(sessionId), isNull(), any());
+        verify(trainingEventPublisher).publishCongestionEventReceived(eq(sessionId), eq(List.of()), any());
     }
 
     @Test

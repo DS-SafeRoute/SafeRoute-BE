@@ -175,19 +175,20 @@ public class TrainingEventPublisher {
     // 즉시 혼잡 이벤트 수신/처리 시 발행한다. CongestionEventService가 발행 성공 여부에 따라
     // DynamoDB 처리 상태(PROCESSED/FAILED)를 직접 갱신해야 해서, 다른 AfterCommit 헬퍼처럼 실패를
     // 로그로 삼키지 않고 그대로 던진다 - 호출자가 afterCommit 트랜잭션 동기화를 직접 관리한다.
-    public void publishCongestionEventReceived(UUID sessionId, UUID edgeId, CongestionEventItem item) {
+    // 즉시 혼잡 상태 전환 1건당 1회만 발행한다 - 영향받는 Edge는 affectedEdgeIds 배열로 한 번에 담는다 (이슈 #192).
+    public void publishCongestionEventReceived(UUID sessionId, List<UUID> affectedEdgeIds, CongestionEventItem item) {
         TrainingEventMessage<CongestionEventReceivedData> message = TrainingEventMessage.of(
                 TrainingEventType.CONGESTION_EVENT_RECEIVED,
                 sessionId,
-                CongestionEventReceivedData.from(edgeId, item)
+                CongestionEventReceivedData.from(affectedEdgeIds, item)
         );
 
         messagingTemplate.convertAndSend(SESSION_TOPIC_PREFIX + sessionId, message);
 
         log.debug(
-                "즉시 혼잡 이벤트 발행: sessionId={}, edgeId={}, eventId={}, level={}",
+                "즉시 혼잡 이벤트 발행: sessionId={}, affectedEdgeIds={}, eventId={}, level={}",
                 sessionId,
-                edgeId,
+                affectedEdgeIds,
                 item.getEventId(),
                 item.getCongestionLevel()
         );
