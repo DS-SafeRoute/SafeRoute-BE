@@ -586,7 +586,7 @@ class TrainingSessionServiceTest {
     // === failTimedOutSessions ===
 
     @Test
-    @DisplayName("10분 타임아웃을 넘긴 RUNNING 세션을 FAILED로 처리하고 이벤트를 발행하며 시나리오는 ERROR로 바뀐다")
+    @DisplayName("10분 타임아웃을 넘긴 RUNNING 세션을 FAILED로 처리하고 이벤트를 발행하며 시나리오는 TIMEOUT_FAILED로 바뀐다")
     void failTimedOutSessions_marksExpiredSessionsAsFailed() {
         TrainingScenario scenario = mock(TrainingScenario.class);
         given(scenario.getBuildingId()).willReturn(buildingId);
@@ -604,7 +604,8 @@ class TrainingSessionServiceTest {
 
         assertThat(timedOut.getStatus()).isEqualTo(TrainingStatus.FAILED);
         verify(trainingEventPublisher, times(1)).publishTrainingStatusUpdatedAfterCommit(timedOut);
-        verify(timedOut.getScenario(), times(1)).markError();
+        verify(timedOut.getScenario(), times(1)).markTimeoutFailed();
+        verify(timedOut.getScenario(), never()).markError();
         verify(ioTLightService).resetToNormal(buildingId);
     }
 

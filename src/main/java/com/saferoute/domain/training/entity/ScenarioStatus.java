@@ -7,5 +7,6 @@ public enum ScenarioStatus {
     READY,
     IN_PROGRESS,
     COMPLETED,
-    ERROR
+    ERROR,
+    TIMEOUT_FAILED
 }
