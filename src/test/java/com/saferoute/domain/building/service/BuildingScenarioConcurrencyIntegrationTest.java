@@ -157,7 +157,6 @@ class BuildingScenarioConcurrencyIntegrationTest {
                 "정기 훈련",
                 building.getId(),
                 50,
-                300,
                 Instant.now().plusSeconds(3600),
                 false,
                 FireSpreadSpeed.MEDIUM);
