@@ -432,18 +432,16 @@ class TrainingMonitoringServiceTest {
     }
 
     @Test
-    void 실행_중이_아닌_세션은_조회할_수_없다() {
+    void 종료된_세션도_마지막_카메라_목록을_조회할_수_있다() {
         stubSession(TrainingStatus.COMPLETED);
-
-        assertThatThrownBy(() -> service.getCameras(SESSION_ID, EMAIL))
-                .isInstanceOf(ApiException.class)
-                .hasFieldOrPropertyWithValue(
-                        "errorCode",
-                        TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND
-                );
-        verify(cctvJpaRepository, never())
+        given(cctvJpaRepository
                 .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
-                        org.mockito.ArgumentMatchers.any());
+                        BUILDING_ID))
+                .willReturn(List.of());
+
+        MonitoringCameraListResponse response = service.getCameras(SESSION_ID, EMAIL);
+
+        assertThat(response.cameras()).isEmpty();
     }
 
     @Test
@@ -562,15 +560,16 @@ class TrainingMonitoringServiceTest {
     }
 
     @Test
-    void 현재_상태_조회는_실행_중이_아닌_세션은_거부한다() {
+    void 종료된_세션도_마지막_현재_상태를_조회할_수_있다() {
         stubSession(TrainingStatus.COMPLETED);
-
-        assertThatThrownBy(() -> service.getCurrentStates(SESSION_ID, EMAIL))
-                .isInstanceOf(ApiException.class)
-                .hasFieldOrPropertyWithValue("errorCode", TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND);
-        verify(cctvJpaRepository, never())
+        given(cctvJpaRepository
                 .findAllByEnabledTrueAndCustomNode_Floor_Building_IdOrderByCustomNode_Floor_FloorNumAscCodeAsc(
-                        org.mockito.ArgumentMatchers.any());
+                        BUILDING_ID))
+                .willReturn(List.of());
+
+        CurrentCctvStateListResponse response = service.getCurrentStates(SESSION_ID, EMAIL);
+
+        assertThat(response.states()).isEmpty();
     }
 
     @Test
@@ -614,12 +613,55 @@ class TrainingMonitoringServiceTest {
     }
 
     @Test
-    void 모니터링_정보_조회는_실행_중이_아닌_세션은_거부한다() {
-        stubSession(TrainingStatus.COMPLETED);
+    void 종료된_세션은_endedAt_기준으로_고정된_경과_시간을_반환한다() {
+        TrainingSession session = org.mockito.Mockito.mock(TrainingSession.class);
+        TrainingScenario scenario = org.mockito.Mockito.mock(TrainingScenario.class);
+        Building building = org.mockito.Mockito.mock(Building.class);
+        Instant startedAt = Instant.now().minusSeconds(1_000);
+        Instant endedAt = Instant.now().minusSeconds(100);
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(SESSION_ID, SCHOOL_NAME))
+                .willReturn(Optional.of(session));
+        given(session.getStatus()).willReturn(TrainingStatus.COMPLETED);
+        given(session.getId()).willReturn(SESSION_ID);
+        given(session.getStartedAt()).willReturn(startedAt);
+        given(session.getEndedAt()).willReturn(endedAt);
+        given(session.getScenario()).willReturn(scenario);
+        given(scenario.getName()).willReturn("3학년 A동 화재 대피 훈련");
+        given(scenario.getBuilding()).willReturn(building);
+        given(building.getName()).willReturn("A동");
+        given(congestionConfigService.getConfig()).willReturn(CongestionConfig.createDefault());
 
-        assertThatThrownBy(() -> service.getContext(SESSION_ID, EMAIL))
-                .isInstanceOf(ApiException.class)
-                .hasFieldOrPropertyWithValue("errorCode", TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND);
+        MonitoringContextResponse response = service.getContext(SESSION_ID, EMAIL);
+
+        assertThat(response.status()).isEqualTo(TrainingStatus.COMPLETED);
+        assertThat(response.endedAt()).isEqualTo(endedAt.toEpochMilli());
+        assertThat(response.elapsedSeconds())
+                .isEqualTo(Duration.between(startedAt, endedAt).getSeconds());
+    }
+
+    @Test
+    void 아직_시작하지_않은_세션은_startedAt과_경과_시간이_null이다() {
+        TrainingSession session = org.mockito.Mockito.mock(TrainingSession.class);
+        TrainingScenario scenario = org.mockito.Mockito.mock(TrainingScenario.class);
+        Building building = org.mockito.Mockito.mock(Building.class);
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(SESSION_ID, SCHOOL_NAME))
+                .willReturn(Optional.of(session));
+        given(session.getStatus()).willReturn(TrainingStatus.SCHEDULED);
+        given(session.getId()).willReturn(SESSION_ID);
+        given(session.getStartedAt()).willReturn(null);
+        given(session.getEndedAt()).willReturn(null);
+        given(session.getScenario()).willReturn(scenario);
+        given(scenario.getName()).willReturn("3학년 A동 화재 대피 훈련");
+        given(scenario.getBuilding()).willReturn(building);
+        given(building.getName()).willReturn("A동");
+        given(congestionConfigService.getConfig()).willReturn(CongestionConfig.createDefault());
+
+        MonitoringContextResponse response = service.getContext(SESSION_ID, EMAIL);
+
+        assertThat(response.status()).isEqualTo(TrainingStatus.SCHEDULED);
+        assertThat(response.startedAt()).isNull();
+        assertThat(response.endedAt()).isNull();
+        assertThat(response.elapsedSeconds()).isNull();
     }
 
     @Test
@@ -852,13 +894,15 @@ class TrainingMonitoringServiceTest {
     }
 
     @Test
-    void 이벤트_타임라인_조회는_실행_중이_아닌_세션은_거부한다() {
+    void 종료된_세션도_이벤트_타임라인을_조회할_수_있다() {
         stubSession(TrainingStatus.COMPLETED);
+        given(congestionEventRepository.findAllBySessionId(SESSION_ID.toString())).willReturn(List.of());
+        given(routeRecalculationRepository.findAllByTrainingSession_IdOrderByRequestedAtDesc(SESSION_ID))
+                .willReturn(List.of());
 
-        assertThatThrownBy(() -> service.getEvents(SESSION_ID, null, EMAIL))
-                .isInstanceOf(ApiException.class)
-                .hasFieldOrPropertyWithValue("errorCode", TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND);
-        verify(congestionEventRepository, never()).findAllBySessionId(org.mockito.ArgumentMatchers.anyString());
+        MonitoringEventListResponse response = service.getEvents(SESSION_ID, null, EMAIL);
+
+        assertThat(response.events()).isEmpty();
     }
 
     private CongestionEventItem congestionEventItem(
@@ -910,19 +954,19 @@ class TrainingMonitoringServiceTest {
         );
     }
 
+    // 읽기 API는 세션 상태를 검증하지 않으므로(findSessionForSchool), status 값 자체는
+    // 이제 어떤 조회도 막지 않는다 - 인자로 받는 status는 응답 조립에 쓰이는 값일 뿐이다.
     private TrainingSession stubSession(TrainingStatus status) {
         TrainingSession session = org.mockito.Mockito.mock(TrainingSession.class);
         TrainingScenario scenario = org.mockito.Mockito.mock(TrainingScenario.class);
         Building building = org.mockito.Mockito.mock(Building.class);
         given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(
                 SESSION_ID, SCHOOL_NAME)).willReturn(Optional.of(session));
-        given(session.getStatus()).willReturn(status);
-        if (status == TrainingStatus.RUNNING) {
-            // getEvents()는 건물 정보를 쓰지 않으므로, 그 테스트들에서는 아래 스텁이 사용되지 않는다 - lenient 처리.
-            org.mockito.Mockito.lenient().when(session.getScenario()).thenReturn(scenario);
-            org.mockito.Mockito.lenient().when(scenario.getBuilding()).thenReturn(building);
-            org.mockito.Mockito.lenient().when(building.getId()).thenReturn(BUILDING_ID);
-        }
+        // getEvents()는 건물 정보를 쓰지 않으므로, 그 테스트들에서는 아래 스텁이 사용되지 않는다 - lenient 처리.
+        org.mockito.Mockito.lenient().when(session.getStatus()).thenReturn(status);
+        org.mockito.Mockito.lenient().when(session.getScenario()).thenReturn(scenario);
+        org.mockito.Mockito.lenient().when(scenario.getBuilding()).thenReturn(building);
+        org.mockito.Mockito.lenient().when(building.getId()).thenReturn(BUILDING_ID);
         return session;
     }
 

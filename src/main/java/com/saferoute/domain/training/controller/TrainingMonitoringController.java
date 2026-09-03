@@ -34,7 +34,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 @Tag(
         name = "훈련 모니터링",
-        description = "실행 중인 훈련의 카메라별 최신 주기 캡처, CCTV별 현재 혼잡 상태, 프레임, 이벤트 타임라인 조회 API"
+        description = "훈련 세션의 카메라별 최신 주기 캡처, CCTV별 현재 혼잡 상태, 프레임, 이벤트 타임라인 조회 API. "
+                + "세션 상태와 무관하게 조회 가능하며 종료된 세션은 마지막으로 저장된 데이터를 그대로 반환한다."
 )
 @RestController
 @RequestMapping("/api/v1/sessions/{sessionId}/monitoring")
@@ -47,7 +48,8 @@ public class TrainingMonitoringController {
     @Operation(
             summary = "카메라별 최신 캡처 목록 조회",
             description = """
-                    실행 중인 훈련 세션의 건물에 설치된 활성 CCTV 카드 목록을 반환합니다.
+                    훈련 세션의 건물에 설치된 활성 CCTV 카드 목록을 반환합니다. 세션 상태와 무관하게
+                    조회할 수 있으며, 종료된 세션은 훈련 중 마지막으로 저장된 캡처를 그대로 보여줍니다.
 
                     각 카메라의 thumbnailUrl은 최신 Observation의 monitoringImageKey로 발급한
                     S3 presigned GET URL이며 영구 URL이 아닙니다. capturedAt과 urlExpiresAt은 모두
@@ -171,20 +173,6 @@ public class TrainingMonitoringController {
                     )
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "409",
-                    description = "훈련 세션이 RUNNING 상태가 아님",
-                    content = @Content(
-                            mediaType = "application/json",
-                            examples = @ExampleObject(value = """
-                                    {
-                                      "isSuccess": false,
-                                      "code": "TRAINING006",
-                                      "message": "진행 중인 훈련 세션을 찾을 수 없습니다."
-                                    }
-                                    """)
-                    )
-            ),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "500",
                     description = "S3 presigned GET URL 발급 실패",
                     content = @Content(
@@ -202,7 +190,7 @@ public class TrainingMonitoringController {
     @GetMapping("/cameras")
     public ResponseEntity<ApiResponse<MonitoringCameraListResponse>> getCameras(
             @Parameter(
-                    description = "조회할 RUNNING 훈련 세션의 UUID",
+                    description = "조회할 훈련 세션의 UUID (세션 상태와 무관하게 조회 가능)",
                     required = true,
                     example = "d669294e-55e1-4c00-bf67-229d89b76948"
             )
@@ -228,9 +216,10 @@ public class TrainingMonitoringController {
                     (GET .../monitoring/cameras/{cctvId}/frames)의 windowStart/windowEnd
                     (개별 프레임의 분석 구간)와는 다른 시간 축이므로 혼동하지 마세요.
 
-                    이 API는 다른 모니터링 조회 API와 동일하게 RUNNING 세션만 허용합니다(종료된
-                    세션 조회는 별도 이슈에서 다룰 예정입니다). elapsedSeconds는 현재 시각과
-                    startedAt의 차이이며 호출 시점마다 계속 늘어나는 값입니다.
+                    이 API는 다른 모니터링 조회 API와 동일하게 세션 상태와 무관하게 조회할 수
+                    있습니다. 아직 시작 전(SCHEDULED)인 세션은 startedAt/elapsedSeconds가 모두
+                    null입니다. RUNNING이면 elapsedSeconds가 현재 시각 기준으로 계속 늘어나고,
+                    종료된 세션이면 종료 시각 기준으로 고정된 값이 반환됩니다.
 
                     snapshotIntervalSec, stateStaleAfterSec는 세션별 값이 아니라 전역 혼잡 설정
                     (CongestionConfig)의 현재 값입니다. 훈련 진행 중 관리자가 설정을 바꾸면
@@ -310,26 +299,12 @@ public class TrainingMonitoringController {
                                     }
                                     """)
                     )
-            ),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "409",
-                    description = "훈련 세션이 RUNNING 상태가 아님",
-                    content = @Content(
-                            mediaType = "application/json",
-                            examples = @ExampleObject(value = """
-                                    {
-                                      "isSuccess": false,
-                                      "code": "TRAINING006",
-                                      "message": "진행 중인 훈련 세션을 찾을 수 없습니다."
-                                    }
-                                    """)
-                    )
             )
     })
     @GetMapping("/context")
     public ResponseEntity<ApiResponse<MonitoringContextResponse>> getContext(
             @Parameter(
-                    description = "조회할 RUNNING 훈련 세션의 UUID",
+                    description = "조회할 훈련 세션의 UUID (세션 상태와 무관하게 조회 가능)",
                     required = true,
                     example = "d669294e-55e1-4c00-bf67-229d89b76948"
             )
@@ -347,7 +322,9 @@ public class TrainingMonitoringController {
     @Operation(
             summary = "CCTV별 현재 혼잡 상태 조회",
             description = """
-                    실행 중인 훈련 세션의 건물에 설치된 활성 CCTV별 현재 혼잡 상태를 반환합니다.
+                    훈련 세션의 건물에 설치된 활성 CCTV별 현재 혼잡 상태를 반환합니다. 세션 상태와
+                    무관하게 조회할 수 있으며, 종료된 세션은 훈련 중 마지막으로 저장된 상태를 그대로
+                    보여줍니다(실시간으로 갱신되지 않습니다).
 
                     기준 데이터는 5초 주기 Observation입니다. 혼잡 시작/상승/해소 즉시 이벤트는
                     이 상태를 갱신하지 않으며, 이벤트 타임라인(GET /monitoring/events)과 WebSocket
@@ -480,26 +457,12 @@ public class TrainingMonitoringController {
                                     }
                                     """)
                     )
-            ),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "409",
-                    description = "훈련 세션이 RUNNING 상태가 아님",
-                    content = @Content(
-                            mediaType = "application/json",
-                            examples = @ExampleObject(value = """
-                                    {
-                                      "isSuccess": false,
-                                      "code": "TRAINING006",
-                                      "message": "진행 중인 훈련 세션을 찾을 수 없습니다."
-                                    }
-                                    """)
-                    )
             )
     })
     @GetMapping("/current-states")
     public ResponseEntity<ApiResponse<CurrentCctvStateListResponse>> getCurrentStates(
             @Parameter(
-                    description = "조회할 RUNNING 훈련 세션의 UUID",
+                    description = "조회할 훈련 세션의 UUID (세션 상태와 무관하게 조회 가능)",
                     required = true,
                     example = "d669294e-55e1-4c00-bf67-229d89b76948"
             )
@@ -518,7 +481,9 @@ public class TrainingMonitoringController {
             summary = "카메라별 프레임 목록 조회",
             description = """
                     특정 CCTV에서 캡처된 프레임을 최신순으로 페이지네이션 조회합니다.
-                    상세 모니터링 화면의 큰 이미지와 하단 프레임 탐색 UI에 사용됩니다.
+                    상세 모니터링 화면의 큰 이미지와 하단 프레임 탐색 UI에 사용됩니다. 세션 상태와
+                    무관하게 조회할 수 있으며, 종료된 세션은 훈련 중 마지막으로 저장된 프레임까지
+                    그대로 조회됩니다.
 
                     cursor를 생략하면 가장 최신 프레임부터 반환합니다. 다음 페이지가 있으면
                     응답의 nextCursor를 다음 요청의 cursor로 그대로 전달하면 되며, hasNext가
@@ -646,20 +611,6 @@ public class TrainingMonitoringController {
                     )
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "409",
-                    description = "훈련 세션이 RUNNING 상태가 아님",
-                    content = @Content(
-                            mediaType = "application/json",
-                            examples = @ExampleObject(value = """
-                                    {
-                                      "isSuccess": false,
-                                      "code": "TRAINING006",
-                                      "message": "진행 중인 훈련 세션을 찾을 수 없습니다."
-                                    }
-                                    """)
-                    )
-            ),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "500",
                     description = "S3 presigned GET URL 발급 실패",
                     content = @Content(
@@ -677,7 +628,7 @@ public class TrainingMonitoringController {
     @GetMapping("/cameras/{cctvId}/frames")
     public ResponseEntity<ApiResponse<MonitoringFrameListResponse>> getFrames(
             @Parameter(
-                    description = "조회할 RUNNING 훈련 세션의 UUID",
+                    description = "조회할 훈련 세션의 UUID (세션 상태와 무관하게 조회 가능)",
                     required = true,
                     example = "d669294e-55e1-4c00-bf67-229d89b76948"
             )
@@ -708,8 +659,9 @@ public class TrainingMonitoringController {
     @Operation(
             summary = "이벤트 타임라인 조회",
             description = """
-                    실행 중인 훈련 세션에서 발생한 혼잡 감지 이벤트(CongestionEventItem)와
-                    경로 재탐색 이벤트(RouteRecalculation)를 발생 시각 오름차순으로 통합해 반환합니다.
+                    훈련 세션에서 발생한 혼잡 감지 이벤트(CongestionEventItem)와 경로 재탐색 이벤트
+                    (RouteRecalculation)를 발생 시각 오름차순으로 통합해 반환합니다. 세션 상태와
+                    무관하게 조회할 수 있습니다.
 
                     경로 재탐색 한 건은 요청 시점 이벤트 하나로 시작해, 관리자가 승인/거절하거나
                     시스템이 자동 취소하면 해소 시점 이벤트가 하나 더 추가됩니다.
@@ -796,26 +748,12 @@ public class TrainingMonitoringController {
                                     }
                                     """)
                     )
-            ),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "409",
-                    description = "훈련 세션이 RUNNING 상태가 아님",
-                    content = @Content(
-                            mediaType = "application/json",
-                            examples = @ExampleObject(value = """
-                                    {
-                                      "isSuccess": false,
-                                      "code": "TRAINING006",
-                                      "message": "진행 중인 훈련 세션을 찾을 수 없습니다."
-                                    }
-                                    """)
-                    )
             )
     })
     @GetMapping("/events")
     public ResponseEntity<ApiResponse<MonitoringEventListResponse>> getEvents(
             @Parameter(
-                    description = "조회할 RUNNING 훈련 세션의 UUID",
+                    description = "조회할 훈련 세션의 UUID (세션 상태와 무관하게 조회 가능)",
                     required = true,
                     example = "d669294e-55e1-4c00-bf67-229d89b76948"
             )

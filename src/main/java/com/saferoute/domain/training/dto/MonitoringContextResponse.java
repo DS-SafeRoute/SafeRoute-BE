@@ -18,8 +18,12 @@ public record MonitoringContextResponse(
         @Schema(description = "세션 상태", example = "RUNNING")
         TrainingStatus status,
 
-        @Schema(description = "훈련 시작 시각(Unix epoch milliseconds)", example = "1787722000000")
-        long startedAt,
+        @Schema(
+                description = "훈련 시작 시각(Unix epoch milliseconds). 아직 시작 전(SCHEDULED)이면 null",
+                example = "1787722000000",
+                nullable = true
+        )
+        Long startedAt,
 
         @Schema(
                 description = "훈련 종료 시각(Unix epoch milliseconds). 아직 종료되지 않았으면 null",
@@ -29,11 +33,12 @@ public record MonitoringContextResponse(
         Long endedAt,
 
         @Schema(
-                description = "경과 시간(초). RUNNING이면 현재 시각 기준, 종료된 세션이면 "
-                        + "종료 시각 기준으로 고정된 값",
-                example = "95"
+                description = "경과 시간(초). RUNNING이면 현재 시각 기준으로 계속 늘어나는 값, "
+                        + "종료된 세션이면 종료 시각 기준으로 고정된 값. 아직 시작 전(SCHEDULED)이면 null",
+                example = "95",
+                nullable = true
         )
-        long elapsedSeconds,
+        Long elapsedSeconds,
 
         @Schema(description = "Pi 관측 저장 간격(초). 전역 설정값", example = "5")
         int snapshotIntervalSec,
