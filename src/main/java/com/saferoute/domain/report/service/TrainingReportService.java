@@ -146,6 +146,7 @@ public class TrainingReportService {
         );
     return reports.stream()
         .map(report -> new RecentTrainingReportResponse(
+            report.getShortId(),
             report.getTrainingSession()
                 .getScenario()
                 .getName(),

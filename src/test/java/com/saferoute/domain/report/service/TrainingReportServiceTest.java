@@ -278,6 +278,29 @@ class TrainingReportServiceTest {
     }
 
     @Test
+    @DisplayName("최근 훈련 리포트 목록에는 상세 조회용 reportId가 포함된다")
+    void getRecentTrainingReport_includesReportId() {
+        String reportId = "abc123XYZ0";
+        TrainingScenario scenario = mock(TrainingScenario.class);
+        given(scenario.getName()).willReturn("정기 훈련");
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getScenario()).willReturn(scenario);
+        given(session.getStartedAt()).willReturn(Instant.parse("2026-01-01T00:00:00Z"));
+        TrainingReport report = mock(TrainingReport.class);
+        given(report.getShortId()).willReturn(reportId);
+        given(report.getTrainingSession()).willReturn(session);
+        given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
+        given(trainingReportRepository.findRecentReportsBySchoolName(
+                org.mockito.ArgumentMatchers.eq(SCHOOL_NAME), any()))
+                .willReturn(Collections.singletonList(report));
+
+        var response = trainingReportService.getRecentTrainingReport(EMAIL);
+
+        assertThat(response).hasSize(1);
+        assertThat(response.get(0).reportId()).isEqualTo(reportId);
+    }
+
+    @Test
     void calculatesDashboardStatsOnlyForAuthenticatedUsersSchool() {
         given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
         given(trainingSessionRepository.countByScenario_Building_SchoolName(SCHOOL_NAME))
