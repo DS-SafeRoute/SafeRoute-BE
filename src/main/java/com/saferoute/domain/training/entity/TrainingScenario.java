@@ -172,6 +172,11 @@ public class TrainingScenario {
         this.status = ScenarioStatus.ERROR;
     }
 
+    // 10분 하드 타임아웃으로 훈련이 자동 종료된 경우. 리포트는 정상 생성되므로 ERROR와 구분한다.
+    public void markTimeoutFailed() {
+        this.status = ScenarioStatus.TIMEOUT_FAILED;
+    }
+
     // 응답용 getter
     public UUID getBuildingId() {
         return building != null ? building.getId() : null;
