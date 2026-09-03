@@ -355,16 +355,12 @@ public class CongestionObservationService {
         });
     }
 
-    // Edge가 없으면(감시 영역에 아직 GridCell/Edge 매핑이 안 된 CCTV) edgeId 없이 한 번만 발행해
-    // 대시보드가 최소한 CCTV 단위 관측값은 볼 수 있게 한다.
+    // CCTV당 1 Observation = 1 WebSocket 이벤트 원칙을 지키기 위해 영향받는 Edge 전체를 배열로 담아
+    // 한 번만 발행한다 (이슈 #192). Edge가 없으면(감시 영역에 아직 GridCell/Edge 매핑이 안 된 CCTV)
+    // 빈 목록으로 발행해 대시보드가 최소한 CCTV 단위 관측값은 볼 수 있게 한다.
     private void publishCongestionUpdated(UUID sessionId, List<MapEdge> affectedEdges, ObservationItem item) {
-        if (affectedEdges.isEmpty()) {
-            trainingEventPublisher.publishCongestionUpdated(sessionId, null, item);
-            return;
-        }
-        for (MapEdge edge : affectedEdges) {
-            trainingEventPublisher.publishCongestionUpdated(sessionId, edge.getId(), item);
-        }
+        List<UUID> edgeIds = affectedEdges.stream().map(MapEdge::getId).toList();
+        trainingEventPublisher.publishCongestionUpdated(sessionId, edgeIds, item);
     }
 
     private void completeProcessing(String eventId, String processingOwner) {
