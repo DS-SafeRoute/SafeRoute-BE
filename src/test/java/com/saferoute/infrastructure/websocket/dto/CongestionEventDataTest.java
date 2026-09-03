@@ -32,8 +32,8 @@ class CongestionEventDataTest {
     }
 
     @Test
-    @DisplayName("영향받는 Edge 전체를 edgeIds 배열로, density를 포함해서 매핑한다 (REST ObservationResponse와 필드 일치)")
-    void from_mapsAllEdgesAndDensity() {
+    @DisplayName("영향받는 Edge 전체를 affectedEdgeIds 배열로, density/configVersion을 포함해서 매핑한다 (REST ObservationResponse와 필드 일치)")
+    void from_mapsAllEdgesAndDensityAndConfigVersion() {
         ObservationItem item = observationItem(null);
         UUID edgeA = UUID.randomUUID();
         UUID edgeB = UUID.randomUUID();
@@ -42,13 +42,14 @@ class CongestionEventDataTest {
         ObservationResponse restResponse = ObservationResponse.from(item);
 
         assertThat(data.eventId()).isEqualTo(UUID.fromString(item.getEventId()));
-        assertThat(data.edgeIds()).containsExactly(edgeA, edgeB);
+        assertThat(data.affectedEdgeIds()).containsExactly(edgeA, edgeB);
         assertThat(data.cctvCode()).isEqualTo(restResponse.cctvCode());
         assertThat(data.avgHeadcount()).isEqualTo(restResponse.avgHeadcount());
         assertThat(data.peakHeadcount()).isEqualTo(restResponse.peakHeadcount());
         assertThat(data.density()).isEqualTo(restResponse.density());
         assertThat(data.congestionLevel()).isEqualTo(restResponse.congestionLevel());
         assertThat(data.capturedAt()).isEqualTo(restResponse.capturedAt());
+        assertThat(data.configVersion()).isEqualTo(restResponse.configVersion());
     }
 
     @Test
@@ -58,7 +59,18 @@ class CongestionEventDataTest {
 
         CongestionEventData data = CongestionEventData.from(List.of(), item);
 
-        assertThat(data.edgeIds()).isEmpty();
+        assertThat(data.affectedEdgeIds()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("같은 Edge ID가 중복으로 들어와도 한 번만 담는다")
+    void from_dedupesEdgeIds() {
+        ObservationItem item = observationItem(null);
+        UUID edgeA = UUID.randomUUID();
+
+        CongestionEventData data = CongestionEventData.from(List.of(edgeA, edgeA), item);
+
+        assertThat(data.affectedEdgeIds()).containsExactly(edgeA);
     }
 
     @Test

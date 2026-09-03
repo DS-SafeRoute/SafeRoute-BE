@@ -359,8 +359,8 @@ public class CongestionObservationService {
     // 한 번만 발행한다 (이슈 #192). Edge가 없으면(감시 영역에 아직 GridCell/Edge 매핑이 안 된 CCTV)
     // 빈 목록으로 발행해 대시보드가 최소한 CCTV 단위 관측값은 볼 수 있게 한다.
     private void publishCongestionUpdated(UUID sessionId, List<MapEdge> affectedEdges, ObservationItem item) {
-        List<UUID> edgeIds = affectedEdges.stream().map(MapEdge::getId).toList();
-        trainingEventPublisher.publishCongestionUpdated(sessionId, edgeIds, item);
+        List<UUID> affectedEdgeIds = affectedEdges.stream().map(MapEdge::getId).distinct().toList();
+        trainingEventPublisher.publishCongestionUpdated(sessionId, affectedEdgeIds, item);
     }
 
     private void completeProcessing(String eventId, String processingOwner) {

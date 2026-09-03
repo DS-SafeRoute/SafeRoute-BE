@@ -140,19 +140,19 @@ public class TrainingEventPublisher {
 
     // 혼잡 이벤트 수신 시 즉시 발행한다 (DynamoDB 저장은 DB 트랜잭션과 무관하므로 AfterCommit 버전을 두지 않는다).
     // CCTV당 1 Observation = 1 이벤트 발행 원칙에 따라 영향받는 Edge 전체를 한 번에 담아 한 번만 발행한다 (이슈 #192).
-    public void publishCongestionUpdated(UUID sessionId, List<UUID> edgeIds, ObservationItem item) {
+    public void publishCongestionUpdated(UUID sessionId, List<UUID> affectedEdgeIds, ObservationItem item) {
         TrainingEventMessage<CongestionEventData> message = TrainingEventMessage.of(
                 TrainingEventType.CONGESTION_UPDATED,
                 sessionId,
-                CongestionEventData.from(edgeIds, item)
+                CongestionEventData.from(affectedEdgeIds, item)
         );
 
         messagingTemplate.convertAndSend(SESSION_TOPIC_PREFIX + sessionId, message);
 
         log.debug(
-                "혼잡도 이벤트 발행: sessionId={}, edgeIds={}, level={}",
+                "혼잡도 이벤트 발행: sessionId={}, affectedEdgeIds={}, level={}",
                 sessionId,
-                edgeIds,
+                affectedEdgeIds,
                 item.getCongestionLevel()
         );
     }

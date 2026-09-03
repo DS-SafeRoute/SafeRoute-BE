@@ -263,6 +263,24 @@ class CongestionObservationServiceTest {
     }
 
     @Test
+    @DisplayName("같은 Edge가 여러 GridCell 매핑을 통해 중복으로 조회돼도 발행 payload에는 한 번만 담는다")
+    void reportObservation_dedupesAffectedEdgeIds() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        givenProcessingClaimed();
+        UUID edgeAId = UUID.randomUUID();
+        MapEdge edgeA = edge(edgeAId);
+        givenAffectedEdges(edgeA, edgeA);
+
+        service.reportObservation(cctv, request(5.0));
+
+        verify(trainingEventPublisher).publishCongestionUpdated(
+                eq(sessionId), eq(List.of(edgeAId)), any());
+    }
+
+    @Test
     @DisplayName("매핑된 Edge가 없으면 빈 edgeIds로 한 번만 발행하고 재탐색은 트리거하지 않는다")
     void reportObservation_noMappedEdges_publishesOnceWithEmptyEdgeIds() {
         TrainingSession session = mock(TrainingSession.class);
