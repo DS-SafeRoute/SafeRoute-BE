@@ -3,11 +3,10 @@ package com.saferoute.domain.training.dto;
 import com.saferoute.domain.congestion.entity.CongestionLevel;
 import com.saferoute.domain.evacuation.recalculation.entity.RecalculationStatus;
 import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventType;
+import com.saferoute.domain.telemetry.dynamo.entity.GeneralMonitoringEventType;
 
 // 이벤트 타임라인(GET /api/v1/sessions/{sessionId}/monitoring/events)에 노출되는 이벤트 종류.
 // 심각도와 사용자 표시 문구를 종류별로 이 열거형이 직접 정의한다 (이슈 #144).
-//
-// AI 분석 시작/경로 이탈/위험 구역 진입은 아직 Pi/AI 쪽 이벤트 수신 계약이 없어 이 타임라인에 포함하지 않는다.
 public enum MonitoringEventType {
     CONGESTION_STARTED {
         @Override
@@ -87,6 +86,28 @@ public enum MonitoringEventType {
         public String message(String cctvCode, CongestionLevel level) {
             return "경로 재탐색 취소 · " + cctvCode;
         }
+    },
+    AI_ANALYSIS_STARTED {
+        @Override
+        public MonitoringEventSeverity severity(CongestionLevel level) {
+            return MonitoringEventSeverity.INFO;
+        }
+
+        @Override
+        public String message(String cctvCode, CongestionLevel level) {
+            return "AI 분석 시작 · " + cctvCode;
+        }
+    },
+    ROUTE_DEVIATION_DETECTED {
+        @Override
+        public MonitoringEventSeverity severity(CongestionLevel level) {
+            return MonitoringEventSeverity.WARNING;
+        }
+
+        @Override
+        public String message(String cctvCode, CongestionLevel level) {
+            return "경로 이탈 감지 · " + cctvCode;
+        }
     };
 
     public abstract MonitoringEventSeverity severity(CongestionLevel level);
@@ -98,6 +119,13 @@ public enum MonitoringEventType {
             case CONGESTION_STARTED -> CONGESTION_STARTED;
             case CONGESTION_LEVEL_UP -> CONGESTION_LEVEL_UP;
             case CONGESTION_ENDED -> CONGESTION_ENDED;
+        };
+    }
+
+    public static MonitoringEventType from(GeneralMonitoringEventType generalMonitoringEventType) {
+        return switch (generalMonitoringEventType) {
+            case AI_ANALYSIS_STARTED -> AI_ANALYSIS_STARTED;
+            case ROUTE_DEVIATION_DETECTED -> ROUTE_DEVIATION_DETECTED;
         };
     }
 

@@ -3,6 +3,7 @@ package com.saferoute.domain.training.dto;
 import com.saferoute.domain.congestion.entity.CongestionLevel;
 import com.saferoute.domain.evacuation.recalculation.entity.RouteRecalculation;
 import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventItem;
+import com.saferoute.domain.telemetry.dynamo.entity.GeneralMonitoringEventItem;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 @Schema(description = "이벤트 타임라인 항목")
@@ -40,6 +41,19 @@ public record MonitoringEventResponse(
                 type,
                 type.severity(item.getCongestionLevel()),
                 item.getDetectedAt(),
+                item.getCctvCode(),
+                item.getCongestionLevel(),
+                type.message(item.getCctvCode(), item.getCongestionLevel())
+        );
+    }
+
+    public static MonitoringEventResponse fromGeneralEvent(GeneralMonitoringEventItem item) {
+        MonitoringEventType type = MonitoringEventType.from(item.getEventType());
+        return new MonitoringEventResponse(
+                item.getEventId(),
+                type,
+                type.severity(item.getCongestionLevel()),
+                item.getOccurredAt(),
                 item.getCctvCode(),
                 item.getCongestionLevel(),
                 type.message(item.getCctvCode(), item.getCongestionLevel())
