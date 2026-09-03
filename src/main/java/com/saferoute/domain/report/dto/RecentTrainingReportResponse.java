@@ -5,6 +5,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 public record RecentTrainingReportResponse(
+    String reportId,
     String scenarioName,
     Instant startedAt,
     Integer participantCount,
