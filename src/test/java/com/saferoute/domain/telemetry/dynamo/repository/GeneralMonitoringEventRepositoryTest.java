@@ -91,12 +91,17 @@ class GeneralMonitoringEventRepositoryTest {
         org.mockito.Mockito.verify(gsi1).query(captor.capture());
         assertThat(captor.getValue().scanIndexForward()).isFalse();
         assertThat(captor.getValue().limit()).isEqualTo(10);
-        assertThat(captor.getValue().filterExpression()).isNull();
+        // GSI1을 공유하는 CongestionEventItem이 섞여 들어와 역직렬화가 실패하지 않도록,
+        // cctvCode 필터가 없어도 pk 접두사 필터는 항상 적용돼야 한다.
+        assertThat(captor.getValue().filterExpression().expression())
+                .isEqualTo("begins_with(#pk, :pkPrefix)");
+        assertThat(captor.getValue().filterExpression().expressionValues().get(":pkPrefix").s())
+                .isEqualTo("MONITORING_EVENT#");
         assertThat(result).containsExactly(newest, oldest);
     }
 
     @Test
-    void cctvCode가_있으면_필터_익스프레션을_적용한다() {
+    void cctvCode가_있으면_pk_접두사_필터와_함께_적용한다() {
         when(gsi1.query(any(QueryEnhancedRequest.class))).thenReturn(
                 PageIterable.create(() -> List.of(Page.builder(GeneralMonitoringEventItem.class)
                         .items(List.of()).build()).iterator())
@@ -108,7 +113,9 @@ class GeneralMonitoringEventRepositoryTest {
         org.mockito.Mockito.verify(gsi1).query(captor.capture());
         assertThat(captor.getValue().filterExpression()).isNotNull();
         assertThat(captor.getValue().filterExpression().expression())
-                .isEqualTo("#cctvCode = :cctvCode");
+                .isEqualTo("begins_with(#pk, :pkPrefix) AND #cctvCode = :cctvCode");
+        assertThat(captor.getValue().filterExpression().expressionValues().get(":pkPrefix").s())
+                .isEqualTo("MONITORING_EVENT#");
         assertThat(captor.getValue().filterExpression().expressionValues().get(":cctvCode").s())
                 .isEqualTo("CCTV_001");
     }

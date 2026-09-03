@@ -21,6 +21,13 @@ import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedExce
 @Repository
 public class GeneralMonitoringEventRepository {
 
+    // CongestionEventItem과 같은 물리 테이블의 같은 GSI1을 공유하고, 둘 다 GSI1_PK를
+    // "SESSION#{trainingSessionId}"로 만든다(단일 테이블 설계). GSI1로 세션 단위 조회를 할 때
+    // 이 접두사로 걸러내지 않으면 CongestionEventItem까지 같이 반환되어, 그 아이템의 eventType
+    // 값을 GeneralMonitoringEventType enum으로 역직렬화하려다 IllegalArgumentException이 터진다
+    // (반대 방향도 마찬가지 - CongestionEventRepository 참고).
+    private static final String PK_PREFIX = "MONITORING_EVENT#";
+
     private static final Expression ITEM_NOT_EXISTS = Expression.builder()
             .expression("attribute_not_exists(#pk)")
             .putExpressionName("#pk", "pk")
@@ -88,22 +95,35 @@ public class GeneralMonitoringEventRepository {
                         .partitionValue(GeneralMonitoringEventItem.buildGsi1Pk(trainingSessionId))
                         .sortValue(GeneralMonitoringEventItem.buildGsi1Sk(beforeOccurredAt, beforeEventId))
                         .build());
+        Expression filterExpression = cctvCode == null
+                ? pkPrefixFilter()
+                : Expression.builder()
+                        .expression("begins_with(#pk, :pkPrefix) AND #cctvCode = :cctvCode")
+                        .putExpressionName("#pk", "pk")
+                        .putExpressionName("#cctvCode", "cctvCode")
+                        .putExpressionValue(":pkPrefix", AttributeValue.fromS(PK_PREFIX))
+                        .putExpressionValue(":cctvCode", AttributeValue.fromS(cctvCode))
+                        .build();
         QueryEnhancedRequest.Builder requestBuilder = QueryEnhancedRequest.builder()
                 .queryConditional(queryConditional)
+                .filterExpression(filterExpression)
                 .scanIndexForward(false)
                 .limit(limit);
-        if (cctvCode != null) {
-            requestBuilder.filterExpression(Expression.builder()
-                    .expression("#cctvCode = :cctvCode")
-                    .putExpressionName("#cctvCode", "cctvCode")
-                    .putExpressionValue(":cctvCode", AttributeValue.fromS(cctvCode))
-                    .build());
-        }
 
         return gsi1.query(requestBuilder.build()).stream()
                 .flatMap(page -> page.items().stream())
                 .limit(limit)
                 .toList();
+    }
+
+    // GSI1을 공유하는 다른 아이템 타입(CongestionEventItem)이 결과에 섞여 들어와
+    // 역직렬화에 실패하지 않도록, 이 리포지토리가 다루는 타입의 pk 접두사만 통과시킨다.
+    private Expression pkPrefixFilter() {
+        return Expression.builder()
+                .expression("begins_with(#pk, :pkPrefix)")
+                .putExpressionName("#pk", "pk")
+                .putExpressionValue(":pkPrefix", AttributeValue.fromS(PK_PREFIX))
+                .build();
     }
 
     private void validateLimit(int limit) {
