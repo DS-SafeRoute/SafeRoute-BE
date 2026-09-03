@@ -304,6 +304,22 @@ class CongestionObservationServiceTest {
                 .hasFieldOrPropertyWithValue("errorCode", CongestionErrorCode.EVENT_IDENTITY_MISMATCH);
 
         verify(observationRepository, never()).claimProcessing(anyString(), anyString(), anyLong(), anyLong());
+        verify(generalMonitoringEventRepository, never()).saveIfAbsent(any());
+    }
+
+    @Test
+    @DisplayName("Observation 저장 자체가 실패하면 AI_ANALYSIS_STARTED 이벤트 생성을 시도하지 않는다")
+    void reportObservation_doesNotTryToCreateAiAnalysisStartedEventWhenObservationSaveFails() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        given(observationRepository.saveIfAbsent(any())).willThrow(new RuntimeException("dynamo unavailable"));
+
+        assertThatThrownBy(() -> service.reportObservation(cctv, request(5.0)))
+                .isInstanceOf(RuntimeException.class);
+
+        verify(generalMonitoringEventRepository, never()).saveIfAbsent(any());
     }
 
     @Test
