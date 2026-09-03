@@ -9,6 +9,7 @@ import com.saferoute.domain.congestion.entity.CongestionLevel;
 import com.saferoute.domain.training.dto.CurrentCctvStateListResponse;
 import com.saferoute.domain.training.dto.CurrentCctvStateResponse;
 import com.saferoute.domain.training.dto.MonitoringCameraListResponse;
+import com.saferoute.domain.training.dto.MonitoringContextResponse;
 import com.saferoute.domain.training.dto.MonitoringCameraResponse;
 import com.saferoute.domain.training.dto.MonitoringEventListResponse;
 import com.saferoute.domain.training.dto.MonitoringEventResponse;
@@ -16,6 +17,7 @@ import com.saferoute.domain.training.dto.MonitoringEventSeverity;
 import com.saferoute.domain.training.dto.MonitoringEventType;
 import com.saferoute.domain.training.dto.MonitoringFrameListResponse;
 import com.saferoute.domain.training.dto.MonitoringFrameResponse;
+import com.saferoute.domain.training.entity.TrainingStatus;
 import com.saferoute.domain.training.service.TrainingMonitoringService;
 import com.saferoute.global.api.code.ErrorCode;
 import com.saferoute.global.api.error.CctvErrorCode;
@@ -59,6 +61,59 @@ class TrainingMonitoringControllerTest {
 
     @MockitoBean
     private TrainingMonitoringService trainingMonitoringService;
+
+    @Test
+    void 모니터링_세션_정보를_공통_응답으로_반환한다() throws Exception {
+        MonitoringContextResponse context = new MonitoringContextResponse(
+                SESSION_ID,
+                "3학년 A동 화재 대피 훈련",
+                "A동",
+                TrainingStatus.RUNNING,
+                1_787_722_000_000L,
+                null,
+                95L,
+                5,
+                15
+        );
+        given(trainingMonitoringService.getContext(SESSION_ID, EMAIL)).willReturn(context);
+
+        mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/context", SESSION_ID)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.code").value("TRAINING_SUCCESS_011"))
+                .andExpect(jsonPath("$.result.sessionId").value(SESSION_ID.toString()))
+                .andExpect(jsonPath("$.result.scenarioName").value("3학년 A동 화재 대피 훈련"))
+                .andExpect(jsonPath("$.result.buildingName").value("A동"))
+                .andExpect(jsonPath("$.result.status").value("RUNNING"))
+                .andExpect(jsonPath("$.result.startedAt").value(1_787_722_000_000L))
+                .andExpect(jsonPath("$.result.endedAt").value((Object) null))
+                .andExpect(jsonPath("$.result.elapsedSeconds").value(95))
+                .andExpect(jsonPath("$.result.snapshotIntervalSec").value(5))
+                .andExpect(jsonPath("$.result.stateStaleAfterSec").value(15));
+    }
+
+    @Test
+    void 모니터링_정보_조회시_세션을_찾을_수_없으면_404를_반환한다() throws Exception {
+        given(trainingMonitoringService.getContext(SESSION_ID, EMAIL))
+                .willThrow(new ApiException(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND));
+
+        mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/context", SESSION_ID)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("TRAINING001"));
+    }
+
+    @Test
+    void 모니터링_정보_조회시_실행_중인_세션이_아니면_409를_반환한다() throws Exception {
+        given(trainingMonitoringService.getContext(SESSION_ID, EMAIL))
+                .willThrow(new ApiException(TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND));
+
+        mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/context", SESSION_ID)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("TRAINING006"));
+    }
 
     @Test
     void 카메라별_최신_캡처_목록을_공통_응답으로_반환한다() throws Exception {
@@ -300,6 +355,8 @@ class TrainingMonitoringControllerTest {
         MonitoringFrameResponse frame = new MonitoringFrameResponse(
                 "3c9f7e2a-3b39-4f0a-9f0a-6a2b6b1f5a11",
                 1_787_722_095_000L,
+                1_787_722_090_000L,
+                1_787_722_095_000L,
                 "https://example.com/frame.jpg",
                 1_787_725_695_000L,
                 12,
@@ -322,6 +379,8 @@ class TrainingMonitoringControllerTest {
                 .andExpect(jsonPath("$.result.frames[0].frameId")
                         .value("3c9f7e2a-3b39-4f0a-9f0a-6a2b6b1f5a11"))
                 .andExpect(jsonPath("$.result.frames[0].capturedAt").value(1_787_722_095_000L))
+                .andExpect(jsonPath("$.result.frames[0].windowStart").value(1_787_722_090_000L))
+                .andExpect(jsonPath("$.result.frames[0].windowEnd").value(1_787_722_095_000L))
                 .andExpect(jsonPath("$.result.frames[0].imageUrl")
                         .value("https://example.com/frame.jpg"))
                 .andExpect(jsonPath("$.result.frames[0].urlExpiresAt").value(1_787_725_695_000L))

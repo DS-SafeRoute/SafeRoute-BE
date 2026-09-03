@@ -29,6 +29,7 @@ import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
 import com.saferoute.domain.training.dto.CurrentCctvStateListResponse;
 import com.saferoute.domain.training.dto.CurrentCctvStateResponse;
 import com.saferoute.domain.training.dto.MonitoringCameraListResponse;
+import com.saferoute.domain.training.dto.MonitoringContextResponse;
 import com.saferoute.domain.training.dto.MonitoringCameraResponse;
 import com.saferoute.domain.training.dto.MonitoringEventListResponse;
 import com.saferoute.domain.training.dto.MonitoringEventResponse;
@@ -47,6 +48,7 @@ import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.s3.dto.PresignedGetUrl;
 import com.saferoute.infrastructure.s3.service.S3PresignedUrlService;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -568,6 +570,65 @@ class TrainingMonitoringServiceTest {
         CurrentCctvStateListResponse response = service.getCurrentStates(SESSION_ID, EMAIL);
 
         assertThat(response.states()).isEmpty();
+    }
+
+    @Test
+    void 진행중인_세션의_모니터링_정보를_반환한다() {
+        TrainingSession session = org.mockito.Mockito.mock(TrainingSession.class);
+        TrainingScenario scenario = org.mockito.Mockito.mock(TrainingScenario.class);
+        Building building = org.mockito.Mockito.mock(Building.class);
+        Instant startedAt = Instant.now().minusSeconds(100);
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(SESSION_ID, SCHOOL_NAME))
+                .willReturn(Optional.of(session));
+        given(session.getStatus()).willReturn(TrainingStatus.RUNNING);
+        given(session.getId()).willReturn(SESSION_ID);
+        given(session.getStartedAt()).willReturn(startedAt);
+        given(session.getEndedAt()).willReturn(null);
+        given(session.getScenario()).willReturn(scenario);
+        given(scenario.getName()).willReturn("3학년 A동 화재 대피 훈련");
+        given(scenario.getBuilding()).willReturn(building);
+        given(building.getName()).willReturn("A동");
+        CongestionConfig config = CongestionConfig.createDefault();
+        given(congestionConfigService.getConfig()).willReturn(config);
+
+        Instant before = Instant.now();
+        MonitoringContextResponse response = service.getContext(SESSION_ID, EMAIL);
+        Instant after = Instant.now();
+
+        assertThat(response.sessionId()).isEqualTo(SESSION_ID);
+        assertThat(response.scenarioName()).isEqualTo("3학년 A동 화재 대피 훈련");
+        assertThat(response.buildingName()).isEqualTo("A동");
+        assertThat(response.status()).isEqualTo(TrainingStatus.RUNNING);
+        assertThat(response.startedAt()).isEqualTo(startedAt.toEpochMilli());
+        assertThat(response.endedAt()).isNull();
+        // Clock을 주입하지 않으므로(코드베이스 전체가 Instant.now()를 직접 쓰는 컨벤션) 정확히 하나의
+        // 값으로 고정할 수는 없지만, 호출 직전/직후로 경계를 좁혀 실제 경과 시간과 일치하는지 검증한다.
+        assertThat(response.elapsedSeconds())
+                .isBetween(
+                        Duration.between(startedAt, before).getSeconds(),
+                        Duration.between(startedAt, after).getSeconds()
+                );
+        assertThat(response.snapshotIntervalSec()).isEqualTo(config.getSnapshotIntervalSec());
+        assertThat(response.stateStaleAfterSec()).isEqualTo(config.getStateStaleAfterSec());
+    }
+
+    @Test
+    void 모니터링_정보_조회는_실행_중이_아닌_세션은_거부한다() {
+        stubSession(TrainingStatus.COMPLETED);
+
+        assertThatThrownBy(() -> service.getContext(SESSION_ID, EMAIL))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", TrainingErrorCode.RUNNING_TRAINING_SESSION_NOT_FOUND);
+    }
+
+    @Test
+    void 모니터링_정보_조회는_다른_학교의_세션은_존재_여부를_노출하지_않고_거부한다() {
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(SESSION_ID, SCHOOL_NAME))
+                .willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getContext(SESSION_ID, EMAIL))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", TrainingErrorCode.TRAINING_SESSION_NOT_FOUND);
     }
 
     @Test

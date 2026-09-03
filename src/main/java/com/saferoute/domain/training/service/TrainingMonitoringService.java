@@ -1,5 +1,6 @@
 package com.saferoute.domain.training.service;
 
+import com.saferoute.domain.congestion.entity.CongestionConfig;
 import com.saferoute.domain.congestion.service.CongestionConfigService;
 import com.saferoute.domain.device.entity.Cctv;
 import com.saferoute.domain.device.repository.CctvJpaRepository;
@@ -16,6 +17,7 @@ import com.saferoute.domain.training.dto.CurrentCctvStateListResponse;
 import com.saferoute.domain.training.dto.CurrentCctvStateResponse;
 import com.saferoute.domain.training.dto.MonitoringCameraListResponse;
 import com.saferoute.domain.training.dto.MonitoringCameraResponse;
+import com.saferoute.domain.training.dto.MonitoringContextResponse;
 import com.saferoute.domain.training.dto.MonitoringEventListResponse;
 import com.saferoute.domain.training.dto.MonitoringEventResponse;
 import com.saferoute.domain.training.dto.MonitoringFrameListResponse;
@@ -28,6 +30,7 @@ import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.s3.dto.PresignedGetUrl;
 import com.saferoute.infrastructure.s3.service.S3PresignedUrlService;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -77,6 +80,27 @@ public class TrainingMonitoringService {
                 .map(cctv -> toResponse(cctv, capturesByCctvCode.get(cctv.getCode())))
                 .toList();
         return new MonitoringCameraListResponse(sessionId, cameras);
+    }
+
+    // 모니터링 상세 화면 헤더에 필요한 세션 기본 정보 + 전역 설정값(저장 간격, stale 기준)을
+    // 한 번에 제공한다. RUNNING 세션만 허용하는 다른 모니터링 조회 API와 동일한 제약을 쓰며,
+    // 종료된 세션 조회 허용 여부는 별도 이슈에서 다룬다.
+    public MonitoringContextResponse getContext(UUID sessionId, String email) {
+        TrainingSession session = findRunningSessionForSchool(sessionId, email);
+        CongestionConfig config = congestionConfigService.getConfig();
+        long elapsedSeconds = Duration.between(session.getStartedAt(), Instant.now()).getSeconds();
+
+        return new MonitoringContextResponse(
+                session.getId(),
+                session.getScenario().getName(),
+                session.getScenario().getBuilding().getName(),
+                session.getStatus(),
+                session.getStartedAt().toEpochMilli(),
+                session.getEndedAt() != null ? session.getEndedAt().toEpochMilli() : null,
+                elapsedSeconds,
+                config.getSnapshotIntervalSec(),
+                config.getStateStaleAfterSec()
+        );
     }
 
     // 상태가 아직 없는 CCTV도 목록에서 누락하지 않고 stale=true인 null 상태로 반환한다.

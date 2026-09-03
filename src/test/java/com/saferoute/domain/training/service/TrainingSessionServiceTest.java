@@ -22,6 +22,7 @@ import com.saferoute.domain.evacuation.service.EvacuationRouteService;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.training.dto.CreateSessionRequest;
 import com.saferoute.domain.training.dto.TrainingSessionListResponse;
+import com.saferoute.domain.training.dto.TrainingSessionResponse;
 import com.saferoute.domain.training.dto.TrainingSessionSummaryResponse;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
@@ -504,10 +505,11 @@ class TrainingSessionServiceTest {
         TrainingSession session = sessionWithStatus(TrainingStatus.RUNNING);
         given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME)).willReturn(Optional.of(session));
 
-        trainingSessionService.end(sessionId, EMAIL);
+        TrainingSessionResponse response = trainingSessionService.end(sessionId, EMAIL);
 
         assertThat(session.getStatus()).isEqualTo(TrainingStatus.COMPLETED);
         assertThat(session.getEndedAt()).isNotNull();
+        assertThat(response.getEndedAt()).isEqualTo(session.getEndedAt());
         verify(trainingEventPublisher, times(1)).publishTrainingStatusUpdatedAfterCommit(session);
         verify(session.getScenario(), times(1)).markCompleted();
         verify(ioTLightService).resetToNormal(buildingId);
@@ -546,9 +548,11 @@ class TrainingSessionServiceTest {
         TrainingSession session = sessionWithStatus(TrainingStatus.RUNNING);
         given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME)).willReturn(Optional.of(session));
 
-        trainingSessionService.forceEnd(sessionId, EMAIL);
+        TrainingSessionResponse response = trainingSessionService.forceEnd(sessionId, EMAIL);
 
         assertThat(session.getStatus()).isEqualTo(TrainingStatus.STOPPED);
+        assertThat(session.getEndedAt()).isNotNull();
+        assertThat(response.getEndedAt()).isEqualTo(session.getEndedAt());
         verify(trainingEventPublisher, times(1)).publishTrainingStatusUpdatedAfterCommit(session);
         verify(session.getScenario(), times(1)).markError();
         verify(ioTLightService).resetToNormal(buildingId);
