@@ -233,7 +233,7 @@ public class TrainingSessionService {
 
     for (TrainingSession session : timedOutSessions) {
       session.fail(Instant.now());
-      session.getScenario().markError();
+      session.getScenario().markTimeoutFailed();
     }
 
     timedOutSessions.stream()
