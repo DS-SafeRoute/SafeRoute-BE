@@ -153,7 +153,6 @@ class WebSocketIntegrationTest {
         trainingScenario = TrainingScenario.create(
                 "정기 훈련",
                 50,
-                300,
                 Instant.now(),
                 false,
                 FireSpreadSpeed.MEDIUM,
@@ -234,7 +233,7 @@ class WebSocketIntegrationTest {
         mapEdgeJpaRepository.save(MapEdge.create(floor, startNode, exitNode, 3.0, true));
 
         TrainingScenario scenario = TrainingScenario.create(
-                "정기 훈련", 50, 300, Instant.now(), false, FireSpreadSpeed.MEDIUM, building, managerUser, startNode);
+                "정기 훈련", 50, Instant.now(), false, FireSpreadSpeed.MEDIUM, building, managerUser, startNode);
         return trainingScenarioRepository.save(scenario);
     }
 

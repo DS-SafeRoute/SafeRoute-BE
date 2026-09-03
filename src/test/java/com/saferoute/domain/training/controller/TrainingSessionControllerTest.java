@@ -219,14 +219,23 @@ class TrainingSessionControllerTest {
     // === end ===
 
     @Test
-    @DisplayName("POST /sessions/{sessionId}/end - 정상 종료하면 200을 반환한다")
+    @DisplayName("POST /sessions/{sessionId}/end - 정상 종료하면 200을 반환하고 endedAt을 포함한다")
     void endTrainingSession_success() throws Exception {
-        given(trainingSessionService.end(sessionId, EMAIL)).willReturn(sampleResponse(TrainingStatus.COMPLETED));
+        Instant endedAt = Instant.parse("2026-09-03T10:00:00Z");
+        TrainingSessionResponse response = TrainingSessionResponse.builder()
+                .status(TrainingStatus.COMPLETED)
+                .startedAt(Instant.parse("2026-09-03T09:00:00Z"))
+                .endedAt(endedAt)
+                .adminName("박현지")
+                .scenarioName("정기 훈련")
+                .build();
+        given(trainingSessionService.end(sessionId, EMAIL)).willReturn(response);
 
         mockMvc.perform(post("/api/v1/sessions/{sessionId}/end", sessionId)
                         .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.status").value("COMPLETED"));
+                .andExpect(jsonPath("$.result.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.result.endedAt").value(endedAt.toString()));
     }
 
     @Test

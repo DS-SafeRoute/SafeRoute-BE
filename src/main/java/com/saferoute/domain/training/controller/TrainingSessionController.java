@@ -148,6 +148,9 @@ public class TrainingSessionController {
           신규 세션은 항상 SCHEDULED 상태와 startedAt=null로 생성됩니다. RUNNING 상태와
           실제 시작 시각은 시작 API(POST /api/v1/sessions/{sessionId}/start)를 호출할 때만
           서버가 설정합니다.
+
+          작성이 완료되지 않은(DRAFT) 시나리오에는 세션을 생성할 수 없습니다(409). 시나리오를
+          POST /api/v1/scenarios/{scenarioId}/ready로 먼저 READY 전환해야 합니다.
           """
   )
   @PostMapping("/{scenarioId}")
@@ -165,10 +168,13 @@ public class TrainingSessionController {
           기록합니다. RUNNING이 아닌 다른 상태(SCHEDULED가 아닌 세션)에는 호출할 수 없습니다.
 
           시작 전에 발화 위치와 START 노드가 모두 설정되었는지, 둘이 같은 층인지
-          검증합니다. START 노드를 기준으로 최초 대피 경로를 계산하며, 필수 설정이
-          누락되었거나 경로를 찾을 수 없으면 세션 상태를 바꾸지 않고 요청이 실패합니다.
-          계산에 성공하면 시나리오 status도 IN_PROGRESS로 함께 전이되고,
-          계산된 경로를 따라 건물의 유도등에 대피 방향 안내 명령이 내려갑니다.
+          검증합니다. 검증을 통과하면 이 시점에 시나리오의 최초 발화점 셀을
+          FloorGridCell.isFired = true로 활성화합니다(시나리오 설정 단계에서는 isFired가
+          바뀌지 않으므로, 실제 화재 표시는 훈련 시작부터 시작됩니다). 이어서 시나리오의
+          START 노드를 기준으로 최초 대피 경로를 계산하며, 필수 설정이 누락되었거나 경로를
+          찾을 수 없으면 세션 상태를 바꾸지 않고 요청이 실패합니다. 계산에 성공하면 시나리오
+          status도 IN_PROGRESS로 함께 전이되고, 계산된 경로를 따라 건물의 유도등에 대피
+          방향 안내 명령이 내려갑니다.
 
           성공 시 웹소켓으로 훈련 상태 변경 이벤트가 발행되므로, 모니터링 화면은 이 이벤트로도
           상태 갱신을 감지할 수 있습니다.
@@ -194,6 +200,10 @@ public class TrainingSessionController {
 
           정상 종료 여부는 관리자가 직접 끝내는 강제 종료(force-end)와 구분됩니다. 정상
           종료는 시나리오를 COMPLETED로, 강제 종료는 ERROR로 남긴다는 점이 다릅니다.
+
+          응답의 endedAt에 방금 기록된 종료 시각이 그대로 담겨 오므로, 화면은 별도 조회 없이
+          이 값을 바로 표시하면 됩니다. 단, 새로고침 후 세션을 다시 조회해 종료 시각을
+          복구하는 API는 아직 없습니다.
           """
   )
   @PostMapping("/{sessionId}/end")
@@ -214,6 +224,10 @@ public class TrainingSessionController {
           정상 종료(end)와 동일하게 시나리오의 화재 셀 초기화, 대기 중인 경로 재탐색 요청
           무효화, 유도등 평상시 복구가 함께 일어나지만, 시나리오 status는 COMPLETED가 아니라
           ERROR로 표시되어 정상 종료와 구분됩니다.
+
+          응답의 endedAt에 방금 기록된 강제 종료 시각이 그대로 담겨 오므로, 화면은 별도 조회
+          없이 이 값을 바로 표시하면 됩니다. 단, 새로고침 후 세션을 다시 조회해 종료 시각을
+          복구하는 API는 아직 없습니다.
           """
   )
   @PostMapping("/{sessionId}/force-end")
@@ -229,9 +243,9 @@ public class TrainingSessionController {
       description = """
           이 세션에 대해 "지금 안내되고 있는" 대피 경로 하나를 노드 목록과 총 가중치로
           반환합니다. 가장 최근 승인된 경로 재탐색이 있으면 그 경로(fromApprovedRecalculation
-          =true)를, 없으면 도면 관리에서 발화층에 지정한 대표 START 노드를
-          기준으로 새로 계산한 최단 경로
-          (fromApprovedRecalculation=false)를 반환합니다.
+          =true)를, 없으면 시나리오 설정(POST .../evacuation-setup)에서 선택한 startNode를
+          기준으로 새로 계산한 최단 경로(fromApprovedRecalculation=false, source=INITIAL)를
+          반환합니다. 두 경우 모두 경로의 첫 노드는 항상 이 시나리오의 startNodeId입니다.
 
           세션 상태(RUNNING 여부)는 검증하지 않습니다. 아직 시작 전(SCHEDULED)인 세션은
           승인된 재탐색이 있을 수 없으므로 자연히 최단 경로가 반환되고, 이미 종료된
@@ -242,7 +256,7 @@ public class TrainingSessionController {
           훈련 진행 화면은 일반 최단 경로 API에 startNodeId를 직접 전달하지 않고 이 세션 기준
           API를 사용합니다.
 
-          시나리오에 발화층의 START 노드가 연결되어 있지 않으면 실패합니다.
+          시나리오에 evacuation-setup으로 설정된 startNode가 없으면 실패합니다.
           """
   )
   @GetMapping("/{sessionId}/current-route")

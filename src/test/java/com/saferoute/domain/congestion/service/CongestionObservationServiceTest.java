@@ -27,13 +27,18 @@ import com.saferoute.domain.evacuation.grid.entity.MapEdgeGridCell;
 import com.saferoute.domain.evacuation.grid.repository.MapEdgeGridCellRepository;
 import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
+import com.saferoute.domain.evacuation.deviation.service.RouteDeviationService;
 import com.saferoute.domain.evacuation.recalculation.entity.RecalculationTriggerType;
 import com.saferoute.domain.evacuation.recalculation.service.RouteRecalculationService;
 import com.saferoute.domain.floor.entity.Floor;
+import com.saferoute.domain.telemetry.dynamo.entity.GeneralMonitoringEventItem;
+import com.saferoute.domain.telemetry.dynamo.entity.GeneralMonitoringEventType;
 import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import com.saferoute.domain.telemetry.dynamo.repository.CurrentCctvStateRepository;
+import com.saferoute.domain.telemetry.dynamo.repository.GeneralMonitoringEventRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.IdempotentSaveResult;
 import com.saferoute.domain.telemetry.dynamo.repository.LatestMonitoringCaptureRepository;
+import com.saferoute.domain.telemetry.dynamo.repository.ObservationCountRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
@@ -63,6 +68,12 @@ class CongestionObservationServiceTest {
     private ObservationRepository observationRepository;
 
     @Mock
+    private ObservationCountRepository observationCountRepository;
+
+    @Mock
+    private GeneralMonitoringEventRepository generalMonitoringEventRepository;
+
+    @Mock
     private LatestMonitoringCaptureRepository latestMonitoringCaptureRepository;
 
     @Mock
@@ -82,6 +93,9 @@ class CongestionObservationServiceTest {
 
     @Mock
     private RouteRecalculationService routeRecalculationService;
+
+    @Mock
+    private RouteDeviationService routeDeviationService;
 
     @Mock
     private TrainingEventPublisher trainingEventPublisher;
@@ -278,6 +292,7 @@ class CongestionObservationServiceTest {
         assertThat(result.created()).isFalse();
         verify(trainingEventPublisher, never()).publishCongestionUpdated(any(), any(), any());
         verify(routeRecalculationService, never()).trigger(any(), any(), any(), any(), any(), anyDouble());
+        verify(observationCountRepository, never()).increment(anyString(), anyString());
     }
 
     @Test
@@ -298,6 +313,23 @@ class CongestionObservationServiceTest {
                 .hasFieldOrPropertyWithValue("errorCode", CongestionErrorCode.EVENT_IDENTITY_MISMATCH);
 
         verify(observationRepository, never()).claimProcessing(anyString(), anyString(), anyLong(), anyLong());
+        verify(generalMonitoringEventRepository, never()).saveIfAbsent(any());
+        verify(routeDeviationService, never()).evaluateObservation(any(), any());
+    }
+
+    @Test
+    @DisplayName("Observation 저장 자체가 실패하면 AI_ANALYSIS_STARTED 이벤트 생성을 시도하지 않는다")
+    void reportObservation_doesNotTryToCreateAiAnalysisStartedEventWhenObservationSaveFails() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        given(observationRepository.saveIfAbsent(any())).willThrow(new RuntimeException("dynamo unavailable"));
+
+        assertThatThrownBy(() -> service.reportObservation(cctv, request(5.0)))
+                .isInstanceOf(RuntimeException.class);
+
+        verify(generalMonitoringEventRepository, never()).saveIfAbsent(any());
     }
 
     @Test
@@ -418,5 +450,113 @@ class CongestionObservationServiceTest {
                 .hasFieldOrPropertyWithValue("errorCode", CongestionErrorCode.MONITORING_IMAGE_IDENTITY_MISMATCH);
 
         verify(observationRepository, never()).saveIfAbsent(any());
+    }
+
+    @Test
+    @DisplayName("유효한 Observation을 저장하면 경로 이탈 판정을 시도한다")
+    void reportObservation_triesToEvaluateRouteDeviation() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        givenProcessingClaimed();
+        givenAffectedEdges();
+
+        service.reportObservation(cctv, request(5.0));
+
+        verify(routeDeviationService).evaluateObservation(eq(cctv), argThat(item ->
+                item.getTrainingSessionId().equals(sessionId.toString())
+                        && item.getCctvCode().equals("CCTV_001")
+        ));
+    }
+
+    @Test
+    @DisplayName("유효한 Observation을 저장하면 AI_ANALYSIS_STARTED 이벤트 생성을 시도한다")
+    void reportObservation_triesToCreateAiAnalysisStartedEvent() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        givenProcessingClaimed();
+        givenAffectedEdges();
+
+        service.reportObservation(cctv, request(5.0));
+
+        verify(generalMonitoringEventRepository).saveIfAbsent(argThat(item ->
+                item.getTrainingSessionId().equals(sessionId.toString())
+                        && item.getCctvCode().equals("CCTV_001")
+                        && item.getEventType() == GeneralMonitoringEventType.AI_ANALYSIS_STARTED
+                        && item.getOccurredAt() == 2_000L
+                        && item.getCongestionLevel() == null
+        ));
+    }
+
+    @Test
+    @DisplayName("같은 세션+CCTV로 여러 번 호출해도 AI_ANALYSIS_STARTED 이벤트 eventId는 항상 같다 (결정적 생성)")
+    void reportObservation_generatesDeterministicEventIdForAiAnalysisStartedEvent() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        givenProcessingClaimed();
+        givenAffectedEdges();
+
+        service.reportObservation(cctv, request(5.0));
+        service.reportObservation(cctv, request(7.0));
+
+        org.mockito.ArgumentCaptor<GeneralMonitoringEventItem> captor =
+                org.mockito.ArgumentCaptor.forClass(GeneralMonitoringEventItem.class);
+        verify(generalMonitoringEventRepository, times(2)).saveIfAbsent(captor.capture());
+        List<GeneralMonitoringEventItem> saved = captor.getAllValues();
+        assertThat(saved.get(0).getEventId()).isEqualTo(saved.get(1).getEventId());
+    }
+
+    @Test
+    @DisplayName("AI_ANALYSIS_STARTED 이벤트 저장이 실패해도 Observation 저장 자체는 실패하지 않는다")
+    void reportObservation_swallowsExceptionFromGeneralMonitoringEventRepository() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        givenProcessingClaimed();
+        givenAffectedEdges();
+        given(generalMonitoringEventRepository.saveIfAbsent(any()))
+                .willThrow(new RuntimeException("dynamo unavailable"));
+
+        var result = service.reportObservation(cctv, request(5.0));
+
+        assertThat(result.created()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Observation이 새로 저장되면 세션+CCTV별 카운터를 증가시킨다")
+    void reportObservation_incrementsObservationCountWhenNewlyCreated() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        givenProcessingClaimed();
+        givenAffectedEdges();
+
+        service.reportObservation(cctv, request(5.0));
+
+        verify(observationCountRepository).increment(sessionId.toString(), "CCTV_001");
+    }
+
+    @Test
+    @DisplayName("카운터 증가가 실패해도 Observation 저장 자체는 실패하지 않는다")
+    void reportObservation_swallowsExceptionFromObservationCountRepository() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        givenProcessingClaimed();
+        givenAffectedEdges();
+        org.mockito.Mockito.doThrow(new RuntimeException("dynamo unavailable"))
+                .when(observationCountRepository).increment(anyString(), anyString());
+
+        var result = service.reportObservation(cctv, request(5.0));
+
+        assertThat(result.created()).isTrue();
     }
 }

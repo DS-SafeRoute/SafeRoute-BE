@@ -14,7 +14,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
@@ -37,22 +36,24 @@ public class TrainingScenario {
     @GeneratedValue
     private UUID id;
 
-    @NotBlank
+    // DRAFT는 아직 이름을 정하지 않았을 수 있어 null을 허용한다. READY 전환 시 필수값으로 검증한다.
     @Size(min = 2, max = 20)
-    @Column(nullable = false, length = 20)
+    @Column(length = 20)
     private String name;
 
-    @NotNull
-    @Column(name = "exp_participants", nullable = false)
+    // DRAFT는 참가 인원 미정 상태를 허용한다. READY 전환 시 필수값으로 검증한다.
+    @Column(name = "exp_participants")
     private Integer expectedParticipants;
 
     // 훈련 리포트의 "총 대피 시간" 항목 점수를 매길 때 기준이 되는 목표 대피 시간(초).
-    // 건물 규모/층수마다 적정 대피시간이 달라 고정값이 아니라 시나리오별로 관리자가 지정한다.
-    @Column(name = "target_evacuation_sec")
-    private Integer targetEvacuationSec;
+    // 모든 시나리오에 동일하게 10분(600초)을 적용하며, 관리자가 값을 지정하거나 바꿀 수 없다.
+    public static final int DEFAULT_TARGET_EVACUATION_SEC = 600;
 
-    @NotNull
-    @Column(name = "scheduled_at", nullable = false)
+    @Column(name = "target_evacuation_sec", nullable = false)
+    private Integer targetEvacuationSec = DEFAULT_TARGET_EVACUATION_SEC;
+
+    // DRAFT는 훈련 일시 미정 상태를 허용한다. READY 전환 시 필수값으로 검증한다.
+    @Column(name = "scheduled_at")
     private Instant scheduledAt;
 
     @Column(name = "is_template", nullable = false)
@@ -71,8 +72,9 @@ public class TrainingScenario {
     @Column(name = "fire_spread_speed", nullable = false, length = 10)
     private FireSpreadSpeed fireSpreadSpeed;
 
+    // DRAFT는 건물 미지정 상태를 허용한다. READY 전환 시 필수값으로 검증한다.
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "building_id", nullable = false)
+    @JoinColumn(name = "building_id")
     private Building building;
 
     // 발화 위치를 등록하기 전에는 비어 있을 수 있다. FireZoneService가 발화 층의 START 노드를 연결한다.
@@ -93,9 +95,10 @@ public class TrainingScenario {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    // READY 상태로 직접 시작하는 시나리오 생성 (테스트 픽스처 및 하위 호환용).
+    // 실제 API 플로우는 createDraft()로 시작해 ready()로 전이한다.
     public static TrainingScenario create(String name,
                                           Integer expectedParticipants,
-                                          Integer targetEvacuationSec,
                                           Instant scheduledAt,
                                           Boolean isTemplate,
                                           FireSpreadSpeed fireSpreadSpeed,
@@ -105,33 +108,54 @@ public class TrainingScenario {
         TrainingScenario scenario = new TrainingScenario();
         scenario.name = name;
         scenario.expectedParticipants = expectedParticipants;
-        scenario.targetEvacuationSec = targetEvacuationSec;
         scenario.scheduledAt = scheduledAt;
         scenario.isTemplate = isTemplate != null ? isTemplate : false;
         scenario.fireSpreadSpeed = fireSpreadSpeed != null ? fireSpreadSpeed : FireSpreadSpeed.MEDIUM;
         scenario.building = building;
         scenario.admin = admin;
         scenario.startNode = startNode;
-        // 생성 직후 READY로 시작하지만, 도면 관리에서 발화점을 등록해 START 노드가
-        // 연결되기 전에는 훈련을 시작할 수 없다. DRAFT 저장 플로우는 아직 지원하지 않는다.
         scenario.status = ScenarioStatus.READY;
+        return scenario;
+    }
+
+    // 시나리오 작성 화면 진입 시 미완성 상태로 임시 저장한다. name/building/expectedParticipants/
+    // scheduledAt은 아직 비어 있을 수 있으며, READY 전환(ready()) 시 필수값으로 검증한다.
+    public static TrainingScenario createDraft(String name,
+                                                Integer expectedParticipants,
+                                                Instant scheduledAt,
+                                                Boolean isTemplate,
+                                                FireSpreadSpeed fireSpreadSpeed,
+                                                Building building,
+                                                User admin) {
+        TrainingScenario scenario = new TrainingScenario();
+        scenario.name = name;
+        scenario.expectedParticipants = expectedParticipants;
+        scenario.scheduledAt = scheduledAt;
+        scenario.isTemplate = isTemplate != null ? isTemplate : false;
+        scenario.fireSpreadSpeed = fireSpreadSpeed != null ? fireSpreadSpeed : FireSpreadSpeed.MEDIUM;
+        scenario.building = building;
+        scenario.admin = admin;
+        scenario.status = ScenarioStatus.DRAFT;
         return scenario;
     }
 
     public void update(String name,
                        Integer expectedParticipants,
-                       Integer targetEvacuationSec,
                        Instant scheduledAt,
                        Boolean isTemplate,
                        FireSpreadSpeed fireSpreadSpeed,
-                       MapNode startNode) {
+                       Building building) {
         if (name != null) this.name = name;
         if (expectedParticipants != null) this.expectedParticipants = expectedParticipants;
-        if (targetEvacuationSec != null) this.targetEvacuationSec = targetEvacuationSec;
         if (scheduledAt != null) this.scheduledAt = scheduledAt;
         if (isTemplate != null) this.isTemplate = isTemplate;
         if (fireSpreadSpeed != null) this.fireSpreadSpeed = fireSpreadSpeed;
-        if (startNode != null) this.startNode = startNode;
+        if (building != null) this.building = building;
+    }
+
+    // DRAFT → READY 전이. 필수값 검증은 TrainingScenarioService가 담당한다.
+    public void markReady() {
+        this.status = ScenarioStatus.READY;
     }
 
     // 상태 전이 가드는 이 엔티티가 아니라 TrainingSessionService가 담당한다

@@ -25,8 +25,8 @@ import java.util.Map;
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(ApiException.class)
-    public ResponseEntity<ApiResponse<Void>> handleApiException(ApiException exception) {
-        return response(exception.getErrorCode(), null);
+    public ResponseEntity<ApiResponse<Object>> handleApiException(ApiException exception) {
+        return response(exception.getErrorCode(), exception.getResult());
     }
 
     @ExceptionHandler(ObjectOptimisticLockingFailureException.class)

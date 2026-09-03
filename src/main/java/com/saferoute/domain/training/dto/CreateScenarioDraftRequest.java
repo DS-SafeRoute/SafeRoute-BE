@@ -1,9 +1,6 @@
 package com.saferoute.domain.training.dto;
 
 import com.saferoute.domain.training.entity.FireSpreadSpeed;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.util.UUID;
@@ -11,34 +8,25 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+// DRAFT 생성 요청. 시나리오 작성 화면 진입 시 미완성 상태로 임시 저장하는 용도라 모든 필드가
+// 선택값이다. 작성자(admin)는 이 요청이 아니라 JWT 인증 사용자로 고정된다.
+// targetEvacuationSec은 항상 10분(600초) 고정이라 요청 필드로 받지 않는다.
 @Getter
 @NoArgsConstructor
 @AllArgsConstructor
-public class CreateScenarioRequest {
+public class CreateScenarioDraftRequest {
 
-    @NotBlank
     @Size(min = 2, max = 20)
     private String name;
 
-    @NotNull
     private UUID buildingId;
 
-    @NotNull
     private Integer expectedParticipants;
 
-    // 훈련 리포트의 대피 시간 점수 산정 기준(초). 건물 규모에 따라 관리자가 지정
-    @Positive
-    private Integer targetEvacuationSec;
-
-    @NotNull
     private Instant scheduledAt;
 
     private Boolean isTemplate = false;
 
-    @NotNull
-    private UUID adminId;
-
     // 미지정 시 Service에서 MEDIUM으로 기본 처리
     private FireSpreadSpeed fireSpreadSpeed;
-
 }

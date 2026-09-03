@@ -14,6 +14,7 @@ import com.saferoute.domain.building.repository.BuildingRepository;
 import com.saferoute.domain.device.service.IoTLightService;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.evacuation.graph.entity.NodeType;
+import com.saferoute.domain.evacuation.grid.entity.FloorGridCell;
 import com.saferoute.domain.evacuation.recalculation.dto.response.CurrentRouteResponse;
 import com.saferoute.domain.evacuation.recalculation.service.RouteRecalculationService;
 import com.saferoute.domain.evacuation.service.EvacuationRoute;
@@ -21,6 +22,7 @@ import com.saferoute.domain.evacuation.service.EvacuationRouteService;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.training.dto.CreateSessionRequest;
 import com.saferoute.domain.training.dto.TrainingSessionListResponse;
+import com.saferoute.domain.training.dto.TrainingSessionResponse;
 import com.saferoute.domain.training.dto.TrainingSessionSummaryResponse;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
@@ -191,7 +193,8 @@ class TrainingSessionServiceTest {
         given(manager.getRole()).willReturn(UserRole.MANAGER);
         given(userRepository.findByIdAndSchoolName(adminId, SCHOOL_NAME)).willReturn(Optional.of(manager));
         TrainingScenario scenario = mock(TrainingScenario.class);
-        given(trainingScenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
+        given(scenario.getStatus()).willReturn(com.saferoute.domain.training.entity.ScenarioStatus.READY);
+        given(trainingScenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
                 .willReturn(Optional.of(scenario));
         given(trainingSessionRepository.saveAndFlush(any(TrainingSession.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
@@ -207,6 +210,29 @@ class TrainingSessionServiceTest {
     }
 
     @Test
+    @DisplayName("작성이 완료되지 않은(DRAFT) 시나리오로는 세션을 생성할 수 없다")
+    void create_draftScenario_throwsScenarioDraftNotAllowed() {
+        UUID adminId = UUID.randomUUID();
+        UUID scenarioId = UUID.randomUUID();
+        User manager = mock(User.class);
+        given(manager.getRole()).willReturn(UserRole.MANAGER);
+        given(userRepository.findByIdAndSchoolName(adminId, SCHOOL_NAME)).willReturn(Optional.of(manager));
+        TrainingScenario scenario = mock(TrainingScenario.class);
+        given(scenario.getStatus()).willReturn(com.saferoute.domain.training.entity.ScenarioStatus.DRAFT);
+        given(trainingScenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
+                .willReturn(Optional.of(scenario));
+
+        CreateSessionRequest request = new CreateSessionRequest(adminId);
+
+        assertThatThrownBy(() -> trainingSessionService.create(request, scenarioId, EMAIL))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(TrainingErrorCode.SCENARIO_DRAFT_NOT_ALLOWED);
+        verify(trainingSessionRepository, never()).existsByScenario_Id(any());
+        verify(trainingSessionRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
     @DisplayName("이미 세션이 존재하는 시나리오로는 세션을 또 생성할 수 없다")
     void create_scenarioAlreadyHasSession_throwsException() {
         UUID adminId = UUID.randomUUID();
@@ -214,8 +240,10 @@ class TrainingSessionServiceTest {
         User manager = mock(User.class);
         given(manager.getRole()).willReturn(UserRole.MANAGER);
         given(userRepository.findByIdAndSchoolName(adminId, SCHOOL_NAME)).willReturn(Optional.of(manager));
-        given(trainingScenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
-                .willReturn(Optional.of(mock(TrainingScenario.class)));
+        TrainingScenario scenario = mock(TrainingScenario.class);
+        given(scenario.getStatus()).willReturn(com.saferoute.domain.training.entity.ScenarioStatus.READY);
+        given(trainingScenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
+                .willReturn(Optional.of(scenario));
         given(trainingSessionRepository.existsByScenario_Id(scenarioId)).willReturn(true);
 
         CreateSessionRequest request = new CreateSessionRequest(adminId);
@@ -235,8 +263,10 @@ class TrainingSessionServiceTest {
         User manager = mock(User.class);
         given(manager.getRole()).willReturn(UserRole.MANAGER);
         given(userRepository.findByIdAndSchoolName(adminId, SCHOOL_NAME)).willReturn(Optional.of(manager));
-        given(trainingScenarioRepository.findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
-                .willReturn(Optional.of(mock(TrainingScenario.class)));
+        TrainingScenario scenario = mock(TrainingScenario.class);
+        given(scenario.getStatus()).willReturn(com.saferoute.domain.training.entity.ScenarioStatus.READY);
+        given(trainingScenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
+                .willReturn(Optional.of(scenario));
         given(trainingSessionRepository.existsByScenario_Id(scenarioId)).willReturn(false);
         given(trainingSessionRepository.saveAndFlush(any()))
                 .willThrow(new org.springframework.dao.DataIntegrityViolationException("unique constraint"));
@@ -259,7 +289,7 @@ class TrainingSessionServiceTest {
         given(userRepository.findByIdAndSchoolName(adminId, SCHOOL_NAME))
                 .willReturn(Optional.of(manager));
         given(trainingScenarioRepository
-                .findByIdAndBuilding_SchoolName(scenarioId, SCHOOL_NAME))
+                .findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
                 .willReturn(Optional.empty());
         CreateSessionRequest request = new CreateSessionRequest(adminId);
 
@@ -292,7 +322,9 @@ class TrainingSessionServiceTest {
         given(scenario.getId()).willReturn(scenarioId);
         given(scenario.getStartNode()).willReturn(startNode);
         FireZone fireOrigin = mock(FireZone.class);
+        FloorGridCell fireCell = mock(FloorGridCell.class);
         given(fireOrigin.getFloorId()).willReturn(floorId);
+        given(fireOrigin.getGridCell()).willReturn(fireCell);
         given(fireZoneRepository.findByScenario_IdAndIsManualAddTrue(scenarioId))
                 .willReturn(List.of(fireOrigin));
         TrainingSession session =
@@ -308,6 +340,8 @@ class TrainingSessionServiceTest {
         verify(trainingEventPublisher, times(1)).publishTrainingStatusUpdatedAfterCommit(session);
         verify(scenario, times(1)).markInProgress();
         verify(ioTLightService).applyRouteGuidance(List.of(startNodeId, exitNodeId));
+        // 설정 단계에서는 isFired를 바꾸지 않으므로, 실제 화재 셀 활성화는 훈련 시작 시점에 일어나야 한다.
+        verify(fireCell).markFired();
     }
 
     @Test
@@ -370,7 +404,9 @@ class TrainingSessionServiceTest {
         given(scenario.getId()).willReturn(scenarioId);
         given(scenario.getStartNode()).willReturn(startNode);
         FireZone fireOrigin = mock(FireZone.class);
+        FloorGridCell fireCell = mock(FloorGridCell.class);
         given(fireOrigin.getFloorId()).willReturn(floorId);
+        given(fireOrigin.getGridCell()).willReturn(fireCell);
         given(fireZoneRepository.findByScenario_IdAndIsManualAddTrue(scenarioId))
                 .willReturn(List.of(fireOrigin));
         TrainingSession session =
@@ -469,10 +505,11 @@ class TrainingSessionServiceTest {
         TrainingSession session = sessionWithStatus(TrainingStatus.RUNNING);
         given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME)).willReturn(Optional.of(session));
 
-        trainingSessionService.end(sessionId, EMAIL);
+        TrainingSessionResponse response = trainingSessionService.end(sessionId, EMAIL);
 
         assertThat(session.getStatus()).isEqualTo(TrainingStatus.COMPLETED);
         assertThat(session.getEndedAt()).isNotNull();
+        assertThat(response.getEndedAt()).isEqualTo(session.getEndedAt());
         verify(trainingEventPublisher, times(1)).publishTrainingStatusUpdatedAfterCommit(session);
         verify(session.getScenario(), times(1)).markCompleted();
         verify(ioTLightService).resetToNormal(buildingId);
@@ -511,9 +548,11 @@ class TrainingSessionServiceTest {
         TrainingSession session = sessionWithStatus(TrainingStatus.RUNNING);
         given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME)).willReturn(Optional.of(session));
 
-        trainingSessionService.forceEnd(sessionId, EMAIL);
+        TrainingSessionResponse response = trainingSessionService.forceEnd(sessionId, EMAIL);
 
         assertThat(session.getStatus()).isEqualTo(TrainingStatus.STOPPED);
+        assertThat(session.getEndedAt()).isNotNull();
+        assertThat(response.getEndedAt()).isEqualTo(session.getEndedAt());
         verify(trainingEventPublisher, times(1)).publishTrainingStatusUpdatedAfterCommit(session);
         verify(session.getScenario(), times(1)).markError();
         verify(ioTLightService).resetToNormal(buildingId);

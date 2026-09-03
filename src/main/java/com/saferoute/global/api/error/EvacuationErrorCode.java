@@ -18,8 +18,7 @@ public enum EvacuationErrorCode implements BaseErrorCode {
     EXIT_NODE_NOT_DESIGNATED(HttpStatus.NOT_FOUND, "EVAC007", "지정된 출구 노드가 없습니다."),
     ROUTE_RECALCULATION_NOT_FOUND(HttpStatus.NOT_FOUND, "EVAC008", "재탐색 요청을 찾을 수 없습니다."),
     INVALID_RECALCULATION_STATUS_TRANSITION(HttpStatus.CONFLICT, "EVAC009", "이미 처리된 재탐색 요청입니다."),
-    EXIT_NODE_UNSET_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "EVAC010", "마지막 출구 노드는 EXIT 대상에서 해제할 수 없습니다."),
-    FLOOR_START_NODE_ALREADY_EXISTS(HttpStatus.CONFLICT, "EVAC011", "해당 층에는 이미 대표 대피 시작 노드가 있습니다.");
+    EXIT_NODE_UNSET_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "EVAC010", "마지막 출구 노드는 EXIT 대상에서 해제할 수 없습니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

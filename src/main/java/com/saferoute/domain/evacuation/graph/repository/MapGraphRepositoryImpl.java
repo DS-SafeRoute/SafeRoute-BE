@@ -77,11 +77,6 @@ public class MapGraphRepositoryImpl implements MapGraphRepository {
     }
 
     @Override
-    public boolean existsNodeByFloorAndType(UUID floorId, NodeType type) {
-        return mapNodeJpaRepository.existsByFloor_IdAndType(floorId, type);
-    }
-
-    @Override
     public Optional<MapEdge> findEdgeById(UUID edgeId) {
         return mapEdgeJpaRepository.findById(edgeId);
     }
