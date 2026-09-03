@@ -139,19 +139,20 @@ public class TrainingEventPublisher {
     }
 
     // 혼잡 이벤트 수신 시 즉시 발행한다 (DynamoDB 저장은 DB 트랜잭션과 무관하므로 AfterCommit 버전을 두지 않는다).
-    public void publishCongestionUpdated(UUID sessionId, UUID edgeId, ObservationItem item) {
+    // CCTV당 1 Observation = 1 이벤트 발행 원칙에 따라 영향받는 Edge 전체를 한 번에 담아 한 번만 발행한다 (이슈 #192).
+    public void publishCongestionUpdated(UUID sessionId, List<UUID> affectedEdgeIds, ObservationItem item) {
         TrainingEventMessage<CongestionEventData> message = TrainingEventMessage.of(
                 TrainingEventType.CONGESTION_UPDATED,
                 sessionId,
-                CongestionEventData.from(edgeId, item)
+                CongestionEventData.from(affectedEdgeIds, item)
         );
 
         messagingTemplate.convertAndSend(SESSION_TOPIC_PREFIX + sessionId, message);
 
         log.debug(
-                "혼잡도 이벤트 발행: sessionId={}, edgeId={}, level={}",
+                "혼잡도 이벤트 발행: sessionId={}, affectedEdgeIds={}, level={}",
                 sessionId,
-                edgeId,
+                affectedEdgeIds,
                 item.getCongestionLevel()
         );
     }
@@ -174,19 +175,20 @@ public class TrainingEventPublisher {
     // 즉시 혼잡 이벤트 수신/처리 시 발행한다. CongestionEventService가 발행 성공 여부에 따라
     // DynamoDB 처리 상태(PROCESSED/FAILED)를 직접 갱신해야 해서, 다른 AfterCommit 헬퍼처럼 실패를
     // 로그로 삼키지 않고 그대로 던진다 - 호출자가 afterCommit 트랜잭션 동기화를 직접 관리한다.
-    public void publishCongestionEventReceived(UUID sessionId, UUID edgeId, CongestionEventItem item) {
+    // 즉시 혼잡 상태 전환 1건당 1회만 발행한다 - 영향받는 Edge는 affectedEdgeIds 배열로 한 번에 담는다 (이슈 #192).
+    public void publishCongestionEventReceived(UUID sessionId, List<UUID> affectedEdgeIds, CongestionEventItem item) {
         TrainingEventMessage<CongestionEventReceivedData> message = TrainingEventMessage.of(
                 TrainingEventType.CONGESTION_EVENT_RECEIVED,
                 sessionId,
-                CongestionEventReceivedData.from(edgeId, item)
+                CongestionEventReceivedData.from(affectedEdgeIds, item)
         );
 
         messagingTemplate.convertAndSend(SESSION_TOPIC_PREFIX + sessionId, message);
 
         log.debug(
-                "즉시 혼잡 이벤트 발행: sessionId={}, edgeId={}, eventId={}, level={}",
+                "즉시 혼잡 이벤트 발행: sessionId={}, affectedEdgeIds={}, eventId={}, level={}",
                 sessionId,
-                edgeId,
+                affectedEdgeIds,
                 item.getEventId(),
                 item.getCongestionLevel()
         );

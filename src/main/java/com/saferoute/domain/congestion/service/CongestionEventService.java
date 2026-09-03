@@ -209,16 +209,12 @@ public class CongestionEventService {
         });
     }
 
-    // Edge가 없으면(감시 영역에 아직 GridCell/Edge 매핑이 안 된 CCTV) edgeId 없이 한 번만 발행해
-    // 대시보드가 최소한 CCTV 단위 이벤트는 볼 수 있게 한다.
+    // 즉시 혼잡 상태 전환 1건 = CONGESTION_EVENT_RECEIVED 1건 발행 원칙을 지키기 위해 영향받는 Edge
+    // 전체를 배열로 담아 한 번만 발행한다 (이슈 #192). Edge가 없으면(감시 영역에 아직 GridCell/Edge
+    // 매핑이 안 된 CCTV) 빈 목록으로 발행해 대시보드가 최소한 CCTV 단위 이벤트는 볼 수 있게 한다.
     private void publishCongestionEventReceived(UUID sessionId, List<MapEdge> affectedEdges, CongestionEventItem item) {
-        if (affectedEdges.isEmpty()) {
-            trainingEventPublisher.publishCongestionEventReceived(sessionId, null, item);
-            return;
-        }
-        for (MapEdge edge : affectedEdges) {
-            trainingEventPublisher.publishCongestionEventReceived(sessionId, edge.getId(), item);
-        }
+        List<UUID> affectedEdgeIds = affectedEdges.stream().map(MapEdge::getId).distinct().toList();
+        trainingEventPublisher.publishCongestionEventReceived(sessionId, affectedEdgeIds, item);
     }
 
     private void completeProcessing(String eventId) {

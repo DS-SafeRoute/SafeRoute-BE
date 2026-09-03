@@ -8,7 +8,6 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -238,16 +237,36 @@ class CongestionObservationServiceTest {
     }
 
     @Test
-    @DisplayName("CCTV가 여러 Edge를 감시하면 CROWDED 이상일 때 Edge마다 재탐색을 트리거하고 각각 발행한다")
-    void reportObservation_triggersRecalculationForEachAffectedEdge() {
+    @DisplayName("영향받는 Edge가 하나면 그 Edge 하나만 담아 한 번 발행한다")
+    void reportObservation_singleAffectedEdge_publishesOnceWithThatEdge() {
         TrainingSession session = mock(TrainingSession.class);
         given(session.getId()).willReturn(sessionId);
         given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
                 sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
         givenProcessingClaimed();
-        MapEdge edgeA = edge(UUID.randomUUID());
-        MapEdge edgeB = edge(UUID.randomUUID());
+        UUID edgeAId = UUID.randomUUID();
+        givenAffectedEdges(edge(edgeAId));
+
+        service.reportObservation(cctv, request(5.0));
+
+        verify(trainingEventPublisher, times(1)).publishCongestionUpdated(
+                eq(sessionId), eq(List.of(edgeAId)), any());
+    }
+
+    @Test
+    @DisplayName("CCTV가 여러 Edge를 감시하면 CROWDED 이상일 때 Edge마다 재탐색을 트리거하되 발행은 CCTV당 한 번만 한다")
+    void reportObservation_triggersRecalculationForEachAffectedEdgeButPublishesOnce() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        givenProcessingClaimed();
+        UUID edgeAId = UUID.randomUUID();
+        UUID edgeBId = UUID.randomUUID();
+        MapEdge edgeA = edge(edgeAId);
+        MapEdge edgeB = edge(edgeBId);
         givenAffectedEdges(edgeA, edgeB);
+        List<UUID> expectedEdgeIds = List.of(edgeAId, edgeBId);
 
         // avgHeadcount=13 -> density=3.25 -> CROWDED
         service.reportObservation(cctv, request(13.0));
@@ -256,12 +275,31 @@ class CongestionObservationServiceTest {
                 eq(RecalculationTriggerType.LEVEL_UP), eq("CCTV_001"), anyDouble());
         verify(routeRecalculationService).trigger(eq(session), eq(edgeB), eq(CongestionLevel.CROWDED),
                 eq(RecalculationTriggerType.LEVEL_UP), eq("CCTV_001"), anyDouble());
-        verify(trainingEventPublisher, times(2)).publishCongestionUpdated(eq(sessionId), any(), any());
+        verify(trainingEventPublisher, times(1)).publishCongestionUpdated(
+                eq(sessionId), eq(expectedEdgeIds), any());
     }
 
     @Test
-    @DisplayName("매핑된 Edge가 없으면 edgeId 없이 한 번만 발행하고 재탐색은 트리거하지 않는다")
-    void reportObservation_noMappedEdges_publishesOnceWithoutEdgeId() {
+    @DisplayName("같은 Edge가 여러 GridCell 매핑을 통해 중복으로 조회돼도 발행 payload에는 한 번만 담는다")
+    void reportObservation_dedupesAffectedEdgeIds() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        givenProcessingClaimed();
+        UUID edgeAId = UUID.randomUUID();
+        MapEdge edgeA = edge(edgeAId);
+        givenAffectedEdges(edgeA, edgeA);
+
+        service.reportObservation(cctv, request(5.0));
+
+        verify(trainingEventPublisher).publishCongestionUpdated(
+                eq(sessionId), eq(List.of(edgeAId)), any());
+    }
+
+    @Test
+    @DisplayName("매핑된 Edge가 없으면 빈 edgeIds로 한 번만 발행하고 재탐색은 트리거하지 않는다")
+    void reportObservation_noMappedEdges_publishesOnceWithEmptyEdgeIds() {
         TrainingSession session = mock(TrainingSession.class);
         given(session.getId()).willReturn(sessionId);
         given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
@@ -274,7 +312,7 @@ class CongestionObservationServiceTest {
         service.reportObservation(cctv, request(13.0));
 
         verify(routeRecalculationService, never()).trigger(any(), any(), any(), any(), any(), anyDouble());
-        verify(trainingEventPublisher).publishCongestionUpdated(eq(sessionId), isNull(), any());
+        verify(trainingEventPublisher).publishCongestionUpdated(eq(sessionId), eq(List.of()), any());
     }
 
     @Test
