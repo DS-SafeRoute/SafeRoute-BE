@@ -128,7 +128,7 @@ class GeneralMonitoringEventRepositoryTest {
                 .expression(TableSchema.fromBean(GeneralMonitoringEventItem.class), GeneralMonitoringEventItem.GSI1_NAME)
                 .expressionValues().values())
                 .extracting(value -> value.s())
-                .contains("EVENT#2000#event-1");
+                .contains("EVENT#0000000000000002000#event-1");
     }
 
     @Test

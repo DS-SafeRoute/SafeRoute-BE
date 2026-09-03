@@ -1,6 +1,7 @@
 package com.saferoute.domain.telemetry.dynamo.entity;
 
 import com.saferoute.domain.congestion.entity.CongestionLevel;
+import java.util.Locale;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbAttribute;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbPartitionKey;
@@ -17,6 +18,7 @@ public class GeneralMonitoringEventItem {
 
     public static final String GSI1_NAME = "GSI1";
     public static final long TTL_SECONDS = 30L * 24 * 60 * 60;
+    private static final int GSI1_TIMESTAMP_WIDTH = 19;
 
     private String pk;
     private String sk;
@@ -64,8 +66,15 @@ public class GeneralMonitoringEventItem {
         return "SESSION#" + trainingSessionId;
     }
 
+    // occurredAt을 그대로 이어붙이면 자릿수가 다른 값끼리 사전순 정렬이 시간순과 어긋난다
+    // (예: "9" > "10"). ObservationItem.buildGsi1Sk와 동일하게 고정 폭 0-padding으로
+    // 문자열 정렬이 항상 시간순과 일치하도록 한다. occurredAt은 음수가 아닌 epoch millis만 온다.
     public static String buildGsi1Sk(long occurredAt, String eventId) {
-        return "EVENT#" + occurredAt + "#" + eventId;
+        return "EVENT#" + String.format(
+                Locale.ROOT,
+                "%0" + GSI1_TIMESTAMP_WIDTH + "d",
+                occurredAt
+        ) + "#" + eventId;
     }
 
     @DynamoDbPartitionKey
