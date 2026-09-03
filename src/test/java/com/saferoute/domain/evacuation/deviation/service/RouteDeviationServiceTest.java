@@ -615,4 +615,109 @@ class RouteDeviationServiceTest {
 
         verify(generalMonitoringEventRepository, never()).saveIfAbsent(any());
     }
+
+    @Test
+    @DisplayName("유도 방향이 RIGHT일 때 왼쪽 CCTV에서 사람이 감지되면 DEVIATING으로 전환한다")
+    void evaluateObservation_rightDirection_leftCctvDetection_transitionsToDeviating() {
+        IoTLight light = lightWithGuidance();
+        mapLightToDistinctCctvs(light);
+        given(iotLightJpaRepository.findAllByCustomNode_Floor_Building_Id(buildingId)).willReturn(List.of(light));
+        given(lightDirectionEventRepository.findAllBySessionIdAndLightCode(sessionId.toString(), light.getCode()))
+                .willReturn(List.of(directionEvent(light, IoTLightDirection.RIGHT, 1_000L)));
+        given(routeDeviationStateRepository.find(sessionId.toString(), light.getId())).willReturn(Optional.empty());
+        given(routeDeviationStateRepository.saveIfNewer(any())).willReturn(true);
+
+        ObservationItem observation = observation("CCTV_LEFT", 3.0, 5_000L);
+        routeDeviationService.evaluateObservation(incomingCctv(), observation);
+
+        verify(routeDeviationStateRepository).saveIfNewer(argThat(item ->
+                item.getState() == RouteDeviationState.DEVIATING && item.getLastProcessedCapturedAt() == 5_000L));
+        verify(generalMonitoringEventRepository).saveIfAbsent(argThat(item ->
+                item.getEventType() == GeneralMonitoringEventType.ROUTE_DEVIATION_DETECTED
+                        && item.getCctvCode().equals("CCTV_LEFT")));
+    }
+
+    @Test
+    @DisplayName("유도 방향이 OFF이면 판단하지 않는다")
+    void evaluateObservation_offDirection_skipsJudgement() {
+        IoTLight light = lightWithGuidance();
+        mapLightToDistinctCctvs(light);
+        given(iotLightJpaRepository.findAllByCustomNode_Floor_Building_Id(buildingId)).willReturn(List.of(light));
+        given(lightDirectionEventRepository.findAllBySessionIdAndLightCode(sessionId.toString(), light.getCode()))
+                .willReturn(List.of(directionEvent(light, IoTLightDirection.OFF, 1_000L)));
+
+        ObservationItem observation = observation("CCTV_RIGHT", 3.0, 5_000L);
+        routeDeviationService.evaluateObservation(incomingCctv(), observation);
+
+        verify(routeDeviationStateRepository, never()).saveIfNewer(any());
+    }
+
+    @Test
+    @DisplayName("반대편 0명 관측이 1회만 수신되면 아직 DEVIATING 상태를 유지한다")
+    void evaluateObservation_singleZeroCount_staysDeviating() {
+        IoTLight light = lightWithGuidance();
+        mapLightToDistinctCctvs(light);
+        given(iotLightJpaRepository.findAllByCustomNode_Floor_Building_Id(buildingId)).willReturn(List.of(light));
+        given(lightDirectionEventRepository.findAllBySessionIdAndLightCode(sessionId.toString(), light.getCode()))
+                .willReturn(List.of(directionEvent(light, IoTLightDirection.LEFT, 1_000L)));
+        RouteDeviationStateItem existing = RouteDeviationStateItem.create(
+                sessionId.toString(), light.getId(), RouteDeviationState.DEVIATING, 0, 5_000L);
+        given(routeDeviationStateRepository.find(sessionId.toString(), light.getId()))
+                .willReturn(Optional.of(existing));
+        given(routeDeviationStateRepository.saveIfNewer(any())).willReturn(true);
+
+        ObservationItem observation = observation("CCTV_RIGHT", 0.0, 9_000L);
+        routeDeviationService.evaluateObservation(incomingCctv(), observation);
+
+        verify(routeDeviationStateRepository).saveIfNewer(argThat(item ->
+                item.getState() == RouteDeviationState.DEVIATING
+                        && item.getZeroStreak() == 1
+                        && item.getLastProcessedCapturedAt() == 9_000L));
+        verify(generalMonitoringEventRepository, never()).saveIfAbsent(any());
+    }
+
+    @Test
+    @DisplayName("NORMAL로 복귀한 뒤 다시 이탈하면 새 이벤트를 생성한다")
+    void evaluateObservation_deviatesAgainAfterRecovery_createsNewEvent() {
+        IoTLight light = lightWithGuidance();
+        mapLightToDistinctCctvs(light);
+        given(iotLightJpaRepository.findAllByCustomNode_Floor_Building_Id(buildingId)).willReturn(List.of(light));
+        given(lightDirectionEventRepository.findAllBySessionIdAndLightCode(sessionId.toString(), light.getCode()))
+                .willReturn(List.of(directionEvent(light, IoTLightDirection.LEFT, 1_000L)));
+        // 복구 직후(zeroStreak 리셋된) NORMAL 상태에서 다시 반대편 신호가 들어온 경우.
+        RouteDeviationStateItem recovered = RouteDeviationStateItem.create(
+                sessionId.toString(), light.getId(), RouteDeviationState.NORMAL, 0, 10_000L);
+        given(routeDeviationStateRepository.find(sessionId.toString(), light.getId()))
+                .willReturn(Optional.of(recovered));
+        given(routeDeviationStateRepository.saveIfNewer(any())).willReturn(true);
+
+        ObservationItem observation = observation("CCTV_RIGHT", 3.0, 12_000L);
+        routeDeviationService.evaluateObservation(incomingCctv(), observation);
+
+        verify(routeDeviationStateRepository).saveIfNewer(argThat(item ->
+                item.getState() == RouteDeviationState.DEVIATING && item.getLastProcessedCapturedAt() == 12_000L));
+        verify(generalMonitoringEventRepository).saveIfAbsent(argThat(item ->
+                item.getEventType() == GeneralMonitoringEventType.ROUTE_DEVIATION_DETECTED
+                        && item.getOccurredAt() == 12_000L));
+    }
+
+    @Test
+    @DisplayName("lastProcessedCapturedAt과 정확히 같은 시각의 Observation은 재처리하지 않는다")
+    void evaluateObservation_sameCapturedAtAsLastProcessed_ignored() {
+        IoTLight light = lightWithGuidance();
+        mapLightToDistinctCctvs(light);
+        given(iotLightJpaRepository.findAllByCustomNode_Floor_Building_Id(buildingId)).willReturn(List.of(light));
+        given(lightDirectionEventRepository.findAllBySessionIdAndLightCode(sessionId.toString(), light.getCode()))
+                .willReturn(List.of(directionEvent(light, IoTLightDirection.LEFT, 1_000L)));
+        RouteDeviationStateItem existing = RouteDeviationStateItem.create(
+                sessionId.toString(), light.getId(), RouteDeviationState.NORMAL, 0, 5_000L);
+        given(routeDeviationStateRepository.find(sessionId.toString(), light.getId()))
+                .willReturn(Optional.of(existing));
+
+        ObservationItem observation = observation("CCTV_RIGHT", 3.0, 5_000L);
+        routeDeviationService.evaluateObservation(incomingCctv(), observation);
+
+        verify(routeDeviationStateRepository, never()).saveIfNewer(any());
+        verify(generalMonitoringEventRepository, never()).saveIfAbsent(any());
+    }
 }
