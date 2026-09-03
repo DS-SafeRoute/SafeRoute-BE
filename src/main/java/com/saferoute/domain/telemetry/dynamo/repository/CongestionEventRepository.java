@@ -92,6 +92,43 @@ public class CongestionEventRepository {
                 .toList();
     }
 
+    // 이벤트 타임라인 조회 전용: 최신순으로 커서 페이지네이션하며, cctvCode 필터를 DynamoDB
+    // FilterExpression으로 적용한다(애플리케이션 레벨 필터 대신) - 필터로 줄어든 만큼 SDK가
+    // LastEvaluatedKey를 따라 다음 물리 페이지를 자동으로 더 읽어오므로, 특정 CCTV로 필터링해도
+    // 다른 CCTV 이벤트에 밀려 결과가 누락되지 않는다.
+    public List<CongestionEventItem> findPageBySessionId(
+            String trainingSessionId,
+            String cctvCode,
+            int limit,
+            Long beforeDetectedAt,
+            String beforeEventId
+    ) {
+        validateLimit(limit);
+        QueryConditional queryConditional = beforeDetectedAt == null
+                ? QueryConditional.keyEqualTo(Key.builder()
+                        .partitionValue(CongestionEventItem.buildGsi1Pk(trainingSessionId))
+                        .build())
+                : QueryConditional.sortLessThan(Key.builder()
+                        .partitionValue(CongestionEventItem.buildGsi1Pk(trainingSessionId))
+                        .sortValue(CongestionEventItem.buildGsi1Sk(beforeDetectedAt, beforeEventId))
+                        .build());
+        QueryEnhancedRequest.Builder requestBuilder = QueryEnhancedRequest.builder()
+                .queryConditional(queryConditional)
+                .scanIndexForward(false);
+        if (cctvCode != null) {
+            requestBuilder.filterExpression(Expression.builder()
+                    .expression("#cctvCode = :cctvCode")
+                    .putExpressionName("#cctvCode", "cctvCode")
+                    .putExpressionValue(":cctvCode", AttributeValue.fromS(cctvCode))
+                    .build());
+        }
+
+        return gsi1.query(requestBuilder.build()).stream()
+                .flatMap(page -> page.items().stream())
+                .limit(limit)
+                .toList();
+    }
+
     public boolean updateEventStatus(
             String eventId,
             EventProcessingStatus expectedStatus,

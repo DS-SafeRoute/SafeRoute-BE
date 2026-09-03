@@ -440,8 +440,8 @@ class TrainingMonitoringControllerTest {
                 CongestionLevel.CAUTION,
                 "혼잡 감지 · CCTV_001"
         );
-        given(trainingMonitoringService.getEvents(SESSION_ID, null, EMAIL))
-                .willReturn(new MonitoringEventListResponse(SESSION_ID, List.of(event)));
+        given(trainingMonitoringService.getEvents(SESSION_ID, null, 20, null, EMAIL))
+                .willReturn(new MonitoringEventListResponse(SESSION_ID, List.of(event), "next-cursor", true));
 
         mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/events", SESSION_ID)
                         .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
@@ -456,13 +456,15 @@ class TrainingMonitoringControllerTest {
                 .andExpect(jsonPath("$.result.events[0].occurredAt").value(1_787_722_095_000L))
                 .andExpect(jsonPath("$.result.events[0].cctvCode").value("CCTV_001"))
                 .andExpect(jsonPath("$.result.events[0].congestionLevel").value("CAUTION"))
-                .andExpect(jsonPath("$.result.events[0].message").value("혼잡 감지 · CCTV_001"));
+                .andExpect(jsonPath("$.result.events[0].message").value("혼잡 감지 · CCTV_001"))
+                .andExpect(jsonPath("$.result.nextCursor").value("next-cursor"))
+                .andExpect(jsonPath("$.result.hasNext").value(true));
     }
 
     @Test
     void cctvCode_쿼리파라미터를_서비스에_그대로_전달한다() throws Exception {
-        given(trainingMonitoringService.getEvents(SESSION_ID, "CCTV_001", EMAIL))
-                .willReturn(new MonitoringEventListResponse(SESSION_ID, List.of()));
+        given(trainingMonitoringService.getEvents(SESSION_ID, "CCTV_001", 20, null, EMAIL))
+                .willReturn(new MonitoringEventListResponse(SESSION_ID, List.of(), null, false));
 
         mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/events", SESSION_ID)
                         .param("cctvCode", "CCTV_001")
@@ -472,8 +474,41 @@ class TrainingMonitoringControllerTest {
     }
 
     @Test
+    void 이벤트_타임라인_조회시_limit과_cursor_쿼리파라미터를_서비스에_그대로_전달한다() throws Exception {
+        given(trainingMonitoringService.getEvents(SESSION_ID, null, 5, "prev-cursor", EMAIL))
+                .willReturn(new MonitoringEventListResponse(SESSION_ID, List.of(), null, false));
+
+        mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/events", SESSION_ID)
+                        .param("limit", "5")
+                        .param("cursor", "prev-cursor")
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.events").isEmpty());
+    }
+
+    @Test
+    void 이벤트_타임라인_조회_limit이_범위를_벗어나면_400을_반환한다() throws Exception {
+        mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/events", SESSION_ID)
+                        .param("limit", "0")
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void 이벤트_타임라인_조회시_cursor_형식이_올바르지_않으면_400을_반환한다() throws Exception {
+        given(trainingMonitoringService.getEvents(SESSION_ID, null, 20, "invalid-cursor", EMAIL))
+                .willThrow(new ApiException(ErrorCode.INVALID_INPUT));
+
+        mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/events", SESSION_ID)
+                        .param("cursor", "invalid-cursor")
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON400"));
+    }
+
+    @Test
     void 이벤트_타임라인_조회시_세션을_찾을_수_없으면_404를_반환한다() throws Exception {
-        given(trainingMonitoringService.getEvents(SESSION_ID, null, EMAIL))
+        given(trainingMonitoringService.getEvents(SESSION_ID, null, 20, null, EMAIL))
                 .willThrow(new ApiException(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND));
 
         mockMvc.perform(get("/api/v1/sessions/{sessionId}/monitoring/events", SESSION_ID)

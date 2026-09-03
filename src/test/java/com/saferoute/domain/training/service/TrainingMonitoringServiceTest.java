@@ -702,7 +702,7 @@ class TrainingMonitoringServiceTest {
                 .containsExactly(3_000L, 2_000L);
         assertThat(response.hasNext()).isTrue();
         assertThat(response.nextCursor())
-                .isEqualTo(FrameCursor.encode(2_000L, middleEventId.toString()));
+                .isEqualTo(PageCursor.encode(2_000L, middleEventId.toString()));
     }
 
     @Test
@@ -736,7 +736,7 @@ class TrainingMonitoringServiceTest {
                 .willReturn(List.of());
 
         service.getFrames(
-                SESSION_ID, CCTV_ID, 20, FrameCursor.encode(1_000L, cursorEventId.toString()), EMAIL);
+                SESSION_ID, CCTV_ID, 20, PageCursor.encode(1_000L, cursorEventId.toString()), EMAIL);
 
         verify(observationRepository).findPageBySessionIdAndCctvCode(
                 SESSION_ID.toString(), "CCTV_001", 21, 1_000L, cursorEventId.toString());
@@ -820,89 +820,142 @@ class TrainingMonitoringServiceTest {
     }
 
     @Test
-    void 혼잡_이벤트와_재탐색_이벤트를_발생_시각순으로_합쳐_반환한다() {
+    void 혼잡_이벤트와_재탐색_이벤트를_발생_시각_최신순으로_합쳐_반환한다() {
         stubSession(TrainingStatus.RUNNING);
         CongestionEventItem congestionEvent = congestionEventItem(
                 "CCTV_001", CongestionEventType.CONGESTION_STARTED, 1_000L, CongestionLevel.CAUTION);
-        given(congestionEventRepository.findAllBySessionId(SESSION_ID.toString()))
+        given(congestionEventRepository.findPageBySessionId(SESSION_ID.toString(), null, 21, null, null))
                 .willReturn(List.of(congestionEvent));
         RouteRecalculation recalculation = recalculation(
                 "CCTV_001", CongestionLevel.CROWDED, Instant.ofEpochMilli(2_000L), null, null);
         given(routeRecalculationRepository.findAllByTrainingSession_IdOrderByRequestedAtDesc(SESSION_ID))
                 .willReturn(List.of(recalculation));
 
-        MonitoringEventListResponse response = service.getEvents(SESSION_ID, null, EMAIL);
+        MonitoringEventListResponse response = service.getEvents(SESSION_ID, null, 20, null, EMAIL);
 
         assertThat(response.sessionId()).isEqualTo(SESSION_ID);
         assertThat(response.events())
                 .extracting(MonitoringEventResponse::type, MonitoringEventResponse::occurredAt)
                 .containsExactly(
-                        org.assertj.core.groups.Tuple.tuple(MonitoringEventType.CONGESTION_STARTED, 1_000L),
-                        org.assertj.core.groups.Tuple.tuple(MonitoringEventType.ROUTE_RECALCULATION_REQUESTED, 2_000L)
+                        org.assertj.core.groups.Tuple.tuple(MonitoringEventType.ROUTE_RECALCULATION_REQUESTED, 2_000L),
+                        org.assertj.core.groups.Tuple.tuple(MonitoringEventType.CONGESTION_STARTED, 1_000L)
                 );
+        assertThat(response.hasNext()).isFalse();
+        assertThat(response.nextCursor()).isNull();
     }
 
     @Test
     void 해소된_재탐색은_요청과_해소_두_이벤트로_나뉜다() {
         stubSession(TrainingStatus.RUNNING);
-        given(congestionEventRepository.findAllBySessionId(SESSION_ID.toString())).willReturn(List.of());
+        given(congestionEventRepository.findPageBySessionId(SESSION_ID.toString(), null, 21, null, null))
+                .willReturn(List.of());
         RouteRecalculation recalculation = recalculation(
                 "CCTV_001", CongestionLevel.CROWDED,
                 Instant.ofEpochMilli(1_000L), Instant.ofEpochMilli(3_000L), RecalculationStatus.APPROVED);
         given(routeRecalculationRepository.findAllByTrainingSession_IdOrderByRequestedAtDesc(SESSION_ID))
                 .willReturn(List.of(recalculation));
 
-        MonitoringEventListResponse response = service.getEvents(SESSION_ID, null, EMAIL);
+        MonitoringEventListResponse response = service.getEvents(SESSION_ID, null, 20, null, EMAIL);
 
         assertThat(response.events())
                 .extracting(MonitoringEventResponse::type)
                 .containsExactly(
-                        MonitoringEventType.ROUTE_RECALCULATION_REQUESTED,
-                        MonitoringEventType.EVACUATION_ROUTE_UPDATED
+                        MonitoringEventType.EVACUATION_ROUTE_UPDATED,
+                        MonitoringEventType.ROUTE_RECALCULATION_REQUESTED
                 );
     }
 
     @Test
-    void cctvCode로_필터링한다() {
+    void cctvCode를_저장소_조회_조건으로_전달한다() {
         stubSession(TrainingStatus.RUNNING);
         CongestionEventItem matching = congestionEventItem(
                 "CCTV_001", CongestionEventType.CONGESTION_STARTED, 1_000L, CongestionLevel.CAUTION);
-        CongestionEventItem other = congestionEventItem(
-                "CCTV_002", CongestionEventType.CONGESTION_STARTED, 1_500L, CongestionLevel.CAUTION);
-        given(congestionEventRepository.findAllBySessionId(SESSION_ID.toString()))
-                .willReturn(List.of(matching, other));
+        given(congestionEventRepository.findPageBySessionId(SESSION_ID.toString(), "CCTV_001", 21, null, null))
+                .willReturn(List.of(matching));
         given(routeRecalculationRepository.findAllByTrainingSession_IdOrderByRequestedAtDesc(SESSION_ID))
                 .willReturn(List.of());
 
-        MonitoringEventListResponse response = service.getEvents(SESSION_ID, "CCTV_001", EMAIL);
+        MonitoringEventListResponse response = service.getEvents(SESSION_ID, "CCTV_001", 20, null, EMAIL);
 
         assertThat(response.events()).singleElement()
                 .extracting(MonitoringEventResponse::cctvCode)
                 .isEqualTo("CCTV_001");
+        verify(congestionEventRepository)
+                .findPageBySessionId(SESSION_ID.toString(), "CCTV_001", 21, null, null);
     }
 
     @Test
     void 이벤트가_없는_세션은_빈_타임라인을_반환한다() {
         stubSession(TrainingStatus.RUNNING);
-        given(congestionEventRepository.findAllBySessionId(SESSION_ID.toString())).willReturn(List.of());
+        given(congestionEventRepository.findPageBySessionId(SESSION_ID.toString(), null, 21, null, null))
+                .willReturn(List.of());
         given(routeRecalculationRepository.findAllByTrainingSession_IdOrderByRequestedAtDesc(SESSION_ID))
                 .willReturn(List.of());
 
-        MonitoringEventListResponse response = service.getEvents(SESSION_ID, null, EMAIL);
+        MonitoringEventListResponse response = service.getEvents(SESSION_ID, null, 20, null, EMAIL);
 
         assertThat(response.events()).isEmpty();
+        assertThat(response.hasNext()).isFalse();
     }
 
     @Test
     void 종료된_세션도_이벤트_타임라인을_조회할_수_있다() {
         stubSession(TrainingStatus.COMPLETED);
-        given(congestionEventRepository.findAllBySessionId(SESSION_ID.toString())).willReturn(List.of());
+        given(congestionEventRepository.findPageBySessionId(SESSION_ID.toString(), null, 21, null, null))
+                .willReturn(List.of());
         given(routeRecalculationRepository.findAllByTrainingSession_IdOrderByRequestedAtDesc(SESSION_ID))
                 .willReturn(List.of());
 
-        MonitoringEventListResponse response = service.getEvents(SESSION_ID, null, EMAIL);
+        MonitoringEventListResponse response = service.getEvents(SESSION_ID, null, 20, null, EMAIL);
 
         assertThat(response.events()).isEmpty();
+    }
+
+    @Test
+    void 혼잡_이벤트가_limit을_초과하면_hasNext가_true이고_nextCursor를_반환한다() {
+        stubSession(TrainingStatus.RUNNING);
+        CongestionEventItem newest = congestionEventItem(
+                "CCTV_001", CongestionEventType.CONGESTION_STARTED, 3_000L, CongestionLevel.CAUTION);
+        CongestionEventItem middle = congestionEventItem(
+                "CCTV_001", CongestionEventType.CONGESTION_LEVEL_UP, 2_000L, CongestionLevel.CROWDED);
+        CongestionEventItem oldest = congestionEventItem(
+                "CCTV_001", CongestionEventType.CONGESTION_ENDED, 1_000L, CongestionLevel.NORMAL);
+        // limit+1(=3)을 요청해 3건이 그대로 돌아오면 더 있을 수 있다는 뜻이라 hasNext=true다.
+        given(congestionEventRepository.findPageBySessionId(SESSION_ID.toString(), null, 3, null, null))
+                .willReturn(List.of(newest, middle, oldest));
+        given(routeRecalculationRepository.findAllByTrainingSession_IdOrderByRequestedAtDesc(SESSION_ID))
+                .willReturn(List.of());
+
+        MonitoringEventListResponse response = service.getEvents(SESSION_ID, null, 2, null, EMAIL);
+
+        assertThat(response.events())
+                .extracting(MonitoringEventResponse::occurredAt)
+                .containsExactly(3_000L, 2_000L);
+        assertThat(response.hasNext()).isTrue();
+        assertThat(response.nextCursor())
+                .isEqualTo(PageCursor.encode(2_000L, middle.getEventId()));
+    }
+
+    @Test
+    void cursor_이전에_이미_반환된_재탐색_이벤트는_다음_페이지에서_중복되지_않는다() {
+        stubSession(TrainingStatus.RUNNING);
+        UUID cursorEventId = UUID.randomUUID();
+        given(congestionEventRepository.findPageBySessionId(
+                SESSION_ID.toString(), null, 21, 2_000L, cursorEventId.toString()))
+                .willReturn(List.of());
+        RouteRecalculation alreadyShown = recalculation(
+                "CCTV_001", CongestionLevel.CROWDED, Instant.ofEpochMilli(3_000L), null, null);
+        RouteRecalculation stillToShow = recalculation(
+                "CCTV_001", CongestionLevel.CROWDED, Instant.ofEpochMilli(1_000L), null, null);
+        given(routeRecalculationRepository.findAllByTrainingSession_IdOrderByRequestedAtDesc(SESSION_ID))
+                .willReturn(List.of(alreadyShown, stillToShow));
+
+        MonitoringEventListResponse response = service.getEvents(
+                SESSION_ID, null, 20, PageCursor.encode(2_000L, cursorEventId.toString()), EMAIL);
+
+        assertThat(response.events())
+                .extracting(MonitoringEventResponse::occurredAt)
+                .containsExactly(1_000L);
     }
 
     private CongestionEventItem congestionEventItem(

@@ -154,9 +154,9 @@ public class TrainingMonitoringService {
     ) {
         TrainingSession session = findSessionForSchool(sessionId, email);
         Cctv cctv = findCctvInSessionBuilding(cctvId, session);
-        FrameCursor.Position position = FrameCursor.decode(cursor);
-        Long beforeCapturedAt = position != null ? position.capturedAt() : null;
-        String beforeEventId = position != null ? position.eventId() : null;
+        PageCursor.Position position = PageCursor.decode(cursor);
+        Long beforeCapturedAt = position != null ? position.timestamp() : null;
+        String beforeEventId = position != null ? position.id() : null;
 
         // hasNext 판단을 위해 요청한 개수보다 하나 더 조회한다.
         List<ObservationItem> page = observationRepository.findPageBySessionIdAndCctvCode(
@@ -169,7 +169,7 @@ public class TrainingMonitoringService {
                 .map(this::toFrameResponse)
                 .toList();
         String nextCursor = hasNext
-                ? FrameCursor.encode(
+                ? PageCursor.encode(
                         items.get(items.size() - 1).getCapturedAt(),
                         items.get(items.size() - 1).getEventId())
                 : null;
@@ -177,25 +177,69 @@ public class TrainingMonitoringService {
         return new MonitoringFrameListResponse(sessionId, cctvId, frames, nextCursor, hasNext);
     }
 
-    // 혼잡 감지 이벤트(CongestionEventItem)와 경로 재탐색 이벤트(RouteRecalculation)를 발생 시각순으로 합친다.
-    // 관측값(ObservationItem)은 5초 주기 스냅샷이라 타임라인에 넣으면 너무 촘촘해져서 제외한다 -
-    // "이벤트"로 부를 만한 STARTED/LEVEL_UP/ENDED 전환만 대상으로 한다.
-    // 재탐색 한 건은 요청 시점과(있다면) 해소 시점 두 항목으로 나뉠 수 있다.
-    public MonitoringEventListResponse getEvents(UUID sessionId, String cctvCode, String email) {
+    // 혼잡 감지 이벤트(CongestionEventItem)와 경로 재탐색 이벤트(RouteRecalculation)를 발생 시각
+    // 최신순으로 합쳐 커서 페이지네이션한다. 관측값(ObservationItem)은 5초 주기 스냅샷이라
+    // 타임라인에 넣으면 너무 촘촘해져서 제외한다 - "이벤트"로 부를 만한 STARTED/LEVEL_UP/ENDED
+    // 전환만 대상으로 한다. 재탐색 한 건은 요청 시점과(있다면) 해소 시점 두 항목으로 나뉠 수 있다.
+    //
+    // 혼잡 이벤트(DynamoDB)는 세션당 수백 건까지도 쌓일 수 있어 커서 페이지네이션 + cctvCode
+    // DB 필터가 필요하다. 재탐색 이벤트(PostgreSQL)는 쿨다운으로 발생 빈도가 낮아 매 요청마다
+    // 전량 조회해도 무리가 없으므로 별도 페이지네이션 없이 가져온 뒤, 혼잡 이벤트와 동일한 커서
+    // 경계로 걸러 중복 없이 병합한다.
+    public MonitoringEventListResponse getEvents(
+            UUID sessionId, String cctvCode, int limit, String cursor, String email
+    ) {
         findSessionForSchool(sessionId, email);
 
-        List<MonitoringEventResponse> events = new ArrayList<>();
-        congestionEventRepository.findAllBySessionId(sessionId.toString()).stream()
-                .filter(item -> matchesCctv(item.getCctvCode(), cctvCode))
-                .map(MonitoringEventResponse::fromCongestionEvent)
-                .forEach(events::add);
+        PageCursor.Position position = PageCursor.decode(cursor);
+        Long beforeOccurredAt = position != null ? position.timestamp() : null;
+        String beforeEventId = position != null ? position.id() : null;
 
+        // hasNext 판단을 위해 요청한 개수보다 하나 더 조회한다.
+        List<MonitoringEventResponse> congestionEvents = congestionEventRepository
+                .findPageBySessionId(sessionId.toString(), cctvCode, limit + 1, beforeOccurredAt, beforeEventId)
+                .stream()
+                .map(MonitoringEventResponse::fromCongestionEvent)
+                .toList();
+
+        List<MonitoringEventResponse> allRecalculationEvents = new ArrayList<>();
         routeRecalculationRepository.findAllByTrainingSession_IdOrderByRequestedAtDesc(sessionId).stream()
                 .filter(recalculation -> matchesCctv(recalculation.getCctvCode(), cctvCode))
-                .forEach(recalculation -> addRecalculationEvents(events, recalculation));
+                .forEach(recalculation -> addRecalculationEvents(allRecalculationEvents, recalculation));
+        List<MonitoringEventResponse> recalculationEvents = beforeOccurredAt == null
+                ? allRecalculationEvents
+                : allRecalculationEvents.stream()
+                        .filter(event -> isBeforeCursor(event, beforeOccurredAt, beforeEventId))
+                        .toList();
 
-        events.sort(Comparator.comparingLong(MonitoringEventResponse::occurredAt));
-        return new MonitoringEventListResponse(sessionId, events);
+        List<MonitoringEventResponse> merged = new ArrayList<>(congestionEvents.size() + recalculationEvents.size());
+        merged.addAll(congestionEvents);
+        merged.addAll(recalculationEvents);
+        merged.sort(EVENT_ORDER);
+
+        boolean hasNext = merged.size() > limit;
+        List<MonitoringEventResponse> page = hasNext ? merged.subList(0, limit) : merged;
+        String nextCursor = hasNext
+                ? PageCursor.encode(page.get(page.size() - 1).occurredAt(), page.get(page.size() - 1).eventId())
+                : null;
+
+        return new MonitoringEventListResponse(sessionId, page, nextCursor, hasNext);
+    }
+
+    // 발생 시각 내림차순(최신 먼저), 같은 시각이면 eventId 내림차순. isBeforeCursor()와 방향을
+    // 맞춰야 페이지 경계에서 이벤트가 중복되거나 누락되지 않는다.
+    private static final Comparator<MonitoringEventResponse> EVENT_ORDER = Comparator
+            .comparingLong(MonitoringEventResponse::occurredAt).reversed()
+            .thenComparing(Comparator.comparing(MonitoringEventResponse::eventId).reversed());
+
+    // 커서보다 "이후 페이지"에 속하는(=더 오래된) 이벤트인지 판단한다. CongestionEventRepository의
+    // sortLessThan 커서 조건과 동일한 (timestamp, id) 비교 규칙을 써야 두 소스를 병합했을 때 경계가
+    // 어긋나지 않는다.
+    private boolean isBeforeCursor(MonitoringEventResponse event, long beforeOccurredAt, String beforeEventId) {
+        if (event.occurredAt() != beforeOccurredAt) {
+            return event.occurredAt() < beforeOccurredAt;
+        }
+        return event.eventId().compareTo(beforeEventId) < 0;
     }
 
     private void addRecalculationEvents(List<MonitoringEventResponse> events, RouteRecalculation recalculation) {
