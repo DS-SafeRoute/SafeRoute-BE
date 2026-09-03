@@ -14,9 +14,12 @@ import com.saferoute.domain.evacuation.recalculation.entity.RecalculationTrigger
 import com.saferoute.domain.evacuation.recalculation.service.RouteRecalculationService;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.telemetry.dynamo.entity.CurrentCctvStateItem;
+import com.saferoute.domain.telemetry.dynamo.entity.GeneralMonitoringEventItem;
+import com.saferoute.domain.telemetry.dynamo.entity.GeneralMonitoringEventType;
 import com.saferoute.domain.telemetry.dynamo.entity.LatestMonitoringCaptureItem;
 import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import com.saferoute.domain.telemetry.dynamo.repository.CurrentCctvStateRepository;
+import com.saferoute.domain.telemetry.dynamo.repository.GeneralMonitoringEventRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.IdempotentSaveResult;
 import com.saferoute.domain.telemetry.dynamo.repository.LatestMonitoringCaptureRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
@@ -27,6 +30,7 @@ import com.saferoute.global.api.error.CongestionErrorCode;
 import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -54,6 +58,7 @@ public class CongestionObservationService {
     private static final String JPEG_SUFFIX = ".jpg";
 
     private final ObservationRepository observationRepository;
+    private final GeneralMonitoringEventRepository generalMonitoringEventRepository;
     private final LatestMonitoringCaptureRepository latestMonitoringCaptureRepository;
     private final CurrentCctvStateRepository currentCctvStateRepository;
     private final TrainingSessionRepository trainingSessionRepository;
@@ -106,6 +111,7 @@ public class CongestionObservationService {
         IdempotentSaveResult<ObservationItem> saveResult = observationRepository.saveIfAbsent(item);
         validateEventIdentity(saveResult.item(), request, session.getId());
         updateLatestMonitoringCapture(session.getId(), cctv.getCode(), request.capturedAt(), monitoringImageKey);
+        tryCreateAiAnalysisStartedEvent(session.getId(), cctv.getCode(), request.capturedAt());
 
         String processingOwner = UUID.randomUUID().toString();
         long processingStartedAt = Instant.now().toEpochMilli();
@@ -200,6 +206,32 @@ public class CongestionObservationService {
         );
         if (!latestMonitoringCaptureRepository.updateIfLatest(capture)) {
             log.debug("더 최신 캡처가 있어 모니터링 포인터 갱신을 건너뜀: cctvCode={}", cctvCode);
+        }
+    }
+
+    // 세션+CCTV 조합의 첫 유효 Observation 저장 시점에 AI_ANALYSIS_STARTED 일반 모니터링 이벤트를 생성한다.
+    // eventId를 세션+CCTV+이벤트타입으로부터 결정적으로 만들어 attribute_not_exists 조건부 put에 태우면,
+    // 이 저장 시도 하나만으로 "세션+CCTV당 정확히 한 번" 생성을 보장할 수 있다 (별도 마커/플래그 불필요).
+    // 실패해도 Observation 저장 자체(reportObservation 전체)는 실패시키지 않는다.
+    private void tryCreateAiAnalysisStartedEvent(UUID sessionId, String cctvCode, long capturedAt) {
+        try {
+            String eventId = UUID.nameUUIDFromBytes(
+                    ("AI_ANALYSIS_STARTED:" + sessionId + ":" + cctvCode).getBytes(StandardCharsets.UTF_8)
+            ).toString();
+            GeneralMonitoringEventItem item = GeneralMonitoringEventItem.create(
+                    eventId,
+                    sessionId.toString(),
+                    cctvCode,
+                    GeneralMonitoringEventType.AI_ANALYSIS_STARTED,
+                    capturedAt,
+                    null
+            );
+            generalMonitoringEventRepository.saveIfAbsent(item);
+        } catch (RuntimeException exception) {
+            log.error(
+                    "AI_ANALYSIS_STARTED 이벤트 생성 중 오류: sessionId={}, cctvCode={}",
+                    sessionId, cctvCode, exception
+            );
         }
     }
 
