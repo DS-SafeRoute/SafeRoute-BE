@@ -104,6 +104,67 @@ class CongestionEventRepositoryTest {
     }
 
     @Test
+    void 이벤트_타임라인은_최신순으로_조회한다() {
+        CongestionEventItem newest = item("event-1", 2_000L);
+        CongestionEventItem oldest = item("event-2", 1_000L);
+        when(gsi1.query(any(QueryEnhancedRequest.class))).thenReturn(
+                PageIterable.create(() -> List.of(Page.builder(CongestionEventItem.class)
+                        .items(List.of(newest, oldest)).build()).iterator())
+        );
+        ArgumentCaptor<QueryEnhancedRequest> captor = ArgumentCaptor.forClass(QueryEnhancedRequest.class);
+
+        List<CongestionEventItem> result = repository.findPageBySessionId(
+                SESSION_ID.toString(), null, 10, null, null);
+
+        verify(gsi1).query(captor.capture());
+        assertThat(captor.getValue().scanIndexForward()).isFalse();
+        assertThat(captor.getValue().limit()).isEqualTo(10);
+        assertThat(captor.getValue().filterExpression()).isNull();
+        assertThat(captor.getValue().queryConditional()
+                .expression(TableSchema.fromBean(CongestionEventItem.class), CongestionEventItem.GSI1_NAME)
+                .expressionValues().values())
+                .extracting(value -> value.s())
+                .contains("SESSION#" + SESSION_ID);
+        assertThat(result).containsExactly(newest, oldest);
+    }
+
+    @Test
+    void cctvCode가_있으면_필터_익스프레션을_적용한다() {
+        when(gsi1.query(any(QueryEnhancedRequest.class))).thenReturn(
+                PageIterable.create(() -> List.of(Page.builder(CongestionEventItem.class)
+                        .items(List.of()).build()).iterator())
+        );
+        ArgumentCaptor<QueryEnhancedRequest> captor = ArgumentCaptor.forClass(QueryEnhancedRequest.class);
+
+        repository.findPageBySessionId(SESSION_ID.toString(), "CCTV_001", 10, null, null);
+
+        verify(gsi1).query(captor.capture());
+        assertThat(captor.getValue().filterExpression()).isNotNull();
+        assertThat(captor.getValue().filterExpression().expression())
+                .isEqualTo("#cctvCode = :cctvCode");
+        assertThat(captor.getValue().filterExpression().expressionValues().get(":cctvCode").s())
+                .isEqualTo("CCTV_001");
+    }
+
+    @Test
+    void cursor가_있으면_해당_시각_이전_이벤트만_조회한다() {
+        when(gsi1.query(any(QueryEnhancedRequest.class))).thenReturn(
+                PageIterable.create(() -> List.of(Page.builder(CongestionEventItem.class)
+                        .items(List.of()).build()).iterator())
+        );
+        ArgumentCaptor<QueryEnhancedRequest> captor = ArgumentCaptor.forClass(QueryEnhancedRequest.class);
+
+        repository.findPageBySessionId(SESSION_ID.toString(), null, 10, 2_000L, "event-1");
+
+        verify(gsi1).query(captor.capture());
+        assertThat(captor.getValue().queryConditional()
+                .expression(TableSchema.fromBean(CongestionEventItem.class), CongestionEventItem.GSI1_NAME)
+                .expressionValues().values())
+                .extracting(value -> value.s())
+                .contains("EVENT#2000#event-1");
+    }
+
+    @Test
     void 이벤트를_RECEIVED_PROCESSING_PROCESSED_순서로_변경한다() {
         ArgumentCaptor<UpdateItemEnhancedRequest<CongestionEventItem>> captor = updateCaptor();
 

@@ -660,13 +660,19 @@ public class TrainingMonitoringController {
             summary = "이벤트 타임라인 조회",
             description = """
                     훈련 세션에서 발생한 혼잡 감지 이벤트(CongestionEventItem)와 경로 재탐색 이벤트
-                    (RouteRecalculation)를 발생 시각 오름차순으로 통합해 반환합니다. 세션 상태와
-                    무관하게 조회할 수 있습니다.
+                    (RouteRecalculation)를 발생 시각 최신순으로 통합해 커서 페이지네이션으로
+                    반환합니다. 세션 상태와 무관하게 조회할 수 있습니다.
+
+                    cursor를 생략하면 가장 최신 이벤트부터 반환합니다. 다음 페이지가 있으면
+                    응답의 nextCursor를 다음 요청의 cursor로 그대로 전달하면 되며, hasNext가
+                    false이면 더 이상 조회할 이벤트가 없다는 뜻입니다.
 
                     경로 재탐색 한 건은 요청 시점 이벤트 하나로 시작해, 관리자가 승인/거절하거나
                     시스템이 자동 취소하면 해소 시점 이벤트가 하나 더 추가됩니다.
 
-                    cctvCode를 지정하면 해당 CCTV와 관련된 이벤트만 반환합니다.
+                    cctvCode를 지정하면 해당 CCTV와 관련된 이벤트만 반환합니다. 이 필터는 DynamoDB
+                    쿼리 단계에서 적용되므로, 다른 CCTV 이벤트가 많아도 원하는 CCTV의 이벤트가
+                    누락되지 않습니다.
 
                     AI 분석 시작, 경로 이탈, 위험 구역 진입 이벤트는 아직 Pi/AI 쪽 이벤트 수신
                     계약이 없어 이 API에 포함되지 않습니다.
@@ -700,11 +706,27 @@ public class TrainingMonitoringController {
                                                     "congestionLevel": "CAUTION",
                                                     "message": "혼잡 감지 · CCTV_001"
                                                   }
-                                                ]
+                                                ],
+                                                "nextCursor": "MTc4NzcyMjA5NTAwMHwzYzlmN2UyYS0zYjM5LTRmMGEtOWYwYS02YTJiNmIxZjVhMTE",
+                                                "hasNext": true
                                               }
                                             }
                                             """
                             )
+                    )
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400",
+                    description = "cursor 형식이 올바르지 않음",
+                    content = @Content(
+                            mediaType = "application/json",
+                            examples = @ExampleObject(value = """
+                                    {
+                                      "isSuccess": false,
+                                      "code": "COMMON400",
+                                      "message": "입력값이 올바르지 않습니다."
+                                    }
+                                    """)
                     )
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -760,10 +782,17 @@ public class TrainingMonitoringController {
             @PathVariable UUID sessionId,
             @Parameter(description = "특정 CCTV의 이벤트만 조회하려면 지정", example = "CCTV_001")
             @RequestParam(required = false) String cctvCode,
+            @Parameter(description = "한 페이지에 조회할 이벤트 개수", example = "20")
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int limit,
+            @Parameter(
+                    description = "이전 응답의 nextCursor. 생략하면 최신 이벤트부터 조회",
+                    example = "MTc4NzcyMjA5NTAwMHwzYzlmN2UyYS0zYjM5LTRmMGEtOWYwYS02YTJiNmIxZjVhMTE"
+            )
+            @RequestParam(required = false) String cursor,
             Authentication authentication
     ) {
         MonitoringEventListResponse response = trainingMonitoringService.getEvents(
-                sessionId, cctvCode, authentication.getName());
+                sessionId, cctvCode, limit, cursor, authentication.getName());
         return ResponseEntity.ok(ApiResponse.success(
                 TrainingSuccessCode.MONITORING_EVENT_LIST_FOUND,
                 response
