@@ -165,6 +165,66 @@ class CongestionEventRepositoryTest {
     }
 
     @Test
+    void 병목_집계는_CROWDED_VERY_CROWDED_CONGESTION_STARTED만_센다() {
+        CongestionEventItem crowdedStarted = item(
+                "started-crowded", 1_000L, CongestionEventType.CONGESTION_STARTED, CongestionLevel.CROWDED);
+        CongestionEventItem veryCrowdedStarted = item(
+                "started-very-crowded", 2_000L, CongestionEventType.CONGESTION_STARTED, CongestionLevel.VERY_CROWDED);
+        // FilterExpression은 이미 통과한 아이템만 넘어온다고 가정하고 스텁한다 - 실제 필터 자체는
+        // 아래 필터_익스프레션_검증 테스트에서 별도로 확인한다.
+        when(gsi1.query(any(QueryEnhancedRequest.class))).thenReturn(
+                PageIterable.create(() -> List.of(Page.builder(CongestionEventItem.class)
+                        .items(List.of(crowdedStarted, veryCrowdedStarted)).build()).iterator())
+        );
+
+        int count = repository.countBottlenecksBySessionId(SESSION_ID.toString());
+
+        assertThat(count).isEqualTo(2);
+    }
+
+    @Test
+    void 병목_집계는_필터_익스프레션으로_STARTED와_CROWDED_이상만_요청한다() {
+        when(gsi1.query(any(QueryEnhancedRequest.class))).thenReturn(
+                PageIterable.create(() -> List.of(Page.builder(CongestionEventItem.class)
+                        .items(List.of()).build()).iterator())
+        );
+        ArgumentCaptor<QueryEnhancedRequest> captor = ArgumentCaptor.forClass(QueryEnhancedRequest.class);
+
+        repository.countBottlenecksBySessionId(SESSION_ID.toString());
+
+        verify(gsi1).query(captor.capture());
+        assertThat(captor.getValue().limit()).isNull();
+        assertThat(captor.getValue().filterExpression().expression())
+                .isEqualTo("#eventType = :started AND (#congestionLevel = :crowded OR #congestionLevel = :veryCrowded)");
+        assertThat(captor.getValue().filterExpression().expressionValues().get(":started").s())
+                .isEqualTo("CONGESTION_STARTED");
+        assertThat(captor.getValue().filterExpression().expressionValues().get(":crowded").s())
+                .isEqualTo("CROWDED");
+        assertThat(captor.getValue().filterExpression().expressionValues().get(":veryCrowded").s())
+                .isEqualTo("VERY_CROWDED");
+    }
+
+    @Test
+    void 병목_집계는_고정_상한_없이_여러_물리_페이지를_모두_순회한다() {
+        List<CongestionEventItem> firstPageItems = java.util.stream.IntStream.range(0, 3)
+                .mapToObj(i -> item("started-" + i, i, CongestionEventType.CONGESTION_STARTED, CongestionLevel.CROWDED))
+                .toList();
+        List<CongestionEventItem> secondPageItems = java.util.stream.IntStream.range(3, 5)
+                .mapToObj(i -> item("started-" + i, i, CongestionEventType.CONGESTION_STARTED, CongestionLevel.CROWDED))
+                .toList();
+        when(gsi1.query(any(QueryEnhancedRequest.class))).thenReturn(
+                PageIterable.create(() -> List.of(
+                        Page.builder(CongestionEventItem.class).items(firstPageItems).build(),
+                        Page.builder(CongestionEventItem.class).items(secondPageItems).build()
+                ).iterator())
+        );
+
+        int count = repository.countBottlenecksBySessionId(SESSION_ID.toString());
+
+        assertThat(count).isEqualTo(5);
+    }
+
+    @Test
     void 이벤트를_RECEIVED_PROCESSING_PROCESSED_순서로_변경한다() {
         ArgumentCaptor<UpdateItemEnhancedRequest<CongestionEventItem>> captor = updateCaptor();
 
@@ -253,11 +313,16 @@ class CongestionEventRepositoryTest {
     }
 
     private CongestionEventItem item(String eventId, long detectedAt) {
+        return item(eventId, detectedAt, CongestionEventType.CONGESTION_STARTED, CongestionLevel.CROWDED);
+    }
+
+    private CongestionEventItem item(
+            String eventId, long detectedAt, CongestionEventType eventType, CongestionLevel congestionLevel) {
         return CongestionEventItem.received(
                 UUID.nameUUIDFromBytes(eventId.getBytes(StandardCharsets.UTF_8)), SESSION_ID,
-                "CCTV_001", CongestionEventType.CONGESTION_STARTED,
+                "CCTV_001", eventType,
                 detectedAt, 9, 4.5, CongestionLevel.CROWDED, 4.5,
-                CongestionLevel.CROWDED, 1L, null
+                congestionLevel, 1L, null
         );
     }
 }

@@ -1,6 +1,8 @@
 package com.saferoute.domain.telemetry.dynamo.repository;
 
+import com.saferoute.domain.congestion.entity.CongestionLevel;
 import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventItem;
+import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventType;
 import com.saferoute.domain.telemetry.dynamo.entity.EventProcessingStatus;
 import com.saferoute.domain.telemetry.dynamo.entity.ImageUploadStatus;
 import java.util.List;
@@ -30,6 +32,18 @@ public class CongestionEventRepository {
     private static final Expression ITEM_NOT_EXISTS = Expression.builder()
             .expression("attribute_not_exists(#pk)")
             .putExpressionName("#pk", "pk")
+            .build();
+
+    // 리포트의 병목 횟수(bottleneckCount) 집계 기준: CONGESTION_STARTED이면서 BE가 최종 판정한
+    // congestionLevel이 CROWDED/VERY_CROWDED인 이벤트만 "병목 구간이 시작된 횟수"로 센다.
+    // CONGESTION_LEVEL_UP/CONGESTION_ENDED는 같은 병목 구간의 상태 변화일 뿐이라 제외한다.
+    private static final Expression BOTTLENECK_FILTER = Expression.builder()
+            .expression("#eventType = :started AND (#congestionLevel = :crowded OR #congestionLevel = :veryCrowded)")
+            .putExpressionName("#eventType", "eventType")
+            .putExpressionName("#congestionLevel", "congestionLevel")
+            .putExpressionValue(":started", AttributeValue.fromS(CongestionEventType.CONGESTION_STARTED.name()))
+            .putExpressionValue(":crowded", AttributeValue.fromS(CongestionLevel.CROWDED.name()))
+            .putExpressionValue(":veryCrowded", AttributeValue.fromS(CongestionLevel.VERY_CROWDED.name()))
             .build();
 
     private final DynamoDbTable<CongestionEventItem> table;
@@ -90,6 +104,23 @@ public class CongestionEventRepository {
                 .flatMap(page -> page.items().stream())
                 .limit(limit)
                 .toList();
+    }
+
+    // 리포트 전용 병목 횟수 집계: 임의의 상한 없이 세션 파티션 전체를 순회하며 서버 사이드
+    // FilterExpression(BOTTLENECK_FILTER)을 통과한 아이템만 센다. Limit을 걸지 않으므로 SDK가
+    // 필터로 줄어든 만큼 다음 물리 페이지를 자동으로 더 읽어와, 5,000건 같은 고정 상한 때문에
+    // 일부 병목이 집계에서 누락되는 일이 없다.
+    public int countBottlenecksBySessionId(String trainingSessionId) {
+        QueryEnhancedRequest request = QueryEnhancedRequest.builder()
+                .queryConditional(QueryConditional.keyEqualTo(Key.builder()
+                        .partitionValue(CongestionEventItem.buildGsi1Pk(trainingSessionId))
+                        .build()))
+                .filterExpression(BOTTLENECK_FILTER)
+                .build();
+
+        return (int) gsi1.query(request).stream()
+                .flatMap(page -> page.items().stream())
+                .count();
     }
 
     // 이벤트 타임라인 조회 전용: 최신순으로 커서 페이지네이션하며, cctvCode 필터를 DynamoDB
