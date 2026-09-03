@@ -80,7 +80,6 @@ public class TrainingScenarioService {
         TrainingScenario scenario = TrainingScenario.createDraft(
                 request.getName(),
                 request.getExpectedParticipants(),
-                request.getTargetEvacuationSec(),
                 request.getScheduledAt(),
                 request.getIsTemplate(),
                 request.getFireSpreadSpeed(),
@@ -108,7 +107,6 @@ public class TrainingScenarioService {
         scenario.update(
                 request.getName(),
                 request.getExpectedParticipants(),
-                request.getTargetEvacuationSec(),
                 request.getScheduledAt(),
                 request.getIsTemplate(),
                 request.getFireSpreadSpeed(),

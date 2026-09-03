@@ -46,9 +46,11 @@ public class TrainingScenario {
     private Integer expectedParticipants;
 
     // 훈련 리포트의 "총 대피 시간" 항목 점수를 매길 때 기준이 되는 목표 대피 시간(초).
-    // 건물 규모/층수마다 적정 대피시간이 달라 고정값이 아니라 시나리오별로 관리자가 지정한다.
-    @Column(name = "target_evacuation_sec")
-    private Integer targetEvacuationSec;
+    // 모든 시나리오에 동일하게 10분(600초)을 적용하며, 관리자가 값을 지정하거나 바꿀 수 없다.
+    public static final int DEFAULT_TARGET_EVACUATION_SEC = 600;
+
+    @Column(name = "target_evacuation_sec", nullable = false)
+    private Integer targetEvacuationSec = DEFAULT_TARGET_EVACUATION_SEC;
 
     // DRAFT는 훈련 일시 미정 상태를 허용한다. READY 전환 시 필수값으로 검증한다.
     @Column(name = "scheduled_at")
@@ -97,7 +99,6 @@ public class TrainingScenario {
     // 실제 API 플로우는 createDraft()로 시작해 ready()로 전이한다.
     public static TrainingScenario create(String name,
                                           Integer expectedParticipants,
-                                          Integer targetEvacuationSec,
                                           Instant scheduledAt,
                                           Boolean isTemplate,
                                           FireSpreadSpeed fireSpreadSpeed,
@@ -107,7 +108,6 @@ public class TrainingScenario {
         TrainingScenario scenario = new TrainingScenario();
         scenario.name = name;
         scenario.expectedParticipants = expectedParticipants;
-        scenario.targetEvacuationSec = targetEvacuationSec;
         scenario.scheduledAt = scheduledAt;
         scenario.isTemplate = isTemplate != null ? isTemplate : false;
         scenario.fireSpreadSpeed = fireSpreadSpeed != null ? fireSpreadSpeed : FireSpreadSpeed.MEDIUM;
@@ -122,7 +122,6 @@ public class TrainingScenario {
     // scheduledAt은 아직 비어 있을 수 있으며, READY 전환(ready()) 시 필수값으로 검증한다.
     public static TrainingScenario createDraft(String name,
                                                 Integer expectedParticipants,
-                                                Integer targetEvacuationSec,
                                                 Instant scheduledAt,
                                                 Boolean isTemplate,
                                                 FireSpreadSpeed fireSpreadSpeed,
@@ -131,7 +130,6 @@ public class TrainingScenario {
         TrainingScenario scenario = new TrainingScenario();
         scenario.name = name;
         scenario.expectedParticipants = expectedParticipants;
-        scenario.targetEvacuationSec = targetEvacuationSec;
         scenario.scheduledAt = scheduledAt;
         scenario.isTemplate = isTemplate != null ? isTemplate : false;
         scenario.fireSpreadSpeed = fireSpreadSpeed != null ? fireSpreadSpeed : FireSpreadSpeed.MEDIUM;
@@ -143,14 +141,12 @@ public class TrainingScenario {
 
     public void update(String name,
                        Integer expectedParticipants,
-                       Integer targetEvacuationSec,
                        Instant scheduledAt,
                        Boolean isTemplate,
                        FireSpreadSpeed fireSpreadSpeed,
                        Building building) {
         if (name != null) this.name = name;
         if (expectedParticipants != null) this.expectedParticipants = expectedParticipants;
-        if (targetEvacuationSec != null) this.targetEvacuationSec = targetEvacuationSec;
         if (scheduledAt != null) this.scheduledAt = scheduledAt;
         if (isTemplate != null) this.isTemplate = isTemplate;
         if (fireSpreadSpeed != null) this.fireSpreadSpeed = fireSpreadSpeed;

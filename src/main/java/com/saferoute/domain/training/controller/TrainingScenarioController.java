@@ -140,7 +140,8 @@ public class TrainingScenarioController {
                     아닌 시나리오에 호출하면 409(INVALID_STATUS_TRANSITION)로 거부됩니다.
 
                     name, buildingId, expectedParticipants, scheduledAt, adminId,
-                    fireSpreadSpeed가 모두 채워져 있어야 하며(targetEvacuationSec은 선택값),
+                    fireSpreadSpeed가 모두 채워져 있어야 합니다. targetEvacuationSec은 항상
+                    10분(600초)으로 고정되며 요청으로 지정하거나 바꿀 수 없습니다.
                     하나라도 비어 있으면 400(TRAINING_SCENARIO_REQUIRED_FIELD_MISSING)과 함께
                     result.missingFields에 누락된 필드 이름 목록을 반환합니다.
 

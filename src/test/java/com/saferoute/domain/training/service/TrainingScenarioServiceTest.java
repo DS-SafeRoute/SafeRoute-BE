@@ -70,7 +70,6 @@ class TrainingScenarioServiceTest {
         TrainingScenario scenario = TrainingScenario.create(
                 "테스트 시나리오",
                 10,
-                300,
                 Instant.now(),
                 false,
                 FireSpreadSpeed.MEDIUM,
@@ -83,7 +82,7 @@ class TrainingScenarioServiceTest {
 
     private TrainingScenario draftScenarioWithId(UUID id) {
         TrainingScenario scenario = TrainingScenario.createDraft(
-                null, null, null, null, false, FireSpreadSpeed.MEDIUM, null, mock(User.class));
+                null, null, null, false, FireSpreadSpeed.MEDIUM, null, mock(User.class));
         ReflectionTestUtils.setField(scenario, "id", id);
         return scenario;
     }
@@ -94,7 +93,7 @@ class TrainingScenarioServiceTest {
     @DisplayName("건물 없이 이름만 채운 DRAFT를 생성한다")
     void createDraft_withoutBuilding_succeeds() {
         CreateScenarioDraftRequest request = new CreateScenarioDraftRequest(
-                "2026년 4월 정기 훈련", null, null, null, null, false, FireSpreadSpeed.MEDIUM);
+                "2026년 4월 정기 훈련", null, null, null, false, FireSpreadSpeed.MEDIUM);
         User admin = mock(User.class);
         given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
         given(userRepository.findByEmail(EMAIL)).willReturn(Optional.of(admin));
@@ -115,7 +114,7 @@ class TrainingScenarioServiceTest {
         Building building = mock(Building.class);
         User admin = mock(User.class);
         CreateScenarioDraftRequest request = new CreateScenarioDraftRequest(
-                null, buildingId, null, null, null, false, null);
+                null, buildingId, null, null, false, null);
         given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
         given(userRepository.findByEmail(EMAIL)).willReturn(Optional.of(admin));
         given(buildingRepository.findByIdAndSchoolNameForUpdate(buildingId, SCHOOL_NAME))
@@ -139,7 +138,7 @@ class TrainingScenarioServiceTest {
         TrainingScenario scenario = draftScenarioWithId(scenarioId);
         Building building = mock(Building.class);
         UpdateScenarioRequest request = new UpdateScenarioRequest(
-                "이름 채우기", buildingId, 30, null, Instant.now(), null, null);
+                "이름 채우기", buildingId, 30, Instant.now(), null, null);
         given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
         given(scenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
                 .willReturn(Optional.of(scenario));
@@ -160,7 +159,7 @@ class TrainingScenarioServiceTest {
         TrainingScenario scenario = scenarioWithId(scenarioId);
         scenario.markInProgress();
         UpdateScenarioRequest request = new UpdateScenarioRequest(
-                "변경 시도", null, null, null, null, null, null);
+                "변경 시도", null, null, null, null, null);
         given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
         given(scenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
                 .willReturn(Optional.of(scenario));
@@ -181,13 +180,13 @@ class TrainingScenarioServiceTest {
         given(currentBuilding.getId()).willReturn(currentBuildingId);
         MapNode startNode = mock(MapNode.class);
         TrainingScenario scenario = TrainingScenario.create(
-                "테스트 시나리오", 10, 300, Instant.now(), false, FireSpreadSpeed.MEDIUM,
+                "테스트 시나리오", 10, Instant.now(), false, FireSpreadSpeed.MEDIUM,
                 currentBuilding, mock(User.class), startNode);
         ReflectionTestUtils.setField(scenario, "id", scenarioId);
         Building newBuilding = mock(Building.class);
         given(newBuilding.getId()).willReturn(newBuildingId);
         UpdateScenarioRequest request = new UpdateScenarioRequest(
-                null, newBuildingId, null, null, null, null, null);
+                null, newBuildingId, null, null, null, null);
         given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
         given(scenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
                 .willReturn(Optional.of(scenario));
@@ -209,11 +208,11 @@ class TrainingScenarioServiceTest {
         given(building.getId()).willReturn(buildingId);
         MapNode startNode = mock(MapNode.class);
         TrainingScenario scenario = TrainingScenario.create(
-                "테스트 시나리오", 10, 300, Instant.now(), false, FireSpreadSpeed.MEDIUM,
+                "테스트 시나리오", 10, Instant.now(), false, FireSpreadSpeed.MEDIUM,
                 building, mock(User.class), startNode);
         ReflectionTestUtils.setField(scenario, "id", scenarioId);
         UpdateScenarioRequest request = new UpdateScenarioRequest(
-                "이름만 변경", buildingId, null, null, null, null, null);
+                "이름만 변경", buildingId, null, null, null, null);
         given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
         given(scenarioRepository.findByIdAndAdmin_SchoolName(scenarioId, SCHOOL_NAME))
                 .willReturn(Optional.of(scenario));
@@ -237,7 +236,7 @@ class TrainingScenarioServiceTest {
         User admin = mock(User.class);
         given(admin.getId()).willReturn(UUID.randomUUID());
         TrainingScenario scenario = TrainingScenario.create(
-                "테스트 시나리오", 10, 300, Instant.now(), false, FireSpreadSpeed.MEDIUM, building, admin, null);
+                "테스트 시나리오", 10, Instant.now(), false, FireSpreadSpeed.MEDIUM, building, admin, null);
         ReflectionTestUtils.setField(scenario, "id", scenarioId);
         ReflectionTestUtils.setField(scenario, "status", ScenarioStatus.DRAFT);
         given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
@@ -280,7 +279,7 @@ class TrainingScenarioServiceTest {
         User admin = mock(User.class);
         given(admin.getId()).willReturn(UUID.randomUUID());
         TrainingScenario scenario = TrainingScenario.create(
-                "  ", 10, 300, Instant.now(), false, FireSpreadSpeed.MEDIUM, building, admin, null);
+                "  ", 10, Instant.now(), false, FireSpreadSpeed.MEDIUM, building, admin, null);
         ReflectionTestUtils.setField(scenario, "id", scenarioId);
         ReflectionTestUtils.setField(scenario, "status", ScenarioStatus.DRAFT);
         given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
