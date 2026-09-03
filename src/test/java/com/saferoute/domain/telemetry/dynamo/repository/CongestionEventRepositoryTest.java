@@ -118,6 +118,7 @@ class CongestionEventRepositoryTest {
 
         verify(gsi1).query(captor.capture());
         assertThat(captor.getValue().scanIndexForward()).isFalse();
+        assertThat(captor.getValue().limit()).isEqualTo(10);
         assertThat(captor.getValue().filterExpression()).isNull();
         assertThat(captor.getValue().queryConditional()
                 .expression(TableSchema.fromBean(CongestionEventItem.class), CongestionEventItem.GSI1_NAME)

@@ -114,7 +114,8 @@ public class CongestionEventRepository {
                         .build());
         QueryEnhancedRequest.Builder requestBuilder = QueryEnhancedRequest.builder()
                 .queryConditional(queryConditional)
-                .scanIndexForward(false);
+                .scanIndexForward(false)
+                .limit(limit);
         if (cctvCode != null) {
             requestBuilder.filterExpression(Expression.builder()
                     .expression("#cctvCode = :cctvCode")
