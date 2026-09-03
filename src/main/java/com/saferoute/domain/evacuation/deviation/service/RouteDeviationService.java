@@ -1,15 +1,22 @@
 package com.saferoute.domain.evacuation.deviation.service;
 
+import com.saferoute.domain.device.entity.Cctv;
 import com.saferoute.domain.device.entity.IoTLight;
 import com.saferoute.domain.device.entity.IoTLightDirection;
 import com.saferoute.domain.device.repository.CctvGridCellRepository;
 import com.saferoute.domain.device.repository.IoTLightJpaRepository;
 import com.saferoute.domain.evacuation.deviation.dto.RouteDeviationResponse;
 import com.saferoute.domain.evacuation.grid.repository.MapEdgeGridCellRepository;
+import com.saferoute.domain.telemetry.dynamo.entity.GeneralMonitoringEventItem;
+import com.saferoute.domain.telemetry.dynamo.entity.GeneralMonitoringEventType;
 import com.saferoute.domain.telemetry.dynamo.entity.LightDirectionEventItem;
 import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
+import com.saferoute.domain.telemetry.dynamo.entity.RouteDeviationState;
+import com.saferoute.domain.telemetry.dynamo.entity.RouteDeviationStateItem;
+import com.saferoute.domain.telemetry.dynamo.repository.GeneralMonitoringEventRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.LightDirectionEventRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
+import com.saferoute.domain.telemetry.dynamo.repository.RouteDeviationStateRepository;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.user.service.SchoolContextService;
@@ -24,6 +31,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,12 +39,19 @@ import org.springframework.transaction.annotation.Transactional;
 // 시간 축으로 조인해 경로 이탈률을 계산한다. CCTV 한 대는 headcount/밀집도만 보고하므로 개별 이동 경로까지는
 // 알 수 없지만, "좌/우 통로를 각각 감시하는 CCTV가 분리되어 있다"는 전제(데모 구성) 하에 어느 쪽 CCTV에서
 // 인원이 탐지됐는지를 실제 이동 방향의 대리 지표로 사용한다.
+//
+// evaluateObservation()은 위 리포트 집계와 별개로, Observation이 들어올 때마다 실시간으로 경로 이탈
+// 상태(RouteDeviationStateItem)를 갱신하고 NORMAL->DEVIATING 전환 시 ROUTE_DEVIATION_DETECTED
+// 일반 모니터링 이벤트를 생성한다. resolveCctvCodes/activeDirectionAt/모호 CCTV 제외 로직은
+// computeWindowStats와 동일한 기준을 공유하기 위해 그대로 재사용한다.
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class RouteDeviationService {
 
     private static final int OBSERVATION_QUERY_LIMIT = 2000;
+    private static final int NORMAL_RECOVERY_ZERO_STREAK = 2;
 
     private final IoTLightJpaRepository iotLightJpaRepository;
     private final TrainingSessionRepository trainingSessionRepository;
@@ -45,6 +60,8 @@ public class RouteDeviationService {
     private final MapEdgeGridCellRepository mapEdgeGridCellRepository;
     private final CctvGridCellRepository cctvGridCellRepository;
     private final SchoolContextService schoolContextService;
+    private final RouteDeviationStateRepository routeDeviationStateRepository;
+    private final GeneralMonitoringEventRepository generalMonitoringEventRepository;
 
     public RouteDeviationResponse calculate(UUID lightId, UUID trainingSessionId, String email) {
         String schoolName = schoolContextService.getSchoolName(email);
@@ -92,6 +109,118 @@ public class RouteDeviationService {
 
         double deviationRate = total == 0 ? 0.0 : (double) deviated / total;
         return new SessionDeviationResult(total, deviated, deviationRate);
+    }
+
+    // Observation 하나가 들어올 때마다 이 CCTV를 좌/우 CCTV로 쓰는 모든 유도등에 대해 실시간으로
+    // 경로 이탈 여부를 판정한다. CongestionObservationService.reportObservation()에서 Observation이
+    // 유효하게 저장된 직후(처리 lease 선점 여부와 무관) 호출된다. 경로 재계산/유도등 제어는 호출하지 않는다.
+    // 예외는 여기서 흡수해 Observation 저장 자체(reportObservation() 전체)를 실패시키지 않는다.
+    @Transactional
+    public void evaluateObservation(Cctv cctv, ObservationItem observation) {
+        try {
+            UUID buildingId = cctv.getCustomNode().getFloor().getBuilding().getId();
+            List<IoTLight> lights = iotLightJpaRepository.findAllByCustomNode_Floor_Building_Id(buildingId);
+            for (IoTLight light : lights) {
+                if (light.isGuidanceConfigured()) {
+                    evaluateLight(light, observation);
+                }
+            }
+        } catch (RuntimeException exception) {
+            log.error(
+                    "경로 이탈 판정 중 오류: sessionId={}, cctvCode={}",
+                    observation.getTrainingSessionId(), observation.getCctvCode(), exception
+            );
+        }
+    }
+
+    // 유도등 하나에 대해, 이번 Observation이 "안내 반대편 CCTV의 신호"인지 판단하고 상태 전환을 시도한다.
+    private void evaluateLight(IoTLight light, ObservationItem observation) {
+        String cctvCode = observation.getCctvCode();
+        Set<String> leftCctvCodes = resolveCctvCodes(light.getLeftEdge().getId());
+        Set<String> rightCctvCodes = resolveCctvCodes(light.getRightEdge().getId());
+        Set<String> ambiguous = intersect(leftCctvCodes, rightCctvCodes);
+        if (ambiguous.contains(cctvCode)) {
+            return;
+        }
+        leftCctvCodes.removeAll(ambiguous);
+        rightCctvCodes.removeAll(ambiguous);
+
+        boolean isLeftCctv = leftCctvCodes.contains(cctvCode);
+        boolean isRightCctv = rightCctvCodes.contains(cctvCode);
+        if (!isLeftCctv && !isRightCctv) {
+            return;
+        }
+
+        List<LightDirectionEventItem> directionEvents = lightDirectionEventRepository
+                .findAllBySessionIdAndLightCode(observation.getTrainingSessionId(), light.getCode());
+        IoTLightDirection activeDirection = activeDirectionAt(directionEvents, observation.getCapturedAt());
+        if (activeDirection == null || activeDirection == IoTLightDirection.BOTH
+                || activeDirection == IoTLightDirection.OFF) {
+            return;
+        }
+
+        boolean isOppositeSideSignal = (activeDirection == IoTLightDirection.LEFT && isRightCctv)
+                || (activeDirection == IoTLightDirection.RIGHT && isLeftCctv);
+        if (!isOppositeSideSignal) {
+            return;
+        }
+
+        boolean deviationSignal = observation.getAvgHeadcount() != null && observation.getAvgHeadcount() > 0;
+        applyTransition(observation.getTrainingSessionId(), light.getId(), cctvCode, deviationSignal,
+                observation.getCapturedAt());
+    }
+
+    // 유도등+세션별 상태를 읽어 다음 상태를 계산한 뒤, capturedAt 기준 조건부 쓰기로 원자적으로 반영한다.
+    // 조건부 쓰기가 성공하고 NORMAL -> DEVIATING 전환이 일어난 경우에만 이벤트를 생성한다.
+    private void applyTransition(
+            String trainingSessionId, UUID lightId, String cctvCode, boolean deviationSignal, long capturedAt
+    ) {
+        Optional<RouteDeviationStateItem> existing = routeDeviationStateRepository.find(trainingSessionId, lightId);
+        RouteDeviationState currentState = existing.map(RouteDeviationStateItem::getState)
+                .orElse(RouteDeviationState.NORMAL);
+        int currentZeroStreak = existing.map(RouteDeviationStateItem::getZeroStreak).orElse(0);
+        Long lastProcessedCapturedAt = existing.map(RouteDeviationStateItem::getLastProcessedCapturedAt)
+                .orElse(null);
+        if (lastProcessedCapturedAt != null && capturedAt <= lastProcessedCapturedAt) {
+            return;
+        }
+
+        RouteDeviationState nextState = currentState;
+        int nextZeroStreak = currentZeroStreak;
+        boolean transitionedToDeviating = false;
+        if (deviationSignal) {
+            nextZeroStreak = 0;
+            if (currentState == RouteDeviationState.NORMAL) {
+                nextState = RouteDeviationState.DEVIATING;
+                transitionedToDeviating = true;
+            }
+        } else {
+            nextZeroStreak = currentZeroStreak + 1;
+            if (currentState == RouteDeviationState.DEVIATING && nextZeroStreak >= NORMAL_RECOVERY_ZERO_STREAK) {
+                nextState = RouteDeviationState.NORMAL;
+                nextZeroStreak = 0;
+            }
+        }
+
+        RouteDeviationStateItem nextItem =
+                RouteDeviationStateItem.create(trainingSessionId, lightId, nextState, nextZeroStreak, capturedAt);
+        boolean written = routeDeviationStateRepository.saveIfNewer(nextItem);
+        if (written && transitionedToDeviating) {
+            createRouteDeviationDetectedEvent(trainingSessionId, cctvCode, capturedAt);
+        }
+    }
+
+    // 전환마다 새 eventId를 발급한다 - 상태 전환 자체가 조건부 쓰기로 최대 1회만 성공하므로 중복 생성 위험이 없다.
+    private void createRouteDeviationDetectedEvent(String trainingSessionId, String cctvCode, long occurredAt) {
+        GeneralMonitoringEventItem item = GeneralMonitoringEventItem.create(
+                UUID.randomUUID().toString(),
+                trainingSessionId,
+                cctvCode,
+                GeneralMonitoringEventType.ROUTE_DEVIATION_DETECTED,
+                occurredAt,
+                null
+        );
+        generalMonitoringEventRepository.saveIfAbsent(item);
     }
 
     // 유도등 하나에 대해 (관측 구간 수, 이탈 구간 수)를 계산, 경로가 지나는 CCTV를 특정할 수 없으면 empty.

@@ -10,6 +10,7 @@ import com.saferoute.domain.device.util.MonitoredAreaCalculator;
 import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.evacuation.grid.entity.MapEdgeGridCell;
 import com.saferoute.domain.evacuation.grid.repository.MapEdgeGridCellRepository;
+import com.saferoute.domain.evacuation.deviation.service.RouteDeviationService;
 import com.saferoute.domain.evacuation.recalculation.entity.RecalculationTriggerType;
 import com.saferoute.domain.evacuation.recalculation.service.RouteRecalculationService;
 import com.saferoute.domain.floor.entity.Floor;
@@ -66,6 +67,7 @@ public class CongestionObservationService {
     private final MapEdgeGridCellRepository mapEdgeGridCellRepository;
     private final CongestionConfigService congestionConfigService;
     private final RouteRecalculationService routeRecalculationService;
+    private final RouteDeviationService routeDeviationService;
     private final TrainingEventPublisher trainingEventPublisher;
 
     @Transactional
@@ -112,6 +114,7 @@ public class CongestionObservationService {
         validateEventIdentity(saveResult.item(), request, session.getId());
         updateLatestMonitoringCapture(session.getId(), cctv.getCode(), request.capturedAt(), monitoringImageKey);
         tryCreateAiAnalysisStartedEvent(session.getId(), cctv.getCode(), request.capturedAt());
+        routeDeviationService.evaluateObservation(cctv, saveResult.item());
 
         String processingOwner = UUID.randomUUID().toString();
         long processingStartedAt = Instant.now().toEpochMilli();

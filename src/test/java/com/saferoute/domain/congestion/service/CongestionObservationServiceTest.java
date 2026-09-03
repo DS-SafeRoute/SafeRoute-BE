@@ -27,6 +27,7 @@ import com.saferoute.domain.evacuation.grid.entity.MapEdgeGridCell;
 import com.saferoute.domain.evacuation.grid.repository.MapEdgeGridCellRepository;
 import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
+import com.saferoute.domain.evacuation.deviation.service.RouteDeviationService;
 import com.saferoute.domain.evacuation.recalculation.entity.RecalculationTriggerType;
 import com.saferoute.domain.evacuation.recalculation.service.RouteRecalculationService;
 import com.saferoute.domain.floor.entity.Floor;
@@ -88,6 +89,9 @@ class CongestionObservationServiceTest {
 
     @Mock
     private RouteRecalculationService routeRecalculationService;
+
+    @Mock
+    private RouteDeviationService routeDeviationService;
 
     @Mock
     private TrainingEventPublisher trainingEventPublisher;
@@ -305,6 +309,7 @@ class CongestionObservationServiceTest {
 
         verify(observationRepository, never()).claimProcessing(anyString(), anyString(), anyLong(), anyLong());
         verify(generalMonitoringEventRepository, never()).saveIfAbsent(any());
+        verify(routeDeviationService, never()).evaluateObservation(any(), any());
     }
 
     @Test
@@ -440,6 +445,24 @@ class CongestionObservationServiceTest {
                 .hasFieldOrPropertyWithValue("errorCode", CongestionErrorCode.MONITORING_IMAGE_IDENTITY_MISMATCH);
 
         verify(observationRepository, never()).saveIfAbsent(any());
+    }
+
+    @Test
+    @DisplayName("유효한 Observation을 저장하면 경로 이탈 판정을 시도한다")
+    void reportObservation_triesToEvaluateRouteDeviation() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        givenProcessingClaimed();
+        givenAffectedEdges();
+
+        service.reportObservation(cctv, request(5.0));
+
+        verify(routeDeviationService).evaluateObservation(eq(cctv), argThat(item ->
+                item.getTrainingSessionId().equals(sessionId.toString())
+                        && item.getCctvCode().equals("CCTV_001")
+        ));
     }
 
     @Test
