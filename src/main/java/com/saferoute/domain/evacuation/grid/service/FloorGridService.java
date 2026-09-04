@@ -197,6 +197,35 @@ public class FloorGridService {
         mapEdgeGridCellRepository.saveAll(mappings);
     }
 
+    // 엣지 하나의 grid cell 매핑만 다시 계산한다 (엣지 추가, 연결된 노드 이동 시 호출).
+    // 그리드가 아직 생성 안 된 층이면 매핑할 셀이 없으므로 조용히 넘어간다 - createOrRegenerateGrid가
+    // 호출될 때 그 시점의 전체 엣지를 기준으로 다시 계산해준다.
+    @Transactional
+    public void recomputeEdgeGridCells(MapEdge edge) {
+        Floor floor = edge.getFloor();
+        Integer rows = floor.getGridRows();
+        Integer columns = floor.getGridColumns();
+        if (rows == null || columns == null) {
+            return;
+        }
+
+        // 노드 이동으로 재계산되는 경우 기존 매핑(이전 경로가 지나던 셀)이 남아있으면 안 되므로 먼저 지운다.
+        mapEdgeGridCellRepository.deleteAllByMapEdgeId(edge.getId());
+
+        int fromCol = clamp((int) (edge.getFromNode().getX() * columns), columns);
+        int fromRow = clamp((int) (edge.getFromNode().getY() * rows), rows);
+        int toCol = clamp((int) (edge.getToNode().getX() * columns), columns);
+        int toRow = clamp((int) (edge.getToNode().getY() * rows), rows);
+
+        List<MapEdgeGridCell> mappings = new ArrayList<>();
+        for (int[] cellIdx : bresenhamLine(fromRow, fromCol, toRow, toCol)) {
+            floorGridCellRepository
+                    .findByFloor_IdAndRowIndexAndColumnIndex(floor.getId(), cellIdx[0], cellIdx[1])
+                    .ifPresent(cell -> mappings.add(MapEdgeGridCell.create(edge, cell)));
+        }
+        mapEdgeGridCellRepository.saveAll(mappings);
+    }
+
     private FloorGridCell[][] toGridArray(List<FloorGridCell> cells, int rows, int columns) {
         FloorGridCell[][] grid = new FloorGridCell[rows][columns];
         for (FloorGridCell cell : cells) {

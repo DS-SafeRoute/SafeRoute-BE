@@ -82,6 +82,11 @@ public class MapGraphRepositoryImpl implements MapGraphRepository {
     }
 
     @Override
+    public List<MapEdge> findEdgesConnectedToNode(UUID nodeId) {
+        return mapEdgeJpaRepository.findAllByFromNode_IdOrToNode_Id(nodeId, nodeId);
+    }
+
+    @Override
     public MapNode updateNodePosition(MapNode node, double x, double y, boolean isExitTarget) {
         node.moveTo(x, y);
         node.changeExitTarget(isExitTarget);

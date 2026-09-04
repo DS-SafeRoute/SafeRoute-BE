@@ -10,6 +10,7 @@ import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.evacuation.graph.entity.NodeType;
 import com.saferoute.domain.evacuation.graph.repository.MapGraphRepository;
+import com.saferoute.domain.evacuation.grid.service.FloorGridService;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.floor.repository.FloorRepository;
 import com.saferoute.global.api.error.EvacuationErrorCode;
@@ -30,6 +31,7 @@ public class MapGraphService {
     private final MapGraphRepository mapGraphRepository;
     private final FloorRepository floorRepository;
     private final SchoolContextService schoolContextService;
+    private final FloorGridService floorGridService;
 
     // 커스텀 편집 UI 초기 로딩용 - 층의 노드/엣지 전체 조회
     public FloorGraphResponse getFloorGraph(UUID floorId) {
@@ -79,6 +81,11 @@ public class MapGraphService {
         node.changeType(nextType);
         MapNode updated = mapGraphRepository.updateNodePosition(
                 node, request.x(), request.y(), nextExitTarget);
+        // 노드가 이동하면 여기 연결된 엣지들이 지나가는 셀도 달라지므로 grid cell 매핑을 다시 계산한다
+        // (FloorGridService.recomputeEdgeGridCells 참고 - 그리드 생성 시점에만 계산되던 매핑이
+        // 노드/엣지 편집 이후로 안 맞게 되는 문제를 막기 위함).
+        mapGraphRepository.findEdgesConnectedToNode(updated.getId())
+                .forEach(floorGridService::recomputeEdgeGridCells);
         return MapNodeResponse.from(updated);
     }
 
@@ -122,6 +129,9 @@ public class MapGraphService {
         MapNode toNode = findNodeOrThrow(request.toNodeId());
         MapEdge edge = mapGraphRepository.addEdge(
                 fromNode.getFloor(), fromNode, toNode, request.distance(), request.bidirectional());
+        // 그리드가 이미 생성된 층이면 새 엣지도 바로 grid cell에 매핑해둔다 - 안 그러면 그리드를
+        // 재생성하기 전까지 이 엣지는 CCTV 감시 구역과 연결이 안 돼 재탐색 트리거 대상에서 빠진다.
+        floorGridService.recomputeEdgeGridCells(edge);
         return MapEdgeResponse.from(edge);
     }
 

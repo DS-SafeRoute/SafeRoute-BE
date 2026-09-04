@@ -32,6 +32,9 @@ public interface MapGraphRepository {
     // 엣지 단건 조회 (삭제 시 참조용)
     Optional<MapEdge> findEdgeById(UUID edgeId);
 
+    // 특정 노드에 연결된 엣지 전체 (노드 이동 시 grid cell 매핑 재계산 대상 조회용)
+    List<MapEdge> findEdgesConnectedToNode(UUID nodeId);
+
     // 노드 위치 및 EXIT 대상 여부 수정 (드래그 편집)
     MapNode updateNodePosition(MapNode node, double x, double y, boolean isExitTarget);
 
