@@ -201,6 +201,19 @@ class CctvServiceTest {
     }
 
     @Test
+    @DisplayName("CCTV 삭제 시 소프트 삭제 처리만 하고 별도 응답은 없다")
+    void deleteCctv_success() {
+        UUID cctvId = UUID.randomUUID();
+        Cctv cctv = cctv(cctvId);
+        given(cctvJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(cctvId, SCHOOL_NAME))
+                .willReturn(Optional.of(cctv));
+
+        cctvService.deleteCctv(cctvId, EMAIL);
+
+        verify(cctv).delete();
+    }
+
+    @Test
     @DisplayName("다른 기관 CCTV의 모든 변경 요청은 not-found로 거부한다")
     void mutations_otherSchool_throwNotFound() {
         UUID cctvId = UUID.randomUUID();
@@ -214,7 +227,8 @@ class CctvServiceTest {
                         new UpdateCctvRequest("변경 이름", 0.4, 0.6),
                         EMAIL),
                 () -> cctvService.enableCctv(cctvId, EMAIL),
-                () -> cctvService.disableCctv(cctvId, EMAIL)
+                () -> cctvService.disableCctv(cctvId, EMAIL),
+                () -> cctvService.deleteCctv(cctvId, EMAIL)
         );
 
         for (ThrowingCallable operation : operations) {

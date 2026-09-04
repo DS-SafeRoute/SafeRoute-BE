@@ -17,6 +17,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -235,5 +236,24 @@ public class CctvController {
                 CctvSuccessCode.CCTV_DISABLED,
                 cctvService.disableCctv(cctvId, authentication.getName())
         ));
+    }
+
+    @Operation(
+            summary = "CCTV 삭제",
+            description = """
+                    CCTV를 소프트 삭제합니다. row는 남지만 삭제 시각이 기록되어 이후 목록/상세
+                    조회, 코드·디바이스 토큰 기반 인증 등 모든 조회에서 제외되므로 해당 CCTV(Pi)는
+                    더 이상 인증할 수 없습니다.
+
+                    code는 재사용되지 않는 순번 채번이라 삭제 후에도 같은 코드로 다시 등록되지
+                    않습니다. 요청자와 다른 학교 소속 CCTV는 찾을 수 없음으로 처리됩니다.
+                    """
+    )
+    @DeleteMapping("/{cctvId}")
+    public ResponseEntity<ApiResponse<Void>> deleteCctv(
+            @PathVariable UUID cctvId,
+            Authentication authentication) {
+        cctvService.deleteCctv(cctvId, authentication.getName());
+        return ResponseEntity.ok(ApiResponse.success(CctvSuccessCode.CCTV_DELETED, null));
     }
 }

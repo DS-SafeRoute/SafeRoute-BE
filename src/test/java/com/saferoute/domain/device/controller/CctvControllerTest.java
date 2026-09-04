@@ -3,6 +3,8 @@ package com.saferoute.domain.device.controller;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -192,6 +194,16 @@ class CctvControllerTest {
                         .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.enabled").value(false));
+    }
+
+    @Test
+    void deleteCctv_returnsOk() throws Exception {
+        mockMvc.perform(delete("/api/v1/cctvs/{cctvId}", cctvId)
+                        .principal(new UsernamePasswordAuthenticationToken(EMAIL, null)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("CCTV_SUCCESS_009"));
+
+        verify(cctvService).deleteCctv(cctvId, EMAIL);
     }
 
     private CctvResponse response(boolean enabled) {
