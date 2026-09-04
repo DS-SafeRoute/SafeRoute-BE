@@ -22,6 +22,7 @@ import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.evacuation.graph.entity.CustomDeviceType;
 import com.saferoute.domain.evacuation.graph.entity.NodeType;
 import com.saferoute.domain.evacuation.graph.repository.MapGraphRepository;
+import com.saferoute.domain.evacuation.grid.service.FloorGridService;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.floor.repository.FloorRepository;
 import com.saferoute.domain.user.service.SchoolContextService;
@@ -57,6 +58,9 @@ class MapGraphServiceTest {
 
     @Mock
     private SchoolContextService schoolContextService;
+
+    @Mock
+    private FloorGridService floorGridService;
 
     private final UUID floorId = UUID.randomUUID();
     private Floor floor;

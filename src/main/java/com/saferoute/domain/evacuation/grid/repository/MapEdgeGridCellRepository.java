@@ -16,4 +16,10 @@ public interface MapEdgeGridCellRepository extends JpaRepository<MapEdgeGridCell
     List<MapEdgeGridCell> findAllByGridCell_IdIn(List<UUID> gridCellIds);
 
     List<MapEdgeGridCell> findAllByMapEdge_Id(UUID mapEdgeId);
+
+    // 엣지 하나의 grid cell 매핑을 다시 계산하기 전, 기존 매핑을 지운다
+    // (엣지 추가/노드 이동으로 인한 재계산용 - FloorGridService.recomputeEdgeGridCells 참고).
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from MapEdgeGridCell m where m.mapEdge.id = :mapEdgeId")
+    int deleteAllByMapEdgeId(@Param("mapEdgeId") UUID mapEdgeId);
 }
