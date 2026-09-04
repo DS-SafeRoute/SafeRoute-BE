@@ -11,16 +11,20 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
+import org.hibernate.annotations.SQLRestriction;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 // 설치 위치는 customNode가 관리하고, 실제 감시 영역은 CctvGridCell 매핑이 관리한다.
 // 혼잡도 반영 경로: CCTV code -> CctvGridCell -> FloorGridCell -> MapEdgeGridCell -> MapEdge
+// 소프트 삭제: deletedAt이 채워진 CCTV는 SQLRestriction으로 모든 조회(코드/토큰 인증 포함)에서
+// 자동 제외된다. code는 사용 후 재사용하지 않는 순번 채번이라 삭제된 row가 남아 있어도 무방하다.
 @Entity
 @Getter
 @Table(name = "cctvs")
 @EntityListeners(AuditingEntityListener.class)
+@SQLRestriction("deleted_at is null")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Cctv {
 
@@ -59,6 +63,9 @@ public class Cctv {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
+
     private Cctv(String code, String name, MapNode customNode) {
         validateCustomNode(customNode);
         this.code = code;
@@ -88,6 +95,11 @@ public class Cctv {
 
     public void enable() {
         this.enabled = true;
+    }
+
+    // 소프트 삭제. deletedAt 세팅 즉시 SQLRestriction으로 이후 모든 조회에서 제외된다.
+    public void delete() {
+        this.deletedAt = Instant.now();
     }
 
     public void issueDeviceToken(String deviceTokenHash) {

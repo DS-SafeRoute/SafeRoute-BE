@@ -139,6 +139,12 @@ public class CctvService {
         return toResponse(cctv);
     }
 
+    @Transactional
+    public void deleteCctv(UUID cctvId, String email) {
+        Cctv cctv = findCctvForSchoolOrThrow(cctvId, email);
+        cctv.delete();
+    }
+
     private CctvResponse toResponse(Cctv cctv) {
         List<FloorGridCell> gridCells = cctvGridCellRepository
                 .findAllByCctv_IdOrderByGridCell_RowIndexAscGridCell_ColumnIndexAsc(cctv.getId())
