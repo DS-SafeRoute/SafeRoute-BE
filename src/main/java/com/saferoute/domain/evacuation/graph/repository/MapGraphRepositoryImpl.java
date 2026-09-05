@@ -36,7 +36,7 @@ public class MapGraphRepositoryImpl implements MapGraphRepository {
     }
 
     private void validateDistance(double distance) {
-        if (distance <= 0) {
+        if (!Double.isFinite(distance) || distance <= 0) {
             throw new ApiException(EvacuationErrorCode.INVALID_MAP_EDGE_DISTANCE);
         }
     }

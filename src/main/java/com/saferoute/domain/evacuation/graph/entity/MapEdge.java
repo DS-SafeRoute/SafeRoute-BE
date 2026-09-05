@@ -60,8 +60,8 @@ public class MapEdge {
 
     private MapEdge(Floor floor, MapNode fromNode, MapNode toNode, double distance,
                     boolean bidirectional) {
-        if (distance <= 0) {
-            throw new IllegalArgumentException("distance는 0보다 커야 합니다.");
+        if (!Double.isFinite(distance) || distance <= 0) {
+            throw new IllegalArgumentException("distance는 0보다 큰 유한값이어야 합니다.");
         }
         this.floor = floor;
         this.fromNode = fromNode;

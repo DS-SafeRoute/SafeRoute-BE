@@ -20,6 +20,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -94,16 +96,17 @@ class MapGraphRepositoryImplTest {
         assertThat(edges).hasSize(1);
     }
 
-    @Test
-    @DisplayName("distance가 0 이하면 400으로 거부된다")
-    void addEdge_nonPositiveDistance_throws() {
+    @ParameterizedTest
+    @ValueSource(doubles = {0.0, -1.0, Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY})
+    @DisplayName("distance가 0 이하이거나 NaN/Infinity면 400으로 거부된다")
+    void addEdge_nonPositiveOrNonFiniteDistance_throws(double distance) {
         // given
         Floor floor = mock(Floor.class);
         MapNode from = mock(MapNode.class);
         MapNode to = mock(MapNode.class);
 
         // when & then
-        assertThatThrownBy(() -> mapGraphRepository.addEdge(floor, from, to, 0.0, true))
+        assertThatThrownBy(() -> mapGraphRepository.addEdge(floor, from, to, distance, true))
                 .isInstanceOf(ApiException.class)
                 .hasMessage(EvacuationErrorCode.INVALID_MAP_EDGE_DISTANCE.getMessage());
         verify(mapEdgeJpaRepository, never()).save(any(MapEdge.class));
