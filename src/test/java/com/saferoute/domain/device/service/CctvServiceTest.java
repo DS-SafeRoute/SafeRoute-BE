@@ -178,7 +178,7 @@ class CctvServiceTest {
         );
 
         verify(cctvGridCellRepository).deleteAllByCctvId(cctvId);
-        verify(cctvGridCellRepository).saveAll(any());
+        verify(cctvGridCellRepository).saveAllAndFlush(any());
         verify(congestionConfigService).incrementVersionForGridChange();
     }
 
@@ -201,7 +201,7 @@ class CctvServiceTest {
         given(cctvJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(cctvId, SCHOOL_NAME))
                 .willReturn(Optional.of(cctv));
         given(floorGridCellRepository.findAllById(List.of(cellId))).willReturn(List.of(cell));
-        given(cctvGridCellRepository.saveAll(any()))
+        given(cctvGridCellRepository.saveAllAndFlush(any()))
                 .willThrow(new org.springframework.dao.DataIntegrityViolationException("FK violation"));
 
         assertThatThrownBy(() -> cctvService.configureGridCells(

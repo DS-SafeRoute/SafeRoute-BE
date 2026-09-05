@@ -28,7 +28,11 @@ public interface CctvGridCellRepository extends JpaRepository<CctvGridCell, UUID
             """)
     List<CctvGridCell> findAllByCctvIdsWithGridCell(@Param("cctvIds") List<UUID> cctvIds);
 
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    // clearAutomatically는 쓰지 않는다 - 호출 직후 configureGridCells가 같은 트랜잭션에서
+    // cctv/gridCells 엔티티를 계속 참조하는데, clear()가 영속성 컨텍스트를 비우면 그 엔티티들이
+    // detach되어 이후 새 CctvGridCell 저장 시 예기치 않은 동작을 일으킬 수 있다
+    // (MapEdgeGridCellRepository.deleteAllByMapEdgeId와 동일한 이슈, #228 참고).
+    @Modifying(flushAutomatically = true)
     @Query("delete from CctvGridCell mapping where mapping.cctv.id = :cctvId")
     int deleteAllByCctvId(@Param("cctvId") UUID cctvId);
 }
