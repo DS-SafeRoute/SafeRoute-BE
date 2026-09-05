@@ -16,6 +16,13 @@ spring:
       hibernate:
         jdbc:
           time_zone: UTC
+          # 배치 크기 미설정 시 Hibernate가 saveAll()도 INSERT를 한 건씩 보낸다.
+          # 그리드 생성/재생성(FloorGridService)이 셀 크기를 작게 잡을수록(예: 1m 미만)
+          # FloorGridCell을 수만~수십만 건 saveAll()로 저장하는데, 배치가 없으면 이게
+          # 왕복 지연만큼 느려져서 요청이 타임아웃되고 "그리드가 안 불러와짐"으로 보인다.
+          batch_size: 100
+        order_inserts: true
+        order_updates: true
 
 springdoc:
   api-docs:
