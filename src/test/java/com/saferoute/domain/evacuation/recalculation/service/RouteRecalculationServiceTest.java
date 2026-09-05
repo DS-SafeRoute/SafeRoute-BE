@@ -256,6 +256,28 @@ class RouteRecalculationServiceTest {
     }
 
     @Test
+    @DisplayName("STARTED/LEVEL_UP 후보 경로가 이미 승인된 활성 경로와 동일하면 새 승인 요청을 만들지 않는다")
+    void trigger_skipsWhenCandidateMatchesActiveRoute() {
+        givenNoExistingPending();
+        UUID sharedNodeId = UUID.randomUUID();
+        RouteRecalculation approvedDetour = approvedRecalculation(List.of(sharedNodeId), 20.0);
+        given(routeRecalculationRepository.findFirstByTrainingSession_IdAndTriggerEdge_IdAndStatusOrderByResolvedAtDesc(
+                session.getId(), triggerEdge.getId(), RecalculationStatus.APPROVED))
+                .willReturn(Optional.of(approvedDetour));
+
+        MapNode exitNode = MapNode.create(mock(Floor.class), "STAIR1", NodeType.STAIR, "STAIR1", 0, 0, true);
+        ReflectionTestUtils.setField(exitNode, "id", sharedNodeId);
+        EvacuationRoute candidateRoute = new EvacuationRoute(List.of(exitNode), 20.0);
+        given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any())).willReturn(candidateRoute);
+
+        routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.CROWDED,
+                RecalculationTriggerType.LEVEL_UP, "CCTV_001", 3.5);
+
+        verify(routeRecalculationRepository, never()).save(any());
+        verify(trainingEventPublisher, never()).publishRouteRecalculationRequestedAfterCommit(any());
+    }
+
+    @Test
     @DisplayName("ENDED인데 승인된 우회 경로가 없으면 복구할 게 없어 아무것도 하지 않는다")
     void trigger_ended_doesNothingWithoutApprovedDetour() {
         givenNoExistingPending();
