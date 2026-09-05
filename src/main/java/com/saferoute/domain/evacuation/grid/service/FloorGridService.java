@@ -197,6 +197,28 @@ public class FloorGridService {
         mapEdgeGridCellRepository.saveAll(mappings);
     }
 
+    // AI 분석으로 노드/엣지가 교체된 뒤 기존 그리드에 전체 그래프를 다시 매핑한다.
+    @Transactional
+    public void remapGraphToExistingGrid(UUID floorId) {
+        Floor floor = floorRepository.findById(floorId)
+                .orElseThrow(() -> new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
+        Integer rows = floor.getGridRows();
+        Integer columns = floor.getGridColumns();
+        if (rows == null || columns == null) {
+            return;
+        }
+
+        List<FloorGridCell> cells = floorGridCellRepository.findAllByFloor_Id(floorId);
+        if ((long) cells.size() != (long) rows * columns) {
+            throw new ApiException(GridErrorCode.GRID_CELL_NOT_FOUND);
+        }
+
+        mapEdgeGridCellRepository.deleteAllByMapEdge_Floor_Id(floorId);
+        nodeGridCellRepository.deleteAllByNode_Floor_Id(floorId);
+        remapNodesToGrid(mapNodeRepository.findAllByFloor_Id(floorId), cells, rows, columns);
+        remapEdgesToGrid(mapEdgeRepository.findAllByFloor_Id(floorId), cells, rows, columns);
+    }
+
     // 엣지 하나의 grid cell 매핑만 다시 계산한다 (엣지 추가, 연결된 노드 이동 시 호출).
     // 그리드가 아직 생성 안 된 층이면 매핑할 셀이 없으므로 조용히 넘어간다 - createOrRegenerateGrid가
     // 호출될 때 그 시점의 전체 엣지를 기준으로 다시 계산해준다.

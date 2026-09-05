@@ -16,4 +16,7 @@ public interface NodeGridCellRepository extends JpaRepository<NodeGridCell, UUID
 
     // 혼잡도 처리 시 CCTV customNode -> 셀 조회용
     List<NodeGridCell> findAllByNode_IdIn(List<UUID> nodeIds);
+
+    // AI 분석으로 층 그래프 전체가 교체된 뒤 기존 매핑만 정리하고 다시 계산할 때 사용
+    void deleteAllByNode_Floor_Id(UUID floorId);
 }

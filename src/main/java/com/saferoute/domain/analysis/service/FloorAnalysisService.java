@@ -7,6 +7,7 @@ import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.evacuation.graph.entity.NodeType;
 import com.saferoute.domain.evacuation.graph.repository.MapEdgeJpaRepository;
 import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
+import com.saferoute.domain.evacuation.grid.service.FloorGridService;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.floor.entity.SegmentationStatus;
 import com.saferoute.domain.floor.repository.FloorRepository;
@@ -30,6 +31,7 @@ public class FloorAnalysisService {
   private final MapNodeJpaRepository mapNodeRepository;
   private final MapEdgeJpaRepository mapEdgeRepository;
   private final AiAnalysisClient aiAnalysisClient;
+  private final FloorGridService floorGridService;
 
   public void analyzeFloor(UUID floorId) {
     Floor floor = floorRepository.findById(floorId)
@@ -85,6 +87,7 @@ public class FloorAnalysisService {
     }
 
     floor.applyPlanSize(response.planWidthPx(), response.planHeightPx());
+    floorGridService.remapGraphToExistingGrid(floorId);
     floor.updateSegmentationStatus(SegmentationStatus.DONE);
   }
 

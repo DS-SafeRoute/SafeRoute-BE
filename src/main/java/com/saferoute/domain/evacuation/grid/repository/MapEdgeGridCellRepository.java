@@ -17,6 +17,9 @@ public interface MapEdgeGridCellRepository extends JpaRepository<MapEdgeGridCell
 
     List<MapEdgeGridCell> findAllByMapEdge_Id(UUID mapEdgeId);
 
+    // AI 분석으로 층 그래프 전체가 교체된 뒤 기존 매핑만 정리하고 다시 계산할 때 사용
+    void deleteAllByMapEdge_Floor_Id(UUID floorId);
+
     // 엣지 하나의 grid cell 매핑을 다시 계산하기 전, 기존 매핑을 지운다
     // (엣지 추가/노드 이동으로 인한 재계산용 - FloorGridService.recomputeEdgeGridCells 참고).
     // clearAutomatically는 쓰지 않는다 - 호출 직후 recomputeEdgeGridCells가 같은 트랜잭션에서
