@@ -11,7 +11,8 @@ public record MapNodeResponse(
         String name,
         double x,
         double y,
-        boolean isExitTarget
+        boolean isExitTarget,
+        boolean isStartCandidate
 ) {
     public static MapNodeResponse from(MapNode node) {
         return new MapNodeResponse(
@@ -21,7 +22,8 @@ public record MapNodeResponse(
                 node.getName(),
                 node.getX(),
                 node.getY(),
-                node.isExitTarget()
+                node.isExitTarget(),
+                node.isStartCandidate()
         );
     }
 }

@@ -322,6 +322,38 @@ class MapGraphServiceTest {
         assertThat(node.getCustomDeviceType()).isNull();
     }
 
+    // === updateStartCandidate ===
+
+    @Test
+    @DisplayName("DOOR 노드는 시작 후보 여부를 토글할 수 있다")
+    void updateStartCandidate_doorNode_success() {
+        // given
+        MapNode node = createNode("DOOR1", NodeType.DOOR);
+        given(mapGraphRepository.findNodeById(node.getId())).willReturn(Optional.of(node));
+        given(mapGraphRepository.updateStartCandidate(node, true)).willReturn(node);
+
+        // when
+        MapNodeResponse response = mapGraphService.updateStartCandidate(node.getId(), true);
+
+        // then
+        assertThat(response.id()).isEqualTo(node.getId());
+        verify(mapGraphRepository).updateStartCandidate(node, true);
+    }
+
+    @Test
+    @DisplayName("DOOR가 아닌 노드는 시작 후보로 지정할 수 없다")
+    void updateStartCandidate_notDoorNode_throws() {
+        // given
+        MapNode node = createNode("ROOM1", NodeType.ROOM);
+        given(mapGraphRepository.findNodeById(node.getId())).willReturn(Optional.of(node));
+
+        // when & then
+        assertThatThrownBy(() -> mapGraphService.updateStartCandidate(node.getId(), true))
+                .isInstanceOf(ApiException.class)
+                .hasMessage(EvacuationErrorCode.START_CANDIDATE_ONLY_FOR_DOOR.getMessage());
+        verify(mapGraphRepository, never()).updateStartCandidate(any(), anyBoolean());
+    }
+
     // === deleteNode ===
 
     @Test

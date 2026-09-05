@@ -64,7 +64,9 @@ public class ScenarioEvacuationSetupService {
         if (!startNode.getFloor().getBuilding().getId().equals(buildingId)) {
             throw new ApiException(TrainingErrorCode.START_NODE_BUILDING_MISMATCH);
         }
-        if (startNode.getType() != NodeType.START) {
+        boolean validStartType = startNode.getType() == NodeType.START
+                || (startNode.getType() == NodeType.DOOR && startNode.isStartCandidate());
+        if (!validStartType) {
             throw new ApiException(TrainingErrorCode.START_NODE_TYPE_INVALID);
         }
         if (!cell.getFloor().getId().equals(startNode.getFloor().getId())) {

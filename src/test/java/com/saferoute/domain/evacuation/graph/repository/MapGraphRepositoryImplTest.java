@@ -95,6 +95,21 @@ class MapGraphRepositoryImplTest {
     }
 
     @Test
+    @DisplayName("distance가 0 이하면 400으로 거부된다")
+    void addEdge_nonPositiveDistance_throws() {
+        // given
+        Floor floor = mock(Floor.class);
+        MapNode from = mock(MapNode.class);
+        MapNode to = mock(MapNode.class);
+
+        // when & then
+        assertThatThrownBy(() -> mapGraphRepository.addEdge(floor, from, to, 0.0, true))
+                .isInstanceOf(ApiException.class)
+                .hasMessage(EvacuationErrorCode.INVALID_MAP_EDGE_DISTANCE.getMessage());
+        verify(mapEdgeJpaRepository, never()).save(any(MapEdge.class));
+    }
+
+    @Test
     @DisplayName("ROOM 노드는 DOOR가 아닌 노드와 직접 연결할 수 없다")
     void addEdge_roomWithoutDoor_throws() {
         // given
@@ -163,6 +178,21 @@ class MapGraphRepositoryImplTest {
         assertThat(result.getX()).isEqualTo(10);
         assertThat(result.getY()).isEqualTo(20);
         assertThat(result.isExitTarget()).isTrue();
+        verify(mapNodeJpaRepository, never()).save(any(MapNode.class));
+    }
+
+    @Test
+    @DisplayName("DOOR 노드의 시작 후보 여부를 토글하면 dirty checking으로 반영된다 (save 호출 없음)")
+    void updateStartCandidate_success() {
+        // given
+        Floor floor = mock(Floor.class);
+        MapNode node = MapNode.create(floor, "DOOR1", NodeType.DOOR, "출입문", 0, 0, false);
+
+        // when
+        MapNode result = mapGraphRepository.updateStartCandidate(node, true);
+
+        // then
+        assertThat(result.isStartCandidate()).isTrue();
         verify(mapNodeJpaRepository, never()).save(any(MapNode.class));
     }
 

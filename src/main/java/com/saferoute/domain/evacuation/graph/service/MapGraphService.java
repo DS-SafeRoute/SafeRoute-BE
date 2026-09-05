@@ -89,6 +89,17 @@ public class MapGraphService {
         return MapNodeResponse.from(updated);
     }
 
+    // DOOR 노드의 시작 후보 여부만 위치/타입과 별개로 토글 (시나리오 대피 설정에서 startNode 후보로 인정됨)
+    @Transactional
+    public MapNodeResponse updateStartCandidate(UUID nodeId, boolean isStartCandidate) {
+        MapNode node = findNodeOrThrow(nodeId);
+        if (node.getType() != NodeType.DOOR) {
+            throw new ApiException(EvacuationErrorCode.START_CANDIDATE_ONLY_FOR_DOOR);
+        }
+        MapNode updated = mapGraphRepository.updateStartCandidate(node, isStartCandidate);
+        return MapNodeResponse.from(updated);
+    }
+
     private boolean resolveExitTarget(NodeType type, boolean requestedExitTarget) {
         if (type == NodeType.START) {
             return false;

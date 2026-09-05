@@ -92,6 +92,7 @@ class MapGraphEditControllerTest {
                 "방1",
                 0.0,
                 0.0,
+                false,
                 false
         );
 
@@ -201,7 +202,8 @@ class MapGraphEditControllerTest {
                 "방1",
                 10.0,
                 20.0,
-                true
+                true,
+                false
         );
 
         given(

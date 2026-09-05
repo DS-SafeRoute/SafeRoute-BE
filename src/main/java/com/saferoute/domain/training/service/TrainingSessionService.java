@@ -158,7 +158,9 @@ public class TrainingSessionService {
     if (startNode == null) {
       throw new ApiException(TrainingErrorCode.START_NODE_NOT_CONFIGURED);
     }
-    if (startNode.getType() != NodeType.START) {
+    boolean validStartType = startNode.getType() == NodeType.START
+        || (startNode.getType() == NodeType.DOOR && startNode.isStartCandidate());
+    if (!validStartType) {
       throw new ApiException(TrainingErrorCode.START_NODE_TYPE_INVALID);
     }
     List<FireZone> fireOrigins = fireZoneRepository
