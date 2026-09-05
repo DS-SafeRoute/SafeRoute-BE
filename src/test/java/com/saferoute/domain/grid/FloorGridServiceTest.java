@@ -4,10 +4,13 @@ import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.building.entity.BuildingType;
 import com.saferoute.domain.building.repository.BuildingRepository;
 import com.saferoute.domain.evacuation.graph.entity.CustomDeviceType;
+import com.saferoute.domain.evacuation.graph.entity.MapEdge;
+import com.saferoute.domain.evacuation.graph.repository.MapEdgeJpaRepository;
 import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
 import com.saferoute.domain.evacuation.grid.dto.request.CreateOrUpdateFloorGridRequest;
 import com.saferoute.domain.evacuation.grid.entity.UserZone;
 import com.saferoute.domain.evacuation.grid.repository.FloorGridCellRepository;
+import com.saferoute.domain.evacuation.grid.repository.MapEdgeGridCellRepository;
 import com.saferoute.domain.evacuation.grid.repository.NodeGridCellRepository;
 import com.saferoute.domain.evacuation.grid.repository.UserZoneRepository;
 import com.saferoute.domain.evacuation.grid.service.FloorGridService;
@@ -37,11 +40,15 @@ class FloorGridServiceTest {
     @Autowired
     MapNodeJpaRepository mapNodeRepository;
     @Autowired
+    MapEdgeJpaRepository mapEdgeRepository;
+    @Autowired
     FloorGridCellRepository floorGridCellRepository;
     @Autowired
     UserZoneRepository userZoneRepository;
     @Autowired
     NodeGridCellRepository nodeGridCellRepository;
+    @Autowired
+    MapEdgeGridCellRepository mapEdgeGridCellRepository;
     @Autowired
     BuildingRepository buildingRepository;
 
@@ -136,6 +143,27 @@ class FloorGridServiceTest {
         assertThat(reloaded.getGridCellSizeMeter()).isEqualTo(1.0);
         assertThat(reloaded.getGridRows()).isEqualTo(30);
         assertThat(reloaded.getGridColumns()).isEqualTo(40);
+    }
+
+    @Test
+    void remapGraphToExistingGrid_mapsNodesAndEdgesCreatedAfterGrid() {
+        floorGridService.createOrRegenerateGrid(
+                floor.getId(), new CreateOrUpdateFloorGridRequest(1.0));
+
+        MapNode from = mapNodeRepository.save(
+                MapNode.create(floor, "hallway_a", NodeType.HALLWAY, "복도 A", 0.1, 0.5, false));
+        MapNode to = mapNodeRepository.save(
+                MapNode.create(floor, "hallway_b", NodeType.HALLWAY, "복도 B", 0.9, 0.5, false));
+        MapEdge edge = mapEdgeRepository.save(MapEdge.create(floor, from, to, 32.0, true));
+
+        floorGridService.remapGraphToExistingGrid(floor.getId());
+
+        assertThat(nodeGridCellRepository.findByNode_Id(from.getId())).isPresent();
+        assertThat(nodeGridCellRepository.findByNode_Id(to.getId())).isPresent();
+        assertThat(mapEdgeGridCellRepository.findAllByMapEdge_Id(edge.getId())).isNotEmpty();
+        assertThat(floor.getGridCellSizeMeter()).isEqualTo(1.0);
+        assertThat(floor.getGridRows()).isEqualTo(30);
+        assertThat(floor.getGridColumns()).isEqualTo(40);
     }
 
     @Test
