@@ -28,10 +28,17 @@ public class MapGraphRepositoryImpl implements MapGraphRepository {
 
     @Override
     public MapEdge addEdge(Floor floor, MapNode fromNode, MapNode toNode, double distance, boolean bidirectional) {
+        validateDistance(distance);
         validateConnection(fromNode, toNode);
         validateNotDuplicate(fromNode, toNode);
         MapEdge edge = MapEdge.create(floor, fromNode, toNode, distance, bidirectional);
         return mapEdgeJpaRepository.save(edge);
+    }
+
+    private void validateDistance(double distance) {
+        if (!Double.isFinite(distance) || distance <= 0) {
+            throw new ApiException(EvacuationErrorCode.INVALID_MAP_EDGE_DISTANCE);
+        }
     }
 
     // 동일 노드 쌍(A-B, B-A 포함) 사이에는 엣지를 하나만 허용
@@ -90,6 +97,12 @@ public class MapGraphRepositoryImpl implements MapGraphRepository {
     public MapNode updateNodePosition(MapNode node, double x, double y, boolean isExitTarget) {
         node.moveTo(x, y);
         node.changeExitTarget(isExitTarget);
+        return node; // 영속 상태 엔티티라 dirty checking으로 트랜잭션 커밋 시 반영됨
+    }
+
+    @Override
+    public MapNode updateStartCandidate(MapNode node, boolean isStartCandidate) {
+        node.changeStartCandidate(isStartCandidate);
         return node; // 영속 상태 엔티티라 dirty checking으로 트랜잭션 커밋 시 반영됨
     }
 

@@ -9,6 +9,7 @@ import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 import org.springframework.data.annotation.CreatedDate;
@@ -60,6 +61,13 @@ public class MapNode {
     // Dijkstra 경로 계산 시 목적지 후보로 삼을 노드인지 여부
     @Column(name = "is_exit_target", nullable = false)
     private boolean isExitTarget;
+
+    // DOOR 타입 노드를 훈련 시작점 후보로도 쓸 수 있게 하는 플래그. DOOR가 아니면 항상 false
+    // START 타입과 달리 위치와 별개로 PATCH /nodes/{nodeId}/start-candidate로만 토글
+    // @ColumnDefault: 기존 행도 false로 채워지도록 DB 기본값을 명시
+    @ColumnDefault("false")
+    @Column(name = "is_start_candidate", nullable = false)
+    private boolean isStartCandidate;
 
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -117,10 +125,18 @@ public class MapNode {
         this.isExitTarget = isExitTarget;
     }
 
+    // DOOR 타입에서만 유효하다 - DOOR 여부 검증은 Service가 담당한다(resolveExitTarget과 동일 컨벤션).
+    public void changeStartCandidate(boolean isStartCandidate) {
+        this.isStartCandidate = isStartCandidate;
+    }
+
     public void changeType(NodeType type) {
         this.type = type;
         if (type != NodeType.CUSTOM) {
             this.customDeviceType = null;
+        }
+        if (type != NodeType.DOOR) {
+            this.isStartCandidate = false;
         }
     }
 }

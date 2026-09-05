@@ -38,6 +38,9 @@ public interface MapGraphRepository {
     // 노드 위치 및 EXIT 대상 여부 수정 (드래그 편집)
     MapNode updateNodePosition(MapNode node, double x, double y, boolean isExitTarget);
 
+    // DOOR 노드의 시작 후보 여부만 토글 (위치/타입과 무관)
+    MapNode updateStartCandidate(MapNode node, boolean isStartCandidate);
+
     // 노드 삭제 - 연결된 엣지도 함께 삭제(cascade)
     void deleteNode(MapNode node);
 

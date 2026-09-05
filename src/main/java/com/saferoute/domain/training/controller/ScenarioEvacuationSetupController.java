@@ -36,8 +36,9 @@ public class ScenarioEvacuationSetupController {
                     훈련 시작점(startNodeId)을 하나의 요청, 하나의 트랜잭션으로 함께 저장합니다.
 
                     fireOriginGridCellId는 격자 셀 ID이고, startNodeId는 도면 관리에서 미리
-                    등록해 둔 NodeType.START 후보 노드 중 하나의 ID입니다. 이 API는 임의 좌표로
-                    새 노드를 만들지 않으며, 두 값은 반드시 같은 층·같은 건물에 있어야 합니다.
+                    등록해 둔 NodeType.START 후보 노드, 또는 isStartCandidate=true로 지정된
+                    DOOR 노드 중 하나의 ID입니다. 이 API는 임의 좌표로 새 노드를 만들지 않으며,
+                    두 값은 반드시 같은 층·같은 건물에 있어야 합니다.
 
                     시나리오 상태가 READY가 아니거나(작성이 아직 끝나지 않은 DRAFT 포함), 이미
                     발화점·시작점 설정이 완료된 시나리오에 다시 요청하면 실패합니다(409). 설정

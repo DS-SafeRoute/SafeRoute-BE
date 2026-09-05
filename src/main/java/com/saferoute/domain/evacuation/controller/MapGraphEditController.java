@@ -3,6 +3,7 @@ package com.saferoute.domain.evacuation.controller;
 import com.saferoute.domain.evacuation.graph.dto.request.CreateMapEdgeRequest;
 import com.saferoute.domain.evacuation.graph.dto.request.CreateMapNodeRequest;
 import com.saferoute.domain.evacuation.graph.dto.request.UpdateMapNodePositionRequest;
+import com.saferoute.domain.evacuation.graph.dto.request.UpdateMapNodeStartCandidateRequest;
 import com.saferoute.domain.evacuation.graph.dto.response.MapEdgeResponse;
 import com.saferoute.domain.evacuation.graph.dto.response.MapNodeResponse;
 import com.saferoute.domain.evacuation.graph.service.MapGraphService;
@@ -85,6 +86,26 @@ public class MapGraphEditController {
             @Valid @RequestBody UpdateMapNodePositionRequest request
     ) {
         return ResponseEntity.ok(ApiResponse.success(mapGraphService.updateNodePosition(nodeId, request)));
+    }
+
+    @Operation(
+            summary = "DOOR 노드 시작 후보 여부 토글",
+            description = """
+                    DOOR 타입 노드가 시나리오 대피 설정(훈련 시작점 선택)에서 START 노드와 함께
+                    후보로 인식되도록 isStartCandidate를 켜거나 끕니다. 위치(x, y)나 타입에는
+                    영향을 주지 않고 이 플래그만 변경합니다.
+
+                    DOOR 타입이 아닌 노드에 요청하면 거부됩니다(400). 노드 타입이 나중에
+                    DOOR가 아닌 다른 타입으로 바뀌면 이 플래그는 자동으로 false로 초기화됩니다.
+                    """
+    )
+    @PatchMapping("/nodes/{nodeId}/start-candidate")
+    public ResponseEntity<ApiResponse<MapNodeResponse>> updateStartCandidate(
+            @PathVariable UUID nodeId,
+            @Valid @RequestBody UpdateMapNodeStartCandidateRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(
+                mapGraphService.updateStartCandidate(nodeId, request.isStartCandidate())));
     }
 
     @Operation(
