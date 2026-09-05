@@ -69,6 +69,9 @@ class IoTLightServiceTest {
     private IoTLightJpaRepository iotLightJpaRepository;
 
     @Mock
+    private IoTLightCodeAllocator iotLightCodeAllocator;
+
+    @Mock
     private CctvJpaRepository cctvJpaRepository;
 
     @Mock
@@ -150,7 +153,7 @@ class IoTLightServiceTest {
         IoTLight savedLight = createLight("LIGHT_001", customNode);
 
         given(floorRepository.findByIdAndBuilding_SchoolName(floorId, SCHOOL_NAME)).willReturn(Optional.of(floor));
-        given(iotLightJpaRepository.count()).willReturn(0L);
+        given(iotLightCodeAllocator.allocate()).willReturn("LIGHT_001");
         given(mapNodeJpaRepository.save(any(MapNode.class))).willReturn(customNode);
         given(iotLightJpaRepository.save(any(IoTLight.class))).willReturn(savedLight);
 
@@ -172,7 +175,7 @@ class IoTLightServiceTest {
         IoTLight savedLight = createLight("LIGHT_006", customNode);
 
         given(floorRepository.findByIdAndBuilding_SchoolName(floorId, SCHOOL_NAME)).willReturn(Optional.of(floor));
-        given(iotLightJpaRepository.count()).willReturn(5L);
+        given(iotLightCodeAllocator.allocate()).willReturn("LIGHT_006");
         given(mapNodeJpaRepository.save(any(MapNode.class))).willReturn(customNode);
         given(iotLightJpaRepository.save(any(IoTLight.class))).willReturn(savedLight);
 

@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -112,7 +113,14 @@ public class CctvService {
                 floor.getId(), request.gridCellIds());
 
         cctvGridCellRepository.deleteAllByCctvId(cctvId);
-        saveMappings(cctv, gridCells);
+        try {
+            saveMappings(cctv, gridCells);
+        } catch (DataIntegrityViolationException exception) {
+            // 검증(findAndValidateGridCells) 이후 저장 사이에 그리드가 재생성되면 그 셀들이
+            // 이미 삭제된 상태라 FK 위반으로 터진다 - 클라이언트가 오래된 셀 목록을 들고 있었던
+            // 것과 같은 상황이므로 동일한 에러로 응답해 다시 최신 목록을 불러오게 한다.
+            throw new ApiException(CctvErrorCode.GRID_CELL_NOT_FOUND, exception);
+        }
         congestionConfigService.incrementVersionForGridChange();
         return CctvResponse.of(cctv, gridCells);
     }
