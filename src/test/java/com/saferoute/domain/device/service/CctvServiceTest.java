@@ -183,6 +183,39 @@ class CctvServiceTest {
     }
 
     @Test
+    @DisplayName("검증 이후 저장 사이에 그리드가 재생성돼 셀이 사라지면 GRID_CELL_NOT_FOUND로 응답한다")
+    void configureGridCells_staleGridCellOnSave_throwsGridCellNotFound() {
+        UUID cctvId = UUID.randomUUID();
+        UUID floorId = UUID.randomUUID();
+        UUID cellId = UUID.randomUUID();
+        Floor floor = org.mockito.Mockito.mock(Floor.class);
+        MapNode node = org.mockito.Mockito.mock(MapNode.class);
+        Cctv cctv = cctv(cctvId);
+        FloorGridCell cell = cell(1, 2);
+        given(floor.getId()).willReturn(floorId);
+        given(floor.getGridCellSizeMeter()).willReturn(0.5);
+        given(node.getFloor()).willReturn(floor);
+        given(cctv.getCustomNode()).willReturn(node);
+        given(cell.getFloor()).willReturn(floor);
+        given(cell.isWalkable()).willReturn(true);
+        given(cctvJpaRepository.findByIdAndCustomNode_Floor_Building_SchoolName(cctvId, SCHOOL_NAME))
+                .willReturn(Optional.of(cctv));
+        given(floorGridCellRepository.findAllById(List.of(cellId))).willReturn(List.of(cell));
+        given(cctvGridCellRepository.saveAll(any()))
+                .willThrow(new org.springframework.dao.DataIntegrityViolationException("FK violation"));
+
+        assertThatThrownBy(() -> cctvService.configureGridCells(
+                cctvId,
+                new ConfigureCctvGridCellsRequest(List.of(cellId)),
+                EMAIL))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(CctvErrorCode.GRID_CELL_NOT_FOUND);
+
+        verify(congestionConfigService, never()).incrementVersionForGridChange();
+    }
+
+    @Test
     @DisplayName("CCTV 정보 수정 시 이름과 연결 노드 위치를 함께 변경한다")
     void updateCctv_success() {
         UUID cctvId = UUID.randomUUID();

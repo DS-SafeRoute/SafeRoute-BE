@@ -49,6 +49,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class IoTLightService {
 
     private final IoTLightJpaRepository iotLightJpaRepository;
+    private final IoTLightCodeAllocator iotLightCodeAllocator;
     private final CctvJpaRepository cctvJpaRepository;
     private final MapNodeJpaRepository mapNodeJpaRepository;
     private final MapEdgeJpaRepository mapEdgeJpaRepository;
@@ -66,7 +67,10 @@ public class IoTLightService {
         Floor floor = floorRepository.findByIdAndBuilding_SchoolName(request.floorId(), schoolName)
                 .orElseThrow(() -> new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
 
-        String code = generateLightCode();
+        // 유도등 code는 기기가 보고하는 시리얼이 아니라 서버가 등록 시점에 채번하는 식별자다 (예: LIGHT_001).
+        // IoTLightCodeAllocator가 별도 트랜잭션의 DB sequence로 원자적으로 발급한다
+        // (CctvCodeAllocator와 동일한 컨벤션 - count()+1 방식은 동시 요청 시 중복 발급됨).
+        String code = iotLightCodeAllocator.allocate();
 
         // customNode의 code/name은 유도등 자체의 code/name을 그대로 사용한다.
         // IoTLight.code는 시스템 전역 유일이 보장되므로 MapNode의 (floor, code) 유니크 제약도 자동 충족된다.
@@ -79,12 +83,6 @@ public class IoTLightService {
         );
 
         return IoTLightResponse.from(light);
-    }
-
-    // 유도등 code는 기기가 보고하는 시리얼이 아니라 서버가 등록 시점에 채번하는 식별자다 (예: LIGHT_001).
-    private String generateLightCode() {
-        long seq = iotLightJpaRepository.count() + 1;
-        return "LIGHT_%03d".formatted(seq);
     }
 
     public List<IoTLightResponse> getLights(UUID floorId, String email) {
