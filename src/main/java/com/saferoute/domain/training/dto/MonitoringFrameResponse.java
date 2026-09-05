@@ -39,13 +39,13 @@ public record MonitoringFrameResponse(
         )
         Long urlExpiresAt,
 
-        @Schema(description = "프레임 시점의 최대 인원수", example = "12", nullable = true)
+        @Schema(description = "이미지 Snapshot의 인원수", example = "12", nullable = true)
         Integer headcount,
 
-        @Schema(description = "프레임 시점의 밀집도", example = "0.42", nullable = true)
+        @Schema(description = "이미지 Snapshot 인원수 기준 밀집도", example = "0.42", nullable = true)
         Double density,
 
-        @Schema(description = "프레임 시점의 혼잡 단계", example = "CROWDED", nullable = true)
+        @Schema(description = "이미지 Snapshot 밀집도 기준 혼잡 단계", example = "CROWDED", nullable = true)
         CongestionLevel congestionLevel
 ) {
 
@@ -57,9 +57,9 @@ public record MonitoringFrameResponse(
                 item.getWindowEnd(),
                 null,
                 null,
-                item.getPeakHeadcount(),
-                item.getDensity(),
-                item.getCongestionLevel()
+                frameHeadcount(item),
+                frameDensity(item),
+                frameCongestionLevel(item)
         );
     }
 
@@ -71,9 +71,23 @@ public record MonitoringFrameResponse(
                 item.getWindowEnd(),
                 presignedGetUrl.viewUrl(),
                 presignedGetUrl.expiresAt().toEpochMilli(),
-                item.getPeakHeadcount(),
-                item.getDensity(),
-                item.getCongestionLevel()
+                frameHeadcount(item),
+                frameDensity(item),
+                frameCongestionLevel(item)
         );
+    }
+
+    private static Integer frameHeadcount(ObservationItem item) {
+        return item.getFrameHeadcount() != null ? item.getFrameHeadcount() : item.getPeakHeadcount();
+    }
+
+    private static Double frameDensity(ObservationItem item) {
+        return item.getFrameDensity() != null ? item.getFrameDensity() : item.getDensity();
+    }
+
+    private static CongestionLevel frameCongestionLevel(ObservationItem item) {
+        return item.getFrameCongestionLevel() != null
+                ? item.getFrameCongestionLevel()
+                : item.getCongestionLevel();
     }
 }

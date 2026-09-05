@@ -58,8 +58,11 @@ class TelemetryItemTest {
 
         assertThat(attributes.get("avgHeadcount").n()).isEqualTo("5.0");
         assertThat(attributes.get("peakHeadcount").n()).isEqualTo("8");
+        assertThat(attributes.get("frameHeadcount").n()).isEqualTo("7");
         assertThat(attributes.get("sampleCount").n()).isEqualTo("25");
         assertThat(attributes.get("density").n()).isEqualTo("2.5");
+        assertThat(attributes.get("frameDensity").n()).isEqualTo("3.5");
+        assertThat(attributes.get("frameCongestionLevel").s()).isEqualTo("CROWDED");
         assertThat(attributes.get("edgeId").s()).isEqualTo(EDGE_ID.toString());
         assertThat(attributes)
                 .containsEntry("GSI1_PK", AttributeValue.fromS("SESSION#" + SESSION_ID + "#CCTV#CCTV_001"))
@@ -130,8 +133,8 @@ class TelemetryItemTest {
 
     private ObservationItem observation() {
         return ObservationItem.create(
-                OBSERVATION_ID, SESSION_ID, EDGE_ID, "CCTV_001", 5.0, 8, 25,
-                2.5, CongestionLevel.CAUTION, 1_786_500_000_000L,
+                OBSERVATION_ID, SESSION_ID, EDGE_ID, "CCTV_001", 5.0, 8, 7, 25,
+                2.5, CongestionLevel.CAUTION, 3.5, CongestionLevel.CROWDED, 1_786_500_000_000L,
                 1_786_500_005_000L, 1_786_500_005_000L, null, 1L
         );
     }

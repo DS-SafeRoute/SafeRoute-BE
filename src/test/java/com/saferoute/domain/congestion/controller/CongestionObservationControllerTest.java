@@ -1,5 +1,6 @@
 package com.saferoute.domain.congestion.controller;
 
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -21,6 +22,7 @@ import com.saferoute.global.security.JwtAuthenticationFilter;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -62,7 +64,7 @@ class CongestionObservationControllerTest {
     private ReportObservationRequest validRequest() {
         return new ReportObservationRequest(
                 UUID.randomUUID(), UUID.randomUUID(), "CCTV_001",
-                5.0, 8, 25, 1_000L, 2_000L, 2_000L, 1L, null
+                5.0, 8, 7, 25, 1_000L, 2_000L, 2_000L, 1L, null
         );
     }
 
@@ -121,6 +123,39 @@ class CongestionObservationControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isCreated());
+    }
+
+    @Test
+    @DisplayName("구버전 Pi 요청은 frameHeadcount가 없어도 허용한다")
+    void reportObservation_allowsMissingFrameHeadcount() throws Exception {
+        ObjectNode body = objectMapper.valueToTree(validRequest());
+        body.remove("frameHeadcount");
+        given(deviceAuthorizationService.validateCctv(any(), org.mockito.ArgumentMatchers.eq("CCTV_001")))
+                .willReturn(Mockito.mock(Cctv.class));
+        given(congestionObservationService.reportObservation(any(), any()))
+                .willReturn(IdempotentSaveResult.created(observation()));
+
+        mockMvc.perform(post("/api/v1/device/congestion-observations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isCreated());
+
+        ArgumentCaptor<ReportObservationRequest> requestCaptor =
+                ArgumentCaptor.forClass(ReportObservationRequest.class);
+        Mockito.verify(congestionObservationService).reportObservation(any(), requestCaptor.capture());
+        assertNull(requestCaptor.getValue().frameHeadcount());
+    }
+
+    @Test
+    @DisplayName("frameHeadcount가 peakHeadcount보다 크면 400을 반환한다")
+    void reportObservation_rejectsFrameHeadcountAbovePeak() throws Exception {
+        ObjectNode body = objectMapper.valueToTree(validRequest());
+        body.put("frameHeadcount", 9);
+
+        mockMvc.perform(post("/api/v1/device/congestion-observations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

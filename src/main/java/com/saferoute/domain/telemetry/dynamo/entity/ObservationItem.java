@@ -27,9 +27,12 @@ public class ObservationItem {
     private String cctvCode;
     private Double avgHeadcount;
     private Integer peakHeadcount;
+    private Integer frameHeadcount;
     private Integer sampleCount;
     private Double density;
     private CongestionLevel congestionLevel;
+    private Double frameDensity;
+    private CongestionLevel frameCongestionLevel;
     private Long windowStart;
     private Long windowEnd;
     private Long capturedAt;
@@ -47,6 +50,7 @@ public class ObservationItem {
     public ObservationItem() {
     }
 
+    // frame 필드가 저장되기 전의 기존 데이터/테스트 생성 계약을 유지한다.
     public static ObservationItem create(
             UUID eventId,
             UUID trainingSessionId,
@@ -63,6 +67,33 @@ public class ObservationItem {
             String monitoringImageKey,
             long configVersion
     ) {
+        return create(
+                eventId, trainingSessionId, edgeId, cctvCode,
+                avgHeadcount, peakHeadcount, null, sampleCount,
+                density, congestionLevel, null, null,
+                windowStart, windowEnd, capturedAt, monitoringImageKey, configVersion
+        );
+    }
+
+    public static ObservationItem create(
+            UUID eventId,
+            UUID trainingSessionId,
+            UUID edgeId,
+            String cctvCode,
+            Double avgHeadcount,
+            Integer peakHeadcount,
+            Integer frameHeadcount,
+            Integer sampleCount,
+            Double density,
+            CongestionLevel congestionLevel,
+            Double frameDensity,
+            CongestionLevel frameCongestionLevel,
+            long windowStart,
+            long windowEnd,
+            long capturedAt,
+            String monitoringImageKey,
+            long configVersion
+    ) {
         ObservationItem item = new ObservationItem();
         item.eventId = eventId.toString();
         item.trainingSessionId = trainingSessionId.toString();
@@ -72,9 +103,12 @@ public class ObservationItem {
         item.cctvCode = cctvCode;
         item.avgHeadcount = avgHeadcount;
         item.peakHeadcount = peakHeadcount;
+        item.frameHeadcount = frameHeadcount;
         item.sampleCount = sampleCount;
         item.density = density;
         item.congestionLevel = congestionLevel;
+        item.frameDensity = frameDensity;
+        item.frameCongestionLevel = frameCongestionLevel;
         item.windowStart = windowStart;
         item.windowEnd = windowEnd;
         item.capturedAt = capturedAt;
@@ -195,6 +229,14 @@ public class ObservationItem {
         this.peakHeadcount = peakHeadcount;
     }
 
+    public Integer getFrameHeadcount() {
+        return frameHeadcount;
+    }
+
+    public void setFrameHeadcount(Integer frameHeadcount) {
+        this.frameHeadcount = frameHeadcount;
+    }
+
     public Integer getSampleCount() {
         return sampleCount;
     }
@@ -217,6 +259,22 @@ public class ObservationItem {
 
     public void setCongestionLevel(CongestionLevel congestionLevel) {
         this.congestionLevel = congestionLevel;
+    }
+
+    public Double getFrameDensity() {
+        return frameDensity;
+    }
+
+    public void setFrameDensity(Double frameDensity) {
+        this.frameDensity = frameDensity;
+    }
+
+    public CongestionLevel getFrameCongestionLevel() {
+        return frameCongestionLevel;
+    }
+
+    public void setFrameCongestionLevel(CongestionLevel frameCongestionLevel) {
+        this.frameCongestionLevel = frameCongestionLevel;
     }
 
     public Long getWindowStart() {
