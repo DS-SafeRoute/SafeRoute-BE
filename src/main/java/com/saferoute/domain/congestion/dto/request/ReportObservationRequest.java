@@ -7,7 +7,8 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import java.util.UUID;
 
-// Pi가 5초마다 보내는 관측값. edgeId/density/congestionLevel은 Pi가 보내지 않는다 - BE가 직접 계산한다.
+// Pi가 5초마다 보내는 관측값. frameHeadcount는 이미지 Snapshot의 인원이며,
+// edgeId/density/congestionLevel은 Pi가 보내지 않는다 - BE가 직접 계산한다.
 public record ReportObservationRequest(
         @NotNull UUID eventId,
         @NotNull UUID trainingSessionId,
