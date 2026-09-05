@@ -110,7 +110,14 @@ public class RouteRecalculationService {
             throw exception;
         }
 
-        savePending(session, triggerEdge, cctvCode, triggerType, level, density, previous, candidate);
+        List<UUID> candidateNodeIds = candidate.path().stream().map(MapNode::getId).toList();
+        if (candidateNodeIds.equals(previous.nodeIds())) {
+            // 혼잡이 지속되는 동안 관측값마다 반복 트리거돼도(CongestionObservationService 참고),
+            // 이미 반영된 경로와 후보가 같으면 동일한 PENDING을 계속 새로 만들 필요가 없다.
+            return;
+        }
+
+        savePending(session, triggerEdge, cctvCode, triggerType, level, density, previous, candidate, candidateNodeIds);
     }
 
     // VERY_CROWDED만 완전 제외한다 - 배율만으로는 다른 대안이 훨씬 나쁠 때 여전히 그 엣지를
@@ -196,8 +203,7 @@ public class RouteRecalculationService {
 
     private void savePending(TrainingSession session, MapEdge triggerEdge, String cctvCode,
             RecalculationTriggerType triggerType, CongestionLevel level, double density,
-            RouteSnapshot previous, EvacuationRoute candidate) {
-        List<UUID> candidateNodeIds = candidate.path().stream().map(node -> node.getId()).toList();
+            RouteSnapshot previous, EvacuationRoute candidate, List<UUID> candidateNodeIds) {
         RouteRecalculation recalculation = save(RouteRecalculation.createPending(
                 session, triggerEdge, cctvCode, triggerType, level, density,
                 previous.nodeIds(), previous.totalWeight(), candidateNodeIds, candidate.totalWeight()));
