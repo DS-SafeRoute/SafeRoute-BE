@@ -129,8 +129,16 @@ class CongestionObservationServiceTest {
     }
 
     private ReportObservationRequest request(double avgHeadcount, String monitoringImageKey) {
+        return request(avgHeadcount, 7, monitoringImageKey);
+    }
+
+    private ReportObservationRequest request(
+            double avgHeadcount,
+            Integer frameHeadcount,
+            String monitoringImageKey
+    ) {
         return new ReportObservationRequest(
-                UUID.randomUUID(), sessionId, "CCTV_001", avgHeadcount, 8, 7, 25,
+                UUID.randomUUID(), sessionId, "CCTV_001", avgHeadcount, 8, frameHeadcount, 25,
                 1_000L, 2_000L, 2_000L, 1L, monitoringImageKey
         );
     }
@@ -218,6 +226,24 @@ class CongestionObservationServiceTest {
         verify(currentCctvStateRepository).updateIfLatest(argThat(state ->
                 state.getDensity().equals(2.25)
                         && state.getCongestionLevel() == CongestionLevel.CAUTION));
+    }
+
+    @Test
+    @DisplayName("구버전 요청의 frameHeadcount가 없으면 프레임 지표도 null로 저장한다")
+    void reportObservation_preservesNullFrameMetricsForLegacyRequest() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        givenProcessingClaimed();
+        givenAffectedEdges();
+
+        service.reportObservation(cctv, request(9.0, null, null));
+
+        verify(observationRepository).saveIfAbsent(argThat(item ->
+                item.getFrameHeadcount() == null
+                        && item.getFrameDensity() == null
+                        && item.getFrameCongestionLevel() == null));
     }
 
     @Test

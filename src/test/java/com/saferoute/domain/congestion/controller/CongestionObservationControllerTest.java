@@ -1,5 +1,6 @@
 package com.saferoute.domain.congestion.controller;
 
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -21,6 +22,7 @@ import com.saferoute.global.security.JwtAuthenticationFilter;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -137,6 +139,11 @@ class CongestionObservationControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isCreated());
+
+        ArgumentCaptor<ReportObservationRequest> requestCaptor =
+                ArgumentCaptor.forClass(ReportObservationRequest.class);
+        Mockito.verify(congestionObservationService).reportObservation(any(), requestCaptor.capture());
+        assertNull(requestCaptor.getValue().frameHeadcount());
     }
 
     @Test
