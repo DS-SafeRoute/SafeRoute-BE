@@ -3,12 +3,14 @@ package com.saferoute.domain.floor.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.mock;
 
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
 
 import com.saferoute.domain.analysis.service.FloorAnalysisService;
+import com.saferoute.domain.analysis.service.FloorAnalysisStatusService;
 import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.building.repository.BuildingRepository;
 import com.saferoute.domain.evacuation.graph.repository.MapEdgeJpaRepository;
@@ -56,6 +58,9 @@ class FloorServiceTest {
     private FloorAnalysisService floorAnalysisService;
 
     @Mock
+    private FloorAnalysisStatusService floorAnalysisStatusService;
+
+    @Mock
     private S3Service s3Service;
 
     @Mock
@@ -87,8 +92,8 @@ class FloorServiceTest {
     void hidesFloorAnalysisTargetFromAnotherSchool() {
         UUID floorId = UUID.randomUUID();
         given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
-        given(floorRepository.findByIdAndBuilding_SchoolName(floorId, SCHOOL_NAME))
-                .willReturn(Optional.empty());
+        willThrow(new ApiException(FloorErrorCode.FLOOR_NOT_FOUND))
+                .given(floorAnalysisStatusService).markAsProcessing(floorId, SCHOOL_NAME);
 
         assertThatThrownBy(() -> floorService.requestAnalysis(floorId, EMAIL))
                 .isInstanceOf(ApiException.class)
