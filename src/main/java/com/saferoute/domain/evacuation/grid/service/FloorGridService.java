@@ -200,7 +200,7 @@ public class FloorGridService {
     // AI 분석으로 노드/엣지가 교체된 뒤 기존 그리드에 전체 그래프를 다시 매핑한다.
     @Transactional
     public void remapGraphToExistingGrid(UUID floorId) {
-        Floor floor = floorRepository.findById(floorId)
+        Floor floor = floorRepository.findByIdForUpdate(floorId)
                 .orElseThrow(() -> new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
         Integer rows = floor.getGridRows();
         Integer columns = floor.getGridColumns();
@@ -213,8 +213,8 @@ public class FloorGridService {
             throw new ApiException(GridErrorCode.GRID_CELL_NOT_FOUND);
         }
 
-        mapEdgeGridCellRepository.deleteAllByMapEdge_Floor_Id(floorId);
-        nodeGridCellRepository.deleteAllByNode_Floor_Id(floorId);
+        mapEdgeGridCellRepository.deleteAllByMapEdgeFloorId(floorId);
+        nodeGridCellRepository.deleteAllByNodeFloorId(floorId);
         remapNodesToGrid(mapNodeRepository.findAllByFloor_Id(floorId), cells, rows, columns);
         remapEdgesToGrid(mapEdgeRepository.findAllByFloor_Id(floorId), cells, rows, columns);
     }

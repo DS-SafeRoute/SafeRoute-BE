@@ -1,6 +1,7 @@
 package com.saferoute.domain.floor.service;
 
 import com.saferoute.domain.analysis.service.FloorAnalysisService;
+import com.saferoute.domain.analysis.service.FloorAnalysisStatusService;
 import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.building.repository.BuildingRepository;
 import com.saferoute.domain.evacuation.graph.repository.MapEdgeJpaRepository;
@@ -35,6 +36,7 @@ public class FloorService {
     private final FloorRepository floorRepository;
     private final BuildingRepository buildingRepository;
     private final FloorAnalysisService floorAnalysisService;
+    private final FloorAnalysisStatusService floorAnalysisStatusService;
     private final S3Service s3Service;
     private final S3PresignedUrlService s3PresignedUrlService;
     private final SchoolContextService schoolContextService;
@@ -103,20 +105,9 @@ public class FloorService {
         return FloorResponse.from(floor);
     }
 
-    @Transactional
     public void requestAnalysis(UUID floorId, String email) {
         String schoolName = schoolContextService.getSchoolName(email);
-        Floor floor = floorRepository.findByIdAndBuilding_SchoolName(floorId, schoolName)
-            .orElseThrow(() -> new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
-
-        if (floor.getMapImageKey() == null) {
-            throw new ApiException(FloorErrorCode.FLOOR_NOT_FOUND);
-        }
-        if (floor.getSegmentationStatus() == SegmentationStatus.PROCESSING) {
-            throw new ApiException(AnalysisErrorCode.ANALYSIS_ALREADY_IN_PROGRESS);
-        }
-
-        floor.updateSegmentationStatus(SegmentationStatus.PROCESSING);
+        floorAnalysisStatusService.markAsProcessing(floorId, schoolName);
         floorAnalysisService.analyzeFloor(floorId);
     }
 

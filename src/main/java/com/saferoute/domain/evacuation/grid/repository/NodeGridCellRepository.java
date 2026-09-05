@@ -5,6 +5,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface NodeGridCellRepository extends JpaRepository<NodeGridCell, UUID> {
 
@@ -18,5 +21,7 @@ public interface NodeGridCellRepository extends JpaRepository<NodeGridCell, UUID
     List<NodeGridCell> findAllByNode_IdIn(List<UUID> nodeIds);
 
     // AI 분석으로 층 그래프 전체가 교체된 뒤 기존 매핑만 정리하고 다시 계산할 때 사용
-    void deleteAllByNode_Floor_Id(UUID floorId);
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from NodeGridCell n where n.node.floor.id = :floorId")
+    int deleteAllByNodeFloorId(@Param("floorId") UUID floorId);
 }
