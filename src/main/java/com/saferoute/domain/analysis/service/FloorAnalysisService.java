@@ -84,7 +84,7 @@ public class FloorAnalysisService {
       mapEdgeRepository.save(edge);
     }
 
-    floor.applyGridConfig(null, null, null, response.planWidthPx(), response.planHeightPx());
+    floor.applyPlanSize(response.planWidthPx(), response.planHeightPx());
     floor.updateSegmentationStatus(SegmentationStatus.DONE);
   }
 

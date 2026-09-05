@@ -119,6 +119,13 @@ public class Floor {
     this.planHeightPx = planHeightPx;
   }
 
+  // AI 분석 결과의 원본 도면 픽셀 크기만 반영한다.
+  // 도면 업로드 직후 생성된 그리드 설정은 분석 이후에도 유지되어야 한다.
+  public void applyPlanSize(Integer planWidthPx, Integer planHeightPx) {
+    this.planWidthPx = planWidthPx;
+    this.planHeightPx = planHeightPx;
+  }
+
   public void applyGridCellConfig(double cellSizeMeter, int gridRows, int gridColumns) {
     this.gridCellSizeMeter = cellSizeMeter;
     this.gridRows = gridRows;
