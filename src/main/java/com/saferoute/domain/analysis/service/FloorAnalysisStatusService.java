@@ -20,7 +20,7 @@ public class FloorAnalysisStatusService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markAsProcessing(UUID floorId, String schoolName) {
-        Floor floor = floorRepository.findByIdAndBuilding_SchoolName(floorId, schoolName)
+        Floor floor = floorRepository.findByIdAndBuildingSchoolNameForUpdate(floorId, schoolName)
                 .orElseThrow(() -> new ApiException(FloorErrorCode.FLOOR_NOT_FOUND));
 
         if (floor.getMapImageKey() == null) {

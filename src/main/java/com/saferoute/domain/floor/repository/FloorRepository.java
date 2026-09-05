@@ -21,4 +21,8 @@ public interface FloorRepository extends JpaRepository<Floor, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select f from Floor f where f.id = :id")
     Optional<Floor> findByIdForUpdate(UUID id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select f from Floor f join f.building b where f.id = :id and b.schoolName = :schoolName")
+    Optional<Floor> findByIdAndBuildingSchoolNameForUpdate(UUID id, String schoolName);
 }
