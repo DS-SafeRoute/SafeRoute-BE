@@ -1,6 +1,7 @@
 package com.saferoute.domain.analysis.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.inOrder;
 
@@ -16,6 +17,8 @@ import com.saferoute.domain.evacuation.grid.service.FloorGridService;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.floor.entity.SegmentationStatus;
 import com.saferoute.domain.floor.repository.FloorRepository;
+import com.saferoute.global.api.error.AnalysisErrorCode;
+import com.saferoute.global.api.exception.ApiException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -76,5 +79,22 @@ class FloorAnalysisServiceTest {
         InOrder inOrder = inOrder(mapEdgeRepository, floorGridService);
         inOrder.verify(mapEdgeRepository).save(org.mockito.ArgumentMatchers.any(MapEdge.class));
         inOrder.verify(floorGridService).remapGraphToExistingGrid(floorId);
+    }
+
+    @Test
+    void analyzeFloor_marksFloorAsFailedWhenAiRequestFails() {
+        UUID floorId = UUID.randomUUID();
+        Floor floor = Floor.create(org.mockito.Mockito.mock(Building.class), 3);
+        floor.upload(3.0, 4.0, "floors/third-floor.png");
+        floor.updateSegmentationStatus(SegmentationStatus.PROCESSING);
+        given(floorRepository.findById(floorId)).willReturn(Optional.of(floor));
+        given(aiAnalysisClient.analyze("floors/third-floor.png", 4.0, 3.0))
+                .willThrow(new RuntimeException("AI server unavailable"));
+
+        assertThatThrownBy(() -> floorAnalysisService.analyzeFloor(floorId))
+                .isInstanceOf(ApiException.class)
+                .extracting(exception -> ((ApiException) exception).getErrorCode())
+                .isEqualTo(AnalysisErrorCode.AI_ANALYSIS_FAILED);
+        assertThat(floor.getSegmentationStatus()).isEqualTo(SegmentationStatus.FAILED);
     }
 }
