@@ -130,7 +130,7 @@ class CongestionObservationServiceTest {
 
     private ReportObservationRequest request(double avgHeadcount, String monitoringImageKey) {
         return new ReportObservationRequest(
-                UUID.randomUUID(), sessionId, "CCTV_001", avgHeadcount, 8, 25,
+                UUID.randomUUID(), sessionId, "CCTV_001", avgHeadcount, 8, 7, 25,
                 1_000L, 2_000L, 2_000L, 1L, monitoringImageKey
         );
     }
@@ -197,7 +197,7 @@ class CongestionObservationServiceTest {
     }
 
     @Test
-    @DisplayName("BE가 직접 density와 congestionLevel을 계산해서 저장한다 (Pi 값을 받지 않음)")
+    @DisplayName("BE가 구간 평균과 이미지 프레임의 밀집도 및 단계를 각각 계산해서 저장한다")
     void reportObservation_computesDensityAndLevelItself() {
         TrainingSession session = mock(TrainingSession.class);
         given(session.getId()).willReturn(sessionId);
@@ -210,7 +210,14 @@ class CongestionObservationServiceTest {
         service.reportObservation(cctv, request(9.0));
 
         verify(observationRepository).saveIfAbsent(argThat(item ->
-                item.getDensity().equals(2.25) && item.getCongestionLevel() == CongestionLevel.CAUTION));
+                item.getDensity().equals(2.25)
+                        && item.getCongestionLevel() == CongestionLevel.CAUTION
+                        && item.getFrameHeadcount().equals(7)
+                        && item.getFrameDensity().equals(1.75)
+                        && item.getFrameCongestionLevel() == CongestionLevel.NORMAL));
+        verify(currentCctvStateRepository).updateIfLatest(argThat(state ->
+                state.getDensity().equals(2.25)
+                        && state.getCongestionLevel() == CongestionLevel.CAUTION));
     }
 
     @Test

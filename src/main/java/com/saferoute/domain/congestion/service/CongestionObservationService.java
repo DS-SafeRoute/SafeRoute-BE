@@ -94,6 +94,10 @@ public class CongestionObservationService {
 
         double density = request.avgHeadcount() / monitoredAreaM2;
         CongestionLevel level = config.classify(density);
+        Double frameDensity = request.frameHeadcount() == null
+                ? null
+                : request.frameHeadcount() / monitoredAreaM2;
+        CongestionLevel frameLevel = frameDensity == null ? null : config.classify(frameDensity);
 
         ObservationItem item = ObservationItem.create(
                 request.eventId(),
@@ -102,9 +106,12 @@ public class CongestionObservationService {
                 cctv.getCode(),
                 request.avgHeadcount(),
                 request.peakHeadcount(),
+                request.frameHeadcount(),
                 request.sampleCount(),
                 density,
                 level,
+                frameDensity,
+                frameLevel,
                 request.windowStart(),
                 request.windowEnd(),
                 request.capturedAt(),

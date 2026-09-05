@@ -14,6 +14,7 @@ public record ReportObservationRequest(
         @NotBlank String cctvCode,
         @NotNull @PositiveOrZero Double avgHeadcount,
         @NotNull @PositiveOrZero Integer peakHeadcount,
+        @PositiveOrZero Integer frameHeadcount,
         @NotNull @Positive Integer sampleCount,
         @NotNull @PositiveOrZero Long windowStart,
         @NotNull @PositiveOrZero Long windowEnd,
@@ -27,6 +28,14 @@ public record ReportObservationRequest(
             return true;
         }
         return avgHeadcount <= peakHeadcount.doubleValue();
+    }
+
+    @AssertTrue(message = "frameHeadcount must not exceed peakHeadcount")
+    public boolean isFrameHeadcountValid() {
+        if (frameHeadcount == null || peakHeadcount == null) {
+            return true;
+        }
+        return frameHeadcount <= peakHeadcount;
     }
 
     @AssertTrue(message = "windowEnd must not be before windowStart")
