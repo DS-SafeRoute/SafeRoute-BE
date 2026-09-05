@@ -188,7 +188,10 @@ public class CctvService {
     }
 
     private void saveMappings(Cctv cctv, List<FloorGridCell> gridCells) {
-        cctvGridCellRepository.saveAll(
+        // saveAll()만으로는 실제 INSERT가 트랜잭션 커밋 시점까지 미뤄져 configureGridCells의
+        // try/catch 밖(JpaTransactionManager.doCommit)에서 예외가 터진다 - saveAllAndFlush로
+        // 즉시 flush해서 검증 이후 그리드 재생성으로 인한 FK 위반을 여기서 잡는다.
+        cctvGridCellRepository.saveAllAndFlush(
                 gridCells.stream()
                         .map(cell -> CctvGridCell.create(cctv, cell))
                         .toList()

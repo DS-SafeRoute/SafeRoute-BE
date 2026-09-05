@@ -88,9 +88,33 @@ class CctvRegistrationServiceTest {
         assertThat(response.cctv().gridCells()).extracting("id").containsExactly(firstId, secondId);
         assertThat(response.deviceToken()).isEqualTo("raw-token");
         ArgumentCaptor<List<CctvGridCell>> mappings = ArgumentCaptor.forClass(List.class);
-        verify(cctvGridCellRepository).saveAll(mappings.capture());
+        verify(cctvGridCellRepository).saveAllAndFlush(mappings.capture());
         assertThat(mappings.getValue()).hasSize(2);
         verify(congestionConfigService).incrementVersionForGridChange();
+    }
+
+    @Test
+    @DisplayName("검증 이후 실제 저장 사이에 그리드가 재생성돼 셀이 사라지면 GRID_CELL_NOT_FOUND로 응답한다")
+    void register_staleGridCellOnSave_throwsGridCellNotFound() {
+        UUID cellId = UUID.randomUUID();
+        FloorGridCell cell = cell(cellId, floor, 0, 0, true);
+        CreateCctvRequest request = request(List.of(cellId));
+        given(floorRepository.findById(floorId)).willReturn(Optional.of(floor));
+        given(floorGridCellRepository.findAllById(request.gridCellIds())).willReturn(List.of(cell));
+        given(mapNodeJpaRepository.save(any())).willAnswer(invocation -> invocation.getArgument(0));
+        given(cctvJpaRepository.save(any())).willAnswer(invocation -> invocation.getArgument(0));
+        given(deviceTokenService.issue()).willReturn(
+                new DeviceTokenService.IssuedDeviceToken("raw-token", "hashed-token")
+        );
+        given(cctvGridCellRepository.saveAllAndFlush(any()))
+                .willThrow(new org.springframework.dao.DataIntegrityViolationException("FK violation"));
+
+        assertThatThrownBy(() -> service.register(request, "CCTV_001"))
+                .isInstanceOf(ApiException.class)
+                .extracting("errorCode")
+                .isEqualTo(CctvErrorCode.GRID_CELL_NOT_FOUND);
+
+        verify(congestionConfigService, never()).incrementVersionForGridChange();
     }
 
     @Test

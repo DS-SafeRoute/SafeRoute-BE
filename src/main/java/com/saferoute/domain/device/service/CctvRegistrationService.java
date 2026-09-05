@@ -24,6 +24,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -64,11 +65,21 @@ public class CctvRegistrationService {
         Cctv cctv = Cctv.create(code, request.name(), customNode);
         cctv.issueDeviceToken(issuedToken.hash());
         Cctv savedCctv = cctvJpaRepository.save(cctv);
-        cctvGridCellRepository.saveAll(
-                gridCells.stream()
-                        .map(cell -> CctvGridCell.create(savedCctv, cell))
-                        .toList()
-        );
+        try {
+            // saveAll()만으로는 실제 INSERT가 트랜잭션 커밋 시점까지 미뤄져 이 try/catch
+            // 밖(JpaTransactionManager.doCommit)에서 예외가 터진다 - saveAllAndFlush로
+            // 즉시 flush해서 검증(findAndValidateGridCells) 이후 그리드가 재생성돼 그 셀들이
+            // 이미 삭제된 경우의 FK 위반을 여기서 잡는다.
+            cctvGridCellRepository.saveAllAndFlush(
+                    gridCells.stream()
+                            .map(cell -> CctvGridCell.create(savedCctv, cell))
+                            .toList()
+            );
+        } catch (DataIntegrityViolationException exception) {
+            // CctvService.configureGridCells와 동일한 상황이므로 같은 에러로 응답해
+            // 최신 목록을 다시 불러오게 한다.
+            throw new ApiException(CctvErrorCode.GRID_CELL_NOT_FOUND, exception);
+        }
         congestionConfigService.incrementVersionForGridChange();
 
         return new CctvRegistrationResponse(
