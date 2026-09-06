@@ -287,8 +287,8 @@ class CongestionObservationServiceTest {
     }
 
     @Test
-    @DisplayName("CCTV가 여러 Edge를 감시하면 CROWDED 이상일 때 Edge마다 재탐색을 트리거하되 발행은 CCTV당 한 번만 한다")
-    void reportObservation_triggersRecalculationForEachAffectedEdgeButPublishesOnce() {
+    @DisplayName("CCTV가 여러 Edge를 감시하면 영향 Edge를 묶어 재탐색을 한 번만 트리거한다")
+    void reportObservation_triggersOneRecalculationForAffectedEdges() {
         TrainingSession session = mock(TrainingSession.class);
         given(session.getId()).willReturn(sessionId);
         given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
@@ -304,9 +304,8 @@ class CongestionObservationServiceTest {
         // avgHeadcount=13 -> density=3.25 -> CROWDED
         service.reportObservation(cctv, request(13.0));
 
-        verify(routeRecalculationService).trigger(eq(session), eq(edgeA), eq(CongestionLevel.CROWDED),
-                eq(RecalculationTriggerType.LEVEL_UP), eq("CCTV_001"), anyDouble());
-        verify(routeRecalculationService).trigger(eq(session), eq(edgeB), eq(CongestionLevel.CROWDED),
+        verify(routeRecalculationService).trigger(eq(session), eq(List.of(edgeA, edgeB)),
+                eq(CongestionLevel.CROWDED),
                 eq(RecalculationTriggerType.LEVEL_UP), eq("CCTV_001"), anyDouble());
         verify(trainingEventPublisher, times(1)).publishCongestionUpdated(
                 eq(sessionId), eq(expectedEdgeIds), any());

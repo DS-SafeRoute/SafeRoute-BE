@@ -210,7 +210,7 @@ class FloorServiceTest {
         Building building = mock(Building.class);
         Floor floor = Floor.create(building, 1);
         UploadFloorRequest request = new UploadFloorRequest(
-                1, 4.0, 3.0,
+                1, 400.0, 300.0,
                 new MockMultipartFile("file", "plan.png", "image/png", new byte[]{1, 2, 3}));
 
         given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);
@@ -228,5 +228,7 @@ class FloorServiceTest {
         then(mapEdgeRepository).should().deleteAllByFloor(floor);
         then(mapNodeRepository).should().deleteAllByFloor(floor);
         assertThat(floor.getMapImageKey()).isEqualTo("floors/new-plan.png");
+        assertThat(floor.getRealWidth()).isEqualTo(4.0);
+        assertThat(floor.getRealHeight()).isEqualTo(3.0);
     }
 }

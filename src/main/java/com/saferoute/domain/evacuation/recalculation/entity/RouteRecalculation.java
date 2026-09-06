@@ -29,10 +29,8 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 // 혼잡 감지로 트리거된 우회 경로 재탐색 결과. 관리자가 승인해야 실제 대피 경로에 반영된다.
 //
-// 같은 세션+엣지라도 혼잡 레벨이 오르내릴 때마다 PENDING -> CANCELLED -> 새 PENDING, 승인 후
-// 다시 레벨이 오르면 그 엣지에 대해 두 번째 APPROVED가 생기는 식으로 이력이 여러 행 쌓일 수 있어
-// (session, edge, status) 유니크 제약은 걸지 않는다 - "같은 세션+엣지에 PENDING 하나만" 규칙은
-// RouteRecalculationService가 트리거 시점에 조회해서 지킨다.
+// 혼잡 레벨이 오르내릴 때마다 PENDING -> CANCELLED -> 새 PENDING 이력이 쌓일 수 있다.
+// 세션 잠금과 RouteRecalculationService의 트리거 로직으로 세션당 유효한 PENDING 하나만 유지한다.
 @Entity
 @Getter
 @Table(name = "route_recalculations")

@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -48,6 +49,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -95,7 +97,13 @@ class RouteRecalculationServiceTest {
     @BeforeEach
     void setUp() {
         session = mock(TrainingSession.class);
-        org.mockito.Mockito.lenient().when(session.getId()).thenReturn(UUID.randomUUID());
+        UUID sessionId = UUID.randomUUID();
+        org.mockito.Mockito.lenient().when(session.getId()).thenReturn(sessionId);
+        org.mockito.Mockito.lenient().when(trainingSessionRepository.findByIdForUpdate(sessionId))
+                .thenReturn(Optional.of(session));
+        org.mockito.Mockito.lenient().when(routeRecalculationRepository
+                .findTrainingSessionIdByIdAndSchoolName(any(), any()))
+                .thenReturn(Optional.of(sessionId));
         org.mockito.Mockito.lenient().when(schoolContextService.getSchoolName(MANAGER_EMAIL))
                 .thenReturn(SCHOOL_NAME);
 
@@ -118,8 +126,8 @@ class RouteRecalculationServiceTest {
     }
 
     private void givenNoExistingPending() {
-        given(routeRecalculationRepository.findByTrainingSession_IdAndTriggerEdge_IdAndStatus(
-                any(), any(), any())).willReturn(Optional.empty());
+        given(routeRecalculationRepository.findAllByTrainingSession_IdAndStatus(
+                any(), any())).willReturn(List.of());
     }
 
     @Test
@@ -138,8 +146,8 @@ class RouteRecalculationServiceTest {
     }
 
     private void givenNoApprovedHistory() {
-        given(routeRecalculationRepository.findFirstByTrainingSession_IdAndTriggerEdge_IdAndStatusOrderByResolvedAtDesc(
-                any(), any(), any())).willReturn(Optional.empty());
+        given(routeRecalculationRepository.findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(
+                any(), any())).willReturn(Optional.empty());
     }
 
     private void givenNoDirectRoute() {
@@ -148,14 +156,13 @@ class RouteRecalculationServiceTest {
     }
 
     @Test
-    @DisplayName("같은 세션+엣지에 이미 같은 레벨의 PENDING이 있으면 새로 트리거하지 않는다")
+    @DisplayName("같은 세션+CCTV에 이미 같은 레벨의 PENDING이 있으면 새로 트리거하지 않는다")
     void trigger_skipsWhenSameLevelPendingExists() {
         RouteRecalculation existing = pendingRecalculation(CongestionLevel.CROWDED);
-        given(routeRecalculationRepository.findByTrainingSession_IdAndTriggerEdge_IdAndStatus(
-                session.getId(), triggerEdge.getId(), RecalculationStatus.PENDING))
-                .willReturn(Optional.of(existing));
+        given(routeRecalculationRepository.findAllByTrainingSession_IdAndStatus(
+                session.getId(), RecalculationStatus.PENDING)).willReturn(List.of(existing));
 
-        routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.CROWDED,
+        routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.CROWDED,
                 RecalculationTriggerType.LEVEL_UP, "CCTV_001", 3.5);
 
         verify(evacuationRouteService, never()).findShortestRoute(any(), any(), anySet());
@@ -166,15 +173,14 @@ class RouteRecalculationServiceTest {
     @DisplayName("레벨이 바뀌었으면 기존 PENDING을 CANCELLED로 무효화하고 새로 계산한다")
     void trigger_cancelsAndRecreatesWhenLevelChanges() {
         RouteRecalculation existing = pendingRecalculation(CongestionLevel.CROWDED);
-        given(routeRecalculationRepository.findByTrainingSession_IdAndTriggerEdge_IdAndStatus(
-                session.getId(), triggerEdge.getId(), RecalculationStatus.PENDING))
-                .willReturn(Optional.of(existing));
+        given(routeRecalculationRepository.findAllByTrainingSession_IdAndStatus(
+                session.getId(), RecalculationStatus.PENDING)).willReturn(List.of(existing));
         givenNoApprovedHistory();
         givenNoDirectRoute();
         given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any()))
                 .willThrow(new ApiException(EvacuationErrorCode.EVACUATION_ROUTE_NOT_FOUND));
 
-        routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.VERY_CROWDED,
+        routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.VERY_CROWDED,
                 RecalculationTriggerType.LEVEL_UP, "CCTV_001", 5.5);
 
         assertThat(existing.getStatus()).isEqualTo(RecalculationStatus.CANCELLED);
@@ -190,7 +196,7 @@ class RouteRecalculationServiceTest {
         given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any()))
                 .willThrow(new ApiException(EvacuationErrorCode.EVACUATION_ROUTE_NOT_FOUND));
 
-        routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.CROWDED,
+        routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.CROWDED,
                 RecalculationTriggerType.STARTED, "CCTV_001", 3.5);
 
         verify(routeRecalculationRepository, never()).save(any());
@@ -198,8 +204,8 @@ class RouteRecalculationServiceTest {
     }
 
     @Test
-    @DisplayName("VERY_CROWDED면 트리거 엣지를 완전히 제외하고 우회 경로를 계산한다")
-    void trigger_veryCrowded_excludesTriggerEdgeEntirely() {
+    @DisplayName("VERY_CROWDED면 CCTV 영향 엣지를 모두 제외하고 우회 경로를 한 번 계산한다")
+    void trigger_veryCrowded_excludesAllAffectedEdges() {
         givenNoExistingPending();
         givenNoApprovedHistory();
         givenNoDirectRoute();
@@ -211,15 +217,17 @@ class RouteRecalculationServiceTest {
 
         RouteRecalculation saved = pendingRecalculation(CongestionLevel.VERY_CROWDED);
         given(routeRecalculationRepository.save(any())).willReturn(saved);
+        MapEdge secondEdge = MapEdge.create(triggerEdge.getFloor(), mock(MapNode.class), mock(MapNode.class), 4.0, true);
+        ReflectionTestUtils.setField(secondEdge, "id", UUID.randomUUID());
 
-        routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.VERY_CROWDED,
+        routeRecalculationService.trigger(session, List.of(triggerEdge, secondEdge), CongestionLevel.VERY_CROWDED,
                 RecalculationTriggerType.STARTED, "CCTV_001", 5.5);
 
         ArgumentCaptor<Set<UUID>> excludedEdgesCaptor = ArgumentCaptor.forClass(Set.class);
         ArgumentCaptor<Map<UUID, Double>> multipliersCaptor = ArgumentCaptor.forClass(Map.class);
         verify(evacuationRouteService).findShortestRoute(
                 any(), any(), excludedEdgesCaptor.capture(), multipliersCaptor.capture());
-        assertThat(excludedEdgesCaptor.getValue()).containsExactly(triggerEdge.getId());
+        assertThat(excludedEdgesCaptor.getValue()).containsExactlyInAnyOrder(triggerEdge.getId(), secondEdge.getId());
         assertThat(multipliersCaptor.getValue()).isEmpty();
 
         verify(routeRecalculationRepository, times(1)).save(any());
@@ -227,8 +235,8 @@ class RouteRecalculationServiceTest {
     }
 
     @Test
-    @DisplayName("CROWDED면 트리거 엣지를 제외하지 않고 3배 가중치만 줘서 후보에 남긴다")
-    void trigger_crowded_appliesWeightMultiplierInsteadOfExcluding() {
+    @DisplayName("CROWDED면 CCTV 영향 엣지 모두에 3배 가중치를 주고 후보에 남긴다")
+    void trigger_crowded_appliesWeightMultiplierToAllAffectedEdges() {
         givenNoExistingPending();
         givenNoApprovedHistory();
         givenNoDirectRoute();
@@ -240,8 +248,10 @@ class RouteRecalculationServiceTest {
 
         RouteRecalculation saved = pendingRecalculation(CongestionLevel.CROWDED);
         given(routeRecalculationRepository.save(any())).willReturn(saved);
+        MapEdge secondEdge = MapEdge.create(triggerEdge.getFloor(), mock(MapNode.class), mock(MapNode.class), 4.0, true);
+        ReflectionTestUtils.setField(secondEdge, "id", UUID.randomUUID());
 
-        routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.CROWDED,
+        routeRecalculationService.trigger(session, List.of(triggerEdge, secondEdge), CongestionLevel.CROWDED,
                 RecalculationTriggerType.STARTED, "CCTV_001", 3.5);
 
         ArgumentCaptor<Set<UUID>> excludedEdgesCaptor = ArgumentCaptor.forClass(Set.class);
@@ -250,6 +260,7 @@ class RouteRecalculationServiceTest {
                 any(), any(), excludedEdgesCaptor.capture(), multipliersCaptor.capture());
         assertThat(excludedEdgesCaptor.getValue()).isEmpty();
         assertThat(multipliersCaptor.getValue()).containsEntry(triggerEdge.getId(), 3.0);
+        assertThat(multipliersCaptor.getValue()).containsEntry(secondEdge.getId(), 3.0);
 
         verify(routeRecalculationRepository, times(1)).save(any());
         verify(trainingEventPublisher, times(1)).publishRouteRecalculationRequestedAfterCommit(saved);
@@ -261,8 +272,8 @@ class RouteRecalculationServiceTest {
         givenNoExistingPending();
         UUID sharedNodeId = UUID.randomUUID();
         RouteRecalculation approvedDetour = approvedRecalculation(List.of(sharedNodeId), 20.0);
-        given(routeRecalculationRepository.findFirstByTrainingSession_IdAndTriggerEdge_IdAndStatusOrderByResolvedAtDesc(
-                session.getId(), triggerEdge.getId(), RecalculationStatus.APPROVED))
+        given(routeRecalculationRepository.findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(
+                session.getId(), RecalculationStatus.APPROVED))
                 .willReturn(Optional.of(approvedDetour));
 
         MapNode exitNode = MapNode.create(mock(Floor.class), "STAIR1", NodeType.STAIR, "STAIR1", 0, 0, true);
@@ -270,7 +281,7 @@ class RouteRecalculationServiceTest {
         EvacuationRoute candidateRoute = new EvacuationRoute(List.of(exitNode), 20.0);
         given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any())).willReturn(candidateRoute);
 
-        routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.CROWDED,
+        routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.CROWDED,
                 RecalculationTriggerType.LEVEL_UP, "CCTV_001", 3.5);
 
         verify(routeRecalculationRepository, never()).save(any());
@@ -283,7 +294,7 @@ class RouteRecalculationServiceTest {
         givenNoExistingPending();
         givenNoApprovedHistory();
 
-        routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.NORMAL,
+        routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.NORMAL,
                 RecalculationTriggerType.ENDED, "CCTV_001", 1.0);
 
         verify(routeRecalculationRepository, never()).save(any());
@@ -295,8 +306,8 @@ class RouteRecalculationServiceTest {
     void trigger_ended_createsRecoveryCandidateWhenApprovedDetourExists() {
         givenNoExistingPending();
         RouteRecalculation approvedDetour = approvedRecalculation(List.of(UUID.randomUUID()), 20.0);
-        given(routeRecalculationRepository.findFirstByTrainingSession_IdAndTriggerEdge_IdAndStatusOrderByResolvedAtDesc(
-                session.getId(), triggerEdge.getId(), RecalculationStatus.APPROVED))
+        given(routeRecalculationRepository.findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(
+                session.getId(), RecalculationStatus.APPROVED))
                 .willReturn(Optional.of(approvedDetour));
 
         MapNode exitNode = MapNode.create(mock(Floor.class), "STAIR1", NodeType.STAIR, "STAIR1", 0, 0, true);
@@ -307,7 +318,7 @@ class RouteRecalculationServiceTest {
         RouteRecalculation saved = pendingRecalculation(CongestionLevel.NORMAL);
         given(routeRecalculationRepository.save(any())).willReturn(saved);
 
-        routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.NORMAL,
+        routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.NORMAL,
                 RecalculationTriggerType.ENDED, "CCTV_001", 1.0);
 
         verify(routeRecalculationRepository, times(1)).save(any());
@@ -320,8 +331,8 @@ class RouteRecalculationServiceTest {
         givenNoExistingPending();
         UUID sharedNodeId = UUID.randomUUID();
         RouteRecalculation approvedDetour = approvedRecalculation(List.of(sharedNodeId), 20.0);
-        given(routeRecalculationRepository.findFirstByTrainingSession_IdAndTriggerEdge_IdAndStatusOrderByResolvedAtDesc(
-                session.getId(), triggerEdge.getId(), RecalculationStatus.APPROVED))
+        given(routeRecalculationRepository.findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(
+                session.getId(), RecalculationStatus.APPROVED))
                 .willReturn(Optional.of(approvedDetour));
 
         MapNode exitNode = MapNode.create(mock(Floor.class), "STAIR1", NodeType.STAIR, "STAIR1", 0, 0, true);
@@ -329,7 +340,7 @@ class RouteRecalculationServiceTest {
         EvacuationRoute directRoute = new EvacuationRoute(List.of(exitNode), 20.0);
         given(evacuationRouteService.findShortestRoute(floorId, startNodeId)).willReturn(directRoute);
 
-        routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.NORMAL,
+        routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.NORMAL,
                 RecalculationTriggerType.ENDED, "CCTV_001", 1.0);
 
         verify(routeRecalculationRepository, never()).save(any());
@@ -431,6 +442,33 @@ class RouteRecalculationServiceTest {
         assertThat(recalculation.getResolvedBy()).isEqualTo(manager);
         verify(trainingEventPublisher, times(1)).publishEvacuationRouteUpdatedAfterCommit(recalculation);
         verify(ioTLightService, times(1)).applyRouteGuidance(recalculation.getRecalculatedNodeIds());
+        InOrder approvalOrder = inOrder(routeRecalculationRepository, trainingSessionRepository);
+        approvalOrder.verify(routeRecalculationRepository)
+                .findTrainingSessionIdByIdAndSchoolName(recalculation.getId(), SCHOOL_NAME);
+        approvalOrder.verify(trainingSessionRepository).findByIdForUpdate(session.getId());
+        approvalOrder.verify(routeRecalculationRepository)
+                .findByIdAndTrainingSession_Scenario_Building_SchoolName(recalculation.getId(), SCHOOL_NAME);
+    }
+
+    @Test
+    @DisplayName("경로를 승인하면 같은 세션의 다른 PENDING 제안을 취소한다")
+    void approve_cancelsSiblingPendingRecalculations() {
+        RouteRecalculation approved = pendingRecalculation(CongestionLevel.CROWDED);
+        RouteRecalculation sibling = pendingRecalculation(CongestionLevel.CROWDED);
+        given(routeRecalculationRepository
+                .findByIdAndTrainingSession_Scenario_Building_SchoolName(approved.getId(), SCHOOL_NAME))
+                .willReturn(Optional.of(approved));
+        given(routeRecalculationRepository.findAllByTrainingSession_IdAndStatus(
+                session.getId(), RecalculationStatus.PENDING)).willReturn(List.of(approved, sibling));
+        User manager = mock(User.class);
+        given(userRepository.findByEmail(MANAGER_EMAIL)).willReturn(Optional.of(manager));
+
+        routeRecalculationService.approve(approved.getId(), MANAGER_EMAIL);
+
+        assertThat(approved.getStatus()).isEqualTo(RecalculationStatus.APPROVED);
+        assertThat(sibling.getStatus()).isEqualTo(RecalculationStatus.CANCELLED);
+        assertThat(sibling.getCancelReason()).isEqualTo("다른 경로 승인으로 무효화됨");
+        verify(trainingEventPublisher).publishRouteRecalculationCancelledAfterCommit(sibling);
     }
 
     @Test
@@ -603,7 +641,7 @@ class RouteRecalculationServiceTest {
         givenNoExistingPending();
         given(scenario.getStartNode()).willReturn(null);
 
-        routeRecalculationService.trigger(session, triggerEdge, CongestionLevel.CROWDED,
+        routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.CROWDED,
                 RecalculationTriggerType.STARTED, "CCTV_001", 3.5);
 
         verify(routeRecalculationRepository, never()).save(any());

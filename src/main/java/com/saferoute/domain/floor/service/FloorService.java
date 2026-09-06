@@ -84,7 +84,7 @@ public class FloorService {
         S3UploadResponse uploadResult =
             s3Service.upload(request.file());
 
-        floor.upload(request.realHeight(), request.realWidth(), uploadResult.key());
+        floor.upload(request.realHeightMeter(), request.realWidthMeter(), uploadResult.key());
 
         return FloorResponse.from(floor);
     }

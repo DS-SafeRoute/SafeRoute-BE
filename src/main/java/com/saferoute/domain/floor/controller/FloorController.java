@@ -85,8 +85,9 @@ public class FloorController {
     @Operation(
             summary = "도면 이미지 업로드",
             description = """
-                    이미 등록되어 있는 층에 도면 이미지 파일과 실제 크기(realWidth, realHeight,
-                    미터 단위)를 업로드합니다. 대상 층은 floorId가 아니라 floorNum으로 지정하며,
+                    이미 등록되어 있는 층에 도면 이미지 파일과 실제 크기(realWidth,
+                    realHeight, 센티미터 단위)를 업로드합니다. 백엔드는 요청 경계에서 미터로
+                    변환해 저장합니다. 대상 층은 floorId가 아니라 floorNum으로 지정하며,
                     해당 buildingId 안에 그 floorNum을 가진 층이 없으면 실패하므로 반드시 층 등록
                     API로 층을 먼저 만든 뒤 호출해야 합니다.
 

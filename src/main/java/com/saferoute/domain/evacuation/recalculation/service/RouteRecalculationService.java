@@ -60,51 +60,59 @@ public class RouteRecalculationService {
     private final MapNodeJpaRepository mapNodeJpaRepository;
 
     // 혼잡 감지로 트리거되는 우회 경로 재탐색.
-    // - 같은 세션+엣지에 이미 PENDING이 있고 레벨이 그대로면 반복 트리거를 무시한다.
-    // - 레벨이 바뀌었으면 기존 PENDING을 CANCELLED로 무효화하고 새로 계산한다.
+    // - CCTV 한 대가 감시하는 모든 엣지를 한 번에 반영해 후보 경로 하나만 만든다.
+    // - 같은 세션+CCTV에 이미 PENDING이 있고 레벨이 그대로면 반복 트리거를 무시한다.
+    // - 새 판단이 필요하면 기존 PENDING을 모두 CANCELLED로 무효화하고 새로 계산한다.
     // - triggerType이 ENDED(혼잡 종료)면 우회가 아니라 정상 경로로의 복구 후보를 계산한다.
     @Transactional
-    public void trigger(TrainingSession session, MapEdge triggerEdge, CongestionLevel level,
+    public void trigger(TrainingSession session, List<MapEdge> affectedEdges, CongestionLevel level,
             RecalculationTriggerType triggerType, String cctvCode, double density) {
-        Optional<RouteRecalculation> existingPending = routeRecalculationRepository
-                .findByTrainingSession_IdAndTriggerEdge_IdAndStatus(
-                        session.getId(), triggerEdge.getId(), RecalculationStatus.PENDING);
-
-        if (triggerType == RecalculationTriggerType.ENDED) {
-            existingPending.ifPresent(pending -> cancel(pending, "혼잡 종료로 무효화됨"));
-            triggerRecovery(session, triggerEdge, level, cctvCode, density);
+        if (affectedEdges.isEmpty()) {
             return;
         }
 
-        if (existingPending.isPresent()) {
-            RouteRecalculation pending = existingPending.get();
-            if (pending.getCongestionLevel() == level) {
-                return;
-            }
-            cancel(pending, "혼잡 단계 변경으로 무효화됨 (" + pending.getCongestionLevel() + " -> " + level + ")");
+        TrainingSession lockedSession = trainingSessionRepository.findByIdForUpdate(session.getId()).orElse(session);
+        MapEdge representativeEdge = affectedEdges.get(0);
+        List<RouteRecalculation> existingPending = routeRecalculationRepository
+                .findAllByTrainingSession_IdAndStatus(session.getId(), RecalculationStatus.PENDING);
+
+        if (triggerType == RecalculationTriggerType.ENDED) {
+            existingPending.forEach(pending -> cancel(pending, "혼잡 종료로 무효화됨"));
+            triggerRecovery(lockedSession, representativeEdge, level, cctvCode, density);
+            return;
         }
 
-        UUID floorId = triggerEdge.getFloor().getId();
+        boolean samePendingExists = existingPending.stream().anyMatch(pending ->
+                pending.getCctvCode().equals(cctvCode) && pending.getCongestionLevel() == level);
+        if (samePendingExists) {
+            return;
+        }
+        for (RouteRecalculation pending : existingPending) {
+            cancel(pending, "새 혼잡 판단으로 무효화됨");
+        }
+
+        UUID floorId = representativeEdge.getFloor().getId();
         // 현재 유효 경로는 항상 "시나리오 대표 startNode -> EXIT" 완전한 한 경로여야 하므로,
         // 혼잡 엣지의 fromNode가 아니라 시나리오의 대표 startNode에서 다시 계산한다.
-        MapNode representativeStart = session.getScenario().getStartNode();
+        MapNode representativeStart = lockedSession.getScenario().getStartNode();
         if (representativeStart == null) {
             log.warn("시나리오에 대표 startNode가 없어 재탐색 승인 대기 항목을 생성하지 않음: sessionId={}",
-                    session.getId());
+                    lockedSession.getId());
             return;
         }
         UUID startNodeId = representativeStart.getId();
 
-        RouteSnapshot previous = resolveActiveRoute(session, triggerEdge, floorId, startNodeId);
+        RouteSnapshot previous = resolveActiveRoute(lockedSession, floorId, startNodeId);
 
         EvacuationRoute candidate;
         try {
             candidate = evacuationRouteService.findShortestRoute(
-                    floorId, startNodeId, excludedEdgesFor(triggerEdge, level), weightMultipliersFor(triggerEdge, level));
+                    floorId, startNodeId, excludedEdgesFor(affectedEdges, level),
+                    weightMultipliersFor(affectedEdges, level));
         } catch (ApiException exception) {
             if (exception.getErrorCode() == EvacuationErrorCode.EVACUATION_ROUTE_NOT_FOUND) {
                 log.warn("우회 경로를 찾을 수 없어 재탐색 승인 대기 항목을 생성하지 않음: sessionId={}, edgeId={}",
-                        session.getId(), triggerEdge.getId());
+                        lockedSession.getId(), representativeEdge.getId());
                 return;
             }
             throw exception;
@@ -117,21 +125,29 @@ public class RouteRecalculationService {
             return;
         }
 
-        savePending(session, triggerEdge, cctvCode, triggerType, level, density, previous, candidate, candidateNodeIds);
+        savePending(lockedSession, representativeEdge, cctvCode, triggerType, level, density,
+                previous, candidate, candidateNodeIds);
     }
 
     // VERY_CROWDED만 완전 제외한다 - 배율만으로는 다른 대안이 훨씬 나쁠 때 여전히 그 엣지를
     // 통과하는 경로가 선택될 수 있어, "사실상 통행 불가"를 표현하려면 그래프에서 아예 빼야 한다.
-    private Set<UUID> excludedEdgesFor(MapEdge triggerEdge, CongestionLevel level) {
-        return level == CongestionLevel.VERY_CROWDED ? Set.of(triggerEdge.getId()) : Set.of();
+    private Set<UUID> excludedEdgesFor(List<MapEdge> affectedEdges, CongestionLevel level) {
+        return level == CongestionLevel.VERY_CROWDED
+                ? affectedEdges.stream().map(MapEdge::getId).collect(Collectors.toSet())
+                : Set.of();
     }
 
-    private Map<UUID, Double> weightMultipliersFor(MapEdge triggerEdge, CongestionLevel level) {
-        return switch (level) {
-            case CAUTION -> Map.of(triggerEdge.getId(), CAUTION_WEIGHT_MULTIPLIER);
-            case CROWDED -> Map.of(triggerEdge.getId(), CROWDED_WEIGHT_MULTIPLIER);
-            case NORMAL, VERY_CROWDED -> Map.of();
+    private Map<UUID, Double> weightMultipliersFor(List<MapEdge> affectedEdges, CongestionLevel level) {
+        double multiplier = switch (level) {
+            case CAUTION -> CAUTION_WEIGHT_MULTIPLIER;
+            case CROWDED -> CROWDED_WEIGHT_MULTIPLIER;
+            case NORMAL, VERY_CROWDED -> 1.0;
         };
+        if (multiplier == 1.0) {
+            return Map.of();
+        }
+        return affectedEdges.stream().collect(Collectors.toMap(
+                MapEdge::getId, edge -> multiplier, (left, right) -> left));
     }
 
     // 혼잡 종료 시 정상(트리거 엣지를 포함한 직행) 경로로의 복구 후보를 계산한다.
@@ -139,8 +155,8 @@ public class RouteRecalculationService {
     private void triggerRecovery(TrainingSession session, MapEdge triggerEdge, CongestionLevel level,
             String cctvCode, double density) {
         Optional<RouteRecalculation> latestApproved = routeRecalculationRepository
-                .findFirstByTrainingSession_IdAndTriggerEdge_IdAndStatusOrderByResolvedAtDesc(
-                        session.getId(), triggerEdge.getId(), RecalculationStatus.APPROVED);
+                .findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(
+                        session.getId(), RecalculationStatus.APPROVED);
         if (latestApproved.isEmpty()) {
             return;
         }
@@ -180,12 +196,12 @@ public class RouteRecalculationService {
         trainingEventPublisher.publishRouteRecalculationRequestedAfterCommit(recalculation);
     }
 
-    // "현재 활성 경로"를 별도로 저장하지 않으므로, 가장 최근 승인된 경로가 있으면 그것을,
-    // 없으면 트리거 엣지를 그대로 포함한 정상(직행) 경로를 활성 경로로 취급한다.
-    private RouteSnapshot resolveActiveRoute(TrainingSession session, MapEdge triggerEdge, UUID floorId, UUID startNodeId) {
+    // "현재 활성 경로"를 별도로 저장하지 않으므로, 세션에서 가장 최근 승인된 경로가 있으면 그것을,
+    // 없으면 대표 시작점 기준 정상(직행) 경로를 활성 경로로 취급한다.
+    private RouteSnapshot resolveActiveRoute(TrainingSession session, UUID floorId, UUID startNodeId) {
         Optional<RouteRecalculation> latestApproved = routeRecalculationRepository
-                .findFirstByTrainingSession_IdAndTriggerEdge_IdAndStatusOrderByResolvedAtDesc(
-                        session.getId(), triggerEdge.getId(), RecalculationStatus.APPROVED);
+                .findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(
+                        session.getId(), RecalculationStatus.APPROVED);
         if (latestApproved.isPresent()) {
             RouteRecalculation approved = latestApproved.get();
             return new RouteSnapshot(approved.getRecalculatedNodeIds(), approved.getTotalWeight());
@@ -319,11 +335,26 @@ public class RouteRecalculationService {
 
     @Transactional
     public RouteRecalculationResponse approve(UUID recalculationId, String approverEmail) {
-        RouteRecalculation recalculation = findOrThrow(recalculationId, approverEmail);
+        String schoolName = schoolContextService.getSchoolName(approverEmail);
+        UUID sessionId = routeRecalculationRepository
+                .findTrainingSessionIdByIdAndSchoolName(recalculationId, schoolName)
+                .orElseThrow(() -> new ApiException(EvacuationErrorCode.ROUTE_RECALCULATION_NOT_FOUND));
+        trainingSessionRepository.findByIdForUpdate(sessionId)
+                .orElseThrow(() -> new ApiException(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND));
+
+        RouteRecalculation recalculation = routeRecalculationRepository
+                .findByIdAndTrainingSession_Scenario_Building_SchoolName(recalculationId, schoolName)
+                .orElseThrow(() -> new ApiException(EvacuationErrorCode.ROUTE_RECALCULATION_NOT_FOUND));
         validatePending(recalculation);
         User approver = findUserOrThrow(approverEmail);
+        List<RouteRecalculation> siblingPending = routeRecalculationRepository
+                .findAllByTrainingSession_IdAndStatus(
+                        sessionId, RecalculationStatus.PENDING);
 
         recalculation.approve(Instant.now(), approver);
+        siblingPending.stream()
+                .filter(pending -> !pending.getId().equals(recalculation.getId()))
+                .forEach(pending -> cancel(pending, "다른 경로 승인으로 무효화됨"));
         trainingEventPublisher.publishEvacuationRouteUpdatedAfterCommit(recalculation);
         ioTLightService.applyRouteGuidance(recalculation.getRecalculatedNodeIds());
 

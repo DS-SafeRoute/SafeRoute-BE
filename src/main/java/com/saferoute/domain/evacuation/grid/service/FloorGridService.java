@@ -38,6 +38,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class FloorGridService {
 
     private static final long MAX_GRID_CELL_COUNT = 1_000_000L; // 테스트 후 값 수정
+    private static final double MIN_CELL_SIZE_METER = 0.001; // 0.1cm
 
     private final FloorRepository floorRepository;
     private final FloorGridCellRepository floorGridCellRepository;
@@ -91,13 +92,15 @@ public class FloorGridService {
 
         validateFloorReady(floor);
 
-        long columnsLong = (long) Math.ceil(floor.getRealWidth() / request.cellSizeMeter());
-        long rowsLong = (long) Math.ceil(floor.getRealHeight() / request.cellSizeMeter());
+        double cellSizeMeter = request.cellSizeInMeters();
+        validateCellSize(cellSizeMeter);
+
+        long columnsLong = calculateGridDimension(floor.getRealWidth(), cellSizeMeter);
+        long rowsLong = calculateGridDimension(floor.getRealHeight(), cellSizeMeter);
         validateGridSize(rowsLong, columnsLong);
 
-        int columns = (int) Math.ceil(floor.getRealWidth() / request.cellSizeMeter());
-        int rows = (int) Math.ceil(floor.getRealHeight() / request.cellSizeMeter());
-        validateGridSize(rows, columns);
+        int columns = Math.toIntExact(columnsLong);
+        int rows = Math.toIntExact(rowsLong);
 
         // 기존 그리드 셀 삭제 -> DB FK CASCADE로 NodeGridCell, MapEdgeGridCell 함께 삭제
         floorGridCellRepository.deleteAllByFloorId(floorId);
@@ -109,7 +112,7 @@ public class FloorGridService {
         // (유도등은 CustomDeviceType.GUIDE_LIGHT라 대상에서 제외, 그대로 유지)
         mapNodeRepository.deleteAllByFloorIdAndCustomDeviceType(floorId, CustomDeviceType.CCTV);
 
-        List<FloorGridCell> cells = buildCells(floor, rows, columns, request);
+        List<FloorGridCell> cells = buildCells(floor, rows, columns, cellSizeMeter);
         floorGridCellRepository.saveAll(cells);
 
         // 살아남은 노드(STAIR/ROOM/HALLWAY/DOOR/EXIT, 유도등) 새 그리드에 재매핑
@@ -121,7 +124,7 @@ public class FloorGridService {
         remapEdgesToGrid(edges, cells, rows, columns);
 
         // Floor에 최종 그리드 설정 반영
-        floor.applyGridCellConfig(request.cellSizeMeter(), rows, columns);
+        floor.applyGridCellConfig(cellSizeMeter, rows, columns);
         Floor savedFloor = floorRepository.save(floor);
 
         return FloorGridResponse.of(savedFloor);
@@ -129,26 +132,44 @@ public class FloorGridService {
 
     private void validateFloorReady(Floor floor) {
         if (floor.getSegmentationStatus() != SegmentationStatus.DONE
-                || floor.getRealWidth() == null || floor.getRealHeight() == null) {
+                || floor.getRealWidth() == null || floor.getRealHeight() == null
+                || !Double.isFinite(floor.getRealWidth()) || !Double.isFinite(floor.getRealHeight())
+                || floor.getRealWidth() <= 0 || floor.getRealHeight() <= 0) {
             throw new ApiException(GridErrorCode.FLOOR_NOT_READY_FOR_GRID);
         }
+    }
+
+    private void validateCellSize(double cellSizeMeter) {
+        if (!Double.isFinite(cellSizeMeter) || cellSizeMeter < MIN_CELL_SIZE_METER) {
+            throw new ApiException(GridErrorCode.INVALID_CELL_SIZE);
+        }
+    }
+
+    private long calculateGridDimension(double realLengthMeter, double cellSizeMeter) {
+        double dimension = Math.ceil(realLengthMeter / cellSizeMeter);
+        if (!Double.isFinite(dimension) || dimension <= 0) {
+            throw new ApiException(GridErrorCode.INVALID_CELL_SIZE);
+        }
+        if (dimension > MAX_GRID_CELL_COUNT) {
+            throw new ApiException(GridErrorCode.TOO_MANY_GRID_CELLS);
+        }
+        return (long) dimension;
     }
 
     private void validateGridSize(long rows, long columns) {
         if (rows <= 0 || columns <= 0) {
             throw new ApiException(GridErrorCode.INVALID_CELL_SIZE);
         }
-        long totalCells = rows * columns;
-        if (totalCells > MAX_GRID_CELL_COUNT) {
+        if (rows > MAX_GRID_CELL_COUNT / columns) {
             throw new ApiException(GridErrorCode.TOO_MANY_GRID_CELLS);
         }
     }
 
     private List<FloorGridCell> buildCells(Floor floor, int rows, int columns,
-                                           CreateOrUpdateFloorGridRequest request) {
+                                           double cellSizeMeter) {
         List<FloorGridCell> cells = new ArrayList<>(rows * columns);
-        double cellWidthNorm = request.cellSizeMeter() / floor.getRealWidth();
-        double cellHeightNorm = request.cellSizeMeter() / floor.getRealHeight();
+        double cellWidthNorm = cellSizeMeter / floor.getRealWidth();
+        double cellHeightNorm = cellSizeMeter / floor.getRealHeight();
 
         for (int row = 0; row < rows; row++) {
             for (int col = 0; col < columns; col++) {

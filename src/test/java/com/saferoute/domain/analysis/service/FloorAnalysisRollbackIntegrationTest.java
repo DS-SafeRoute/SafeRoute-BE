@@ -65,7 +65,7 @@ class FloorAnalysisRollbackIntegrationTest {
     void gridCellMismatch_rollsBackGraphReplacementAndKeepsFailedStatus() {
         UUID floorId = transactionTemplate.execute(status -> createFloorWithExistingGraph());
         floorGridService.createOrRegenerateGrid(
-                floorId, new CreateOrUpdateFloorGridRequest(0.5));
+                floorId, new CreateOrUpdateFloorGridRequest(50.0));
 
         transactionTemplate.executeWithoutResult(status -> {
             FloorGridCell oneCell = floorGridCellRepository.findAllByFloor_Id(floorId).get(0);

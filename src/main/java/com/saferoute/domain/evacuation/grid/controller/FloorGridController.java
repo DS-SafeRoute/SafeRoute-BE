@@ -53,8 +53,9 @@ public class FloorGridController {
     @Operation(
             summary = "층 그리드 생성/재생성",
             description = """
-                    지정한 층에 cellSizeMeter(미터 단위 셀 한 변 길이) 기준으로 격자 그리드를
-                    새로 생성합니다. 이미 그리드가 존재하는 층에 다시 호출하면 최초 생성과 동일한
+                    지정한 층에 cellSizeMeter(센티미터 단위 셀 한 변 길이) 기준으로 격자 그리드를
+                    새로 생성합니다. 백엔드는 요청 경계에서 미터로 변환합니다. 이미 그리드가
+                    존재하는 층에 다시 호출하면 최초 생성과 동일한
                     로직으로 전체를 재생성합니다(부분 수정 불가).
 
                     재생성 시 기존 그리드 셀은 모두 삭제되고(연결된 NodeGridCell/MapEdgeGridCell도
@@ -65,8 +66,9 @@ public class FloorGridController {
 
                     도면 세그멘테이션이 완료(DONE) 상태이고 실측 가로/세로 값(realWidth/
                     realHeight)이 설정되어 있어야 하며, 그렇지 않으면 오류가 발생합니다. 계산된
-                    셀 개수가 너무 많거나(rows × columns 상한 초과) cellSizeMeter로 계산한
-                    행/열 수가 0 이하이면(비정상적으로 큰 셀 크기) 오류가 발생합니다.
+                    cellSizeMeter는 유한한 0.1cm 이상의 값이어야 합니다. 미터 변환 또는 행·열 계산
+                    결과가 유한하지 않거나 0 이하인 경우, 혹은 rows × columns가 상한을 초과하면
+                    오류가 발생합니다.
                     """
     )
     @PutMapping

@@ -55,7 +55,7 @@ class MapGraphServiceIntegrationTest {
         floor.updateSegmentationStatus(SegmentationStatus.DONE);
         floor.upload(10.0, 10.0, "floors/test-map.png");
         floorRepository.save(floor);
-        floorGridService.createOrRegenerateGrid(floor.getId(), new CreateOrUpdateFloorGridRequest(0.5));
+        floorGridService.createOrRegenerateGrid(floor.getId(), new CreateOrUpdateFloorGridRequest(50.0));
 
         MapNode stair = mapNodeJpaRepository.save(
                 MapNode.create(floor, "STAIR_A", NodeType.STAIR, "계단A", 0.3, 0.3, false));

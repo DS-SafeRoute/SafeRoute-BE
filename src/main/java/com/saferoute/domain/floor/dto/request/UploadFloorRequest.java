@@ -11,4 +11,13 @@ public record UploadFloorRequest(
     @NotNull MultipartFile file
 ) {
 
+    private static final double CENTIMETERS_PER_METER = 100.0;
+
+    public double realWidthMeter() {
+        return realWidth / CENTIMETERS_PER_METER;
+    }
+
+    public double realHeightMeter() {
+        return realHeight / CENTIMETERS_PER_METER;
+    }
 }

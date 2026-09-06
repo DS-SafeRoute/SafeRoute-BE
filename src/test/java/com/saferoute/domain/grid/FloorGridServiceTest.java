@@ -28,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.evacuation.graph.entity.NodeType;
 import com.saferoute.global.api.exception.ApiException;
+import com.saferoute.global.api.error.GridErrorCode;
 
 @SpringBootTest
 @Transactional // 테스트마다 롤백
@@ -68,7 +69,7 @@ class FloorGridServiceTest {
     @Test
     void createGrid_calculatesCorrectRowAndColumnCount() {
         var response = floorGridService.createOrRegenerateGrid(
-                floor.getId(), new CreateOrUpdateFloorGridRequest(1.0));
+                floor.getId(), new CreateOrUpdateFloorGridRequest(100.0));
 
         assertThat(response.rows()).isEqualTo(30);   // ceil(30 / 1.0)
         assertThat(response.columns()).isEqualTo(40); // ceil(40 / 1.0)
@@ -86,7 +87,7 @@ class FloorGridServiceTest {
         mapNodeRepository.save(cctv);
         mapNodeRepository.save(light);
 
-        floorGridService.createOrRegenerateGrid(floor.getId(), new CreateOrUpdateFloorGridRequest(1.0));
+        floorGridService.createOrRegenerateGrid(floor.getId(), new CreateOrUpdateFloorGridRequest(100.0));
 
         assertThat(mapNodeRepository.findById(cctv.getId())).isEmpty();
         assertThat(mapNodeRepository.findById(light.getId())).isPresent();
@@ -97,7 +98,7 @@ class FloorGridServiceTest {
         UserZone zone = UserZone.create(floor, "3층 앞 복도");
         userZoneRepository.save(zone);
 
-        floorGridService.createOrRegenerateGrid(floor.getId(), new CreateOrUpdateFloorGridRequest(1.0));
+        floorGridService.createOrRegenerateGrid(floor.getId(), new CreateOrUpdateFloorGridRequest(100.0));
 
         assertThat(userZoneRepository.findAllByFloor_Id(floor.getId())).isEmpty();
     }
@@ -107,7 +108,7 @@ class FloorGridServiceTest {
         MapNode stair = MapNode.create(floor, "stair_1", NodeType.STAIR, "계단", 0.1, 0.1, false);
         mapNodeRepository.save(stair);
 
-        floorGridService.createOrRegenerateGrid(floor.getId(), new CreateOrUpdateFloorGridRequest(1.0));
+        floorGridService.createOrRegenerateGrid(floor.getId(), new CreateOrUpdateFloorGridRequest(100.0));
 
         var mapping = nodeGridCellRepository.findByNode_Id(stair.getId());
         assertThat(mapping).isPresent();
@@ -123,7 +124,7 @@ class FloorGridServiceTest {
 
         assertThatThrownBy(() ->
                 floorGridService.createOrRegenerateGrid(pendingFloor.getId(),
-                        new CreateOrUpdateFloorGridRequest(1.0))
+                        new CreateOrUpdateFloorGridRequest(100.0))
         ).isInstanceOf(ApiException.class);
     }
 
@@ -131,13 +132,32 @@ class FloorGridServiceTest {
     void createGrid_throwsWhenCellSizeTooSmall() {
         assertThatThrownBy(() ->
                 floorGridService.createOrRegenerateGrid(floor.getId(),
-                        new CreateOrUpdateFloorGridRequest(0.0001))
-        ).isInstanceOf(ApiException.class);
+                        new CreateOrUpdateFloorGridRequest(0.1))
+        ).isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", GridErrorCode.TOO_MANY_GRID_CELLS);
+    }
+
+    @Test
+    void createGrid_rejectsNonFiniteCellSize() {
+        assertThatThrownBy(() ->
+                floorGridService.createOrRegenerateGrid(floor.getId(),
+                        new CreateOrUpdateFloorGridRequest(Double.POSITIVE_INFINITY))
+        ).isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", GridErrorCode.INVALID_CELL_SIZE);
+    }
+
+    @Test
+    void createGrid_rejectsCellSizeBelowMinimum() {
+        assertThatThrownBy(() ->
+                floorGridService.createOrRegenerateGrid(floor.getId(),
+                        new CreateOrUpdateFloorGridRequest(0.09))
+        ).isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", GridErrorCode.INVALID_CELL_SIZE);
     }
 
     @Test
     void createGrid_persistsGridConfigToDatabase() {
-        floorGridService.createOrRegenerateGrid(floor.getId(), new CreateOrUpdateFloorGridRequest(1.0));
+        floorGridService.createOrRegenerateGrid(floor.getId(), new CreateOrUpdateFloorGridRequest(100.0));
 
         Floor reloaded = floorRepository.findById(floor.getId()).orElseThrow();
         assertThat(reloaded.getGridCellSizeMeter()).isEqualTo(1.0);
@@ -148,7 +168,7 @@ class FloorGridServiceTest {
     @Test
     void remapGraphToExistingGrid_mapsNodesAndEdgesCreatedAfterGrid() {
         floorGridService.createOrRegenerateGrid(
-                floor.getId(), new CreateOrUpdateFloorGridRequest(1.0));
+                floor.getId(), new CreateOrUpdateFloorGridRequest(100.0));
 
         MapNode from = mapNodeRepository.save(
                 MapNode.create(floor, "hallway_a", NodeType.HALLWAY, "복도 A", 0.1, 0.5, false));
@@ -169,7 +189,7 @@ class FloorGridServiceTest {
     @Test
     void getGridCells_returnsRequestedPageOnly() {
         floorGridService.createOrRegenerateGrid(
-                floor.getId(), new CreateOrUpdateFloorGridRequest(1.0));
+                floor.getId(), new CreateOrUpdateFloorGridRequest(100.0));
 
         var firstPage = floorGridService.getGridCells(floor.getId(), 0, 100);
 
