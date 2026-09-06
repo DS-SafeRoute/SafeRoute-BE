@@ -28,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.evacuation.graph.entity.NodeType;
 import com.saferoute.global.api.exception.ApiException;
+import com.saferoute.global.api.error.GridErrorCode;
 
 @SpringBootTest
 @Transactional // 테스트마다 롤백
@@ -131,8 +132,27 @@ class FloorGridServiceTest {
     void createGrid_throwsWhenCellSizeTooSmall() {
         assertThatThrownBy(() ->
                 floorGridService.createOrRegenerateGrid(floor.getId(),
-                        new CreateOrUpdateFloorGridRequest(0.01))
-        ).isInstanceOf(ApiException.class);
+                        new CreateOrUpdateFloorGridRequest(0.1))
+        ).isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", GridErrorCode.TOO_MANY_GRID_CELLS);
+    }
+
+    @Test
+    void createGrid_rejectsNonFiniteCellSize() {
+        assertThatThrownBy(() ->
+                floorGridService.createOrRegenerateGrid(floor.getId(),
+                        new CreateOrUpdateFloorGridRequest(Double.POSITIVE_INFINITY))
+        ).isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", GridErrorCode.INVALID_CELL_SIZE);
+    }
+
+    @Test
+    void createGrid_rejectsCellSizeBelowMinimum() {
+        assertThatThrownBy(() ->
+                floorGridService.createOrRegenerateGrid(floor.getId(),
+                        new CreateOrUpdateFloorGridRequest(0.09))
+        ).isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", GridErrorCode.INVALID_CELL_SIZE);
     }
 
     @Test

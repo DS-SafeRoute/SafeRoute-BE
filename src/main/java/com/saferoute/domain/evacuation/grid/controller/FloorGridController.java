@@ -66,8 +66,9 @@ public class FloorGridController {
 
                     도면 세그멘테이션이 완료(DONE) 상태이고 실측 가로/세로 값(realWidth/
                     realHeight)이 설정되어 있어야 하며, 그렇지 않으면 오류가 발생합니다. 계산된
-                    셀 개수가 너무 많거나(rows × columns 상한 초과) cellSizeMeter를 미터로 변환해 계산한
-                    행/열 수가 0 이하이면(비정상적으로 큰 셀 크기) 오류가 발생합니다.
+                    cellSizeMeter는 유한한 0.1cm 이상의 값이어야 합니다. 미터 변환 또는 행·열 계산
+                    결과가 유한하지 않거나 0 이하인 경우, 혹은 rows × columns가 상한을 초과하면
+                    오류가 발생합니다.
                     """
     )
     @PutMapping
