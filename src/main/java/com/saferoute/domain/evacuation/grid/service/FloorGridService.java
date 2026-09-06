@@ -91,12 +91,12 @@ public class FloorGridService {
 
         validateFloorReady(floor);
 
-        long columnsLong = (long) Math.ceil(floor.getRealWidth() / request.cellSizeMeter());
-        long rowsLong = (long) Math.ceil(floor.getRealHeight() / request.cellSizeMeter());
+        long columnsLong = (long) Math.ceil(floor.getRealWidth() / request.cellSizeInMeters());
+        long rowsLong = (long) Math.ceil(floor.getRealHeight() / request.cellSizeInMeters());
         validateGridSize(rowsLong, columnsLong);
 
-        int columns = (int) Math.ceil(floor.getRealWidth() / request.cellSizeMeter());
-        int rows = (int) Math.ceil(floor.getRealHeight() / request.cellSizeMeter());
+        int columns = (int) Math.ceil(floor.getRealWidth() / request.cellSizeInMeters());
+        int rows = (int) Math.ceil(floor.getRealHeight() / request.cellSizeInMeters());
         validateGridSize(rows, columns);
 
         // 기존 그리드 셀 삭제 -> DB FK CASCADE로 NodeGridCell, MapEdgeGridCell 함께 삭제
@@ -121,7 +121,7 @@ public class FloorGridService {
         remapEdgesToGrid(edges, cells, rows, columns);
 
         // Floor에 최종 그리드 설정 반영
-        floor.applyGridCellConfig(request.cellSizeMeter(), rows, columns);
+        floor.applyGridCellConfig(request.cellSizeInMeters(), rows, columns);
         Floor savedFloor = floorRepository.save(floor);
 
         return FloorGridResponse.of(savedFloor);
@@ -147,8 +147,8 @@ public class FloorGridService {
     private List<FloorGridCell> buildCells(Floor floor, int rows, int columns,
                                            CreateOrUpdateFloorGridRequest request) {
         List<FloorGridCell> cells = new ArrayList<>(rows * columns);
-        double cellWidthNorm = request.cellSizeMeter() / floor.getRealWidth();
-        double cellHeightNorm = request.cellSizeMeter() / floor.getRealHeight();
+        double cellWidthNorm = request.cellSizeInMeters() / floor.getRealWidth();
+        double cellHeightNorm = request.cellSizeInMeters() / floor.getRealHeight();
 
         for (int row = 0; row < rows; row++) {
             for (int col = 0; col < columns; col++) {
