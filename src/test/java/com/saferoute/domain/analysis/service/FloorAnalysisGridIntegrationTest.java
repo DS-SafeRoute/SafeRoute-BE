@@ -68,7 +68,7 @@ class FloorAnalysisGridIntegrationTest {
         floorRepository.save(floor);
 
         floorGridService.createOrRegenerateGrid(
-                floor.getId(), new CreateOrUpdateFloorGridRequest(0.5));
+                floor.getId(), new CreateOrUpdateFloorGridRequest(50.0));
         List<java.util.UUID> gridCellIdsBeforeAnalysis = floorGridCellRepository
                 .findAllByFloor_Id(floor.getId()).stream()
                 .map(cell -> cell.getId())
