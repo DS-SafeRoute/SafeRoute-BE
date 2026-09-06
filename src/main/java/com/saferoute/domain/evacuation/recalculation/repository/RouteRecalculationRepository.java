@@ -9,19 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface RouteRecalculationRepository extends JpaRepository<RouteRecalculation, UUID> {
 
-    // Pi가 혼잡 이벤트를 짧은 주기로 반복 전송하므로, 같은 세션+엣지에 대해
-    // 이미 PENDING이 있으면 그 요청을 조회해 레벨이 같으면 무시하고, 다르면 취소 후 새로 만든다.
-    Optional<RouteRecalculation> findByTrainingSession_IdAndTriggerEdge_IdAndStatus(
-            UUID trainingSessionId, UUID triggerEdgeId, RecalculationStatus status);
-
-    // 같은 세션+엣지에서 가장 최근에 승인된 경로 - "현재 활성 경로"의 대용으로 쓴다
-    // (이 시스템엔 활성 경로를 별도로 저장하는 개념이 없음).
-    Optional<RouteRecalculation> findFirstByTrainingSession_IdAndTriggerEdge_IdAndStatusOrderByResolvedAtDesc(
-            UUID trainingSessionId, UUID triggerEdgeId, RecalculationStatus status);
-
-    // 세션 전체에서(트리거 엣지 무관) 가장 최근에 승인된 경로 - "지금 안내 중인 경로" 조회(GET
-    // /api/v1/sessions/{sessionId}/current-route)에서 사용. 없으면 호출부가 시나리오의
-    // startNodeId 기준 최단 경로로 대체한다.
+    // 세션 전체에서 가장 최근에 승인된 경로를 현재 활성 경로로 사용한다.
     Optional<RouteRecalculation> findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(
             UUID trainingSessionId, RecalculationStatus status);
 

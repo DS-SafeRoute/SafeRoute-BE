@@ -2,6 +2,7 @@ package com.saferoute.domain.training.repository;
 
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
+import jakarta.persistence.LockModeType;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
@@ -10,10 +11,15 @@ import java.util.Set;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface TrainingSessionRepository extends JpaRepository<TrainingSession, UUID> {
+
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("select s from TrainingSession s where s.id = :sessionId")
+  Optional<TrainingSession> findByIdForUpdate(@Param("sessionId") UUID sessionId);
 
   List<TrainingSession> findByStatusAndStartedAtBefore(TrainingStatus status, Instant threshold);
 

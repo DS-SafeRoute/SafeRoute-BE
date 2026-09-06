@@ -152,10 +152,10 @@ public class CongestionObservationService {
                                     + "sessionId={}, cctvCode={}, level={}",
                             session.getId(), cctv.getCode(), savedLevel
                     );
-                }
-                for (MapEdge edge : affectedEdges) {
+                } else {
                     routeRecalculationService.trigger(
-                            session, edge, savedLevel, RecalculationTriggerType.LEVEL_UP, cctv.getCode(), density);
+                            session, affectedEdges, savedLevel, RecalculationTriggerType.LEVEL_UP,
+                            cctv.getCode(), density);
                 }
             }
             publishAndCompleteAfterCommit(session.getId(), affectedEdges, saveResult.item(), processingOwner);

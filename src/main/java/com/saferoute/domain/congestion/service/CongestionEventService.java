@@ -118,10 +118,9 @@ public class CongestionEventService {
                                     + "sessionId={}, cctvCode={}, level={}, triggerType={}",
                             session.getId(), cctv.getCode(), savedLevel, triggerType
                     );
-                }
-                for (MapEdge edge : affectedEdges) {
+                } else {
                     routeRecalculationService.trigger(
-                            session, edge, savedLevel, triggerType, cctv.getCode(), density);
+                            session, affectedEdges, savedLevel, triggerType, cctv.getCode(), density);
                 }
             }
             publishAndCompleteAfterCommit(session.getId(), affectedEdges, saveResult.item());
