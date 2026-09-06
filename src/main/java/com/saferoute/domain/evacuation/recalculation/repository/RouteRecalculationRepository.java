@@ -6,8 +6,19 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface RouteRecalculationRepository extends JpaRepository<RouteRecalculation, UUID> {
+
+    @Query("""
+            select r.trainingSession.id
+            from RouteRecalculation r
+            where r.id = :id
+              and r.trainingSession.scenario.building.schoolName = :schoolName
+            """)
+    Optional<UUID> findTrainingSessionIdByIdAndSchoolName(
+            @Param("id") UUID id, @Param("schoolName") String schoolName);
 
     // 세션 전체에서 가장 최근에 승인된 경로를 현재 활성 경로로 사용한다.
     Optional<RouteRecalculation> findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(

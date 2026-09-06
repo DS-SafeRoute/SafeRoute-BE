@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -48,6 +49,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -95,9 +97,13 @@ class RouteRecalculationServiceTest {
     @BeforeEach
     void setUp() {
         session = mock(TrainingSession.class);
-        org.mockito.Mockito.lenient().when(session.getId()).thenReturn(UUID.randomUUID());
-        org.mockito.Mockito.lenient().when(trainingSessionRepository.findByIdForUpdate(session.getId()))
+        UUID sessionId = UUID.randomUUID();
+        org.mockito.Mockito.lenient().when(session.getId()).thenReturn(sessionId);
+        org.mockito.Mockito.lenient().when(trainingSessionRepository.findByIdForUpdate(sessionId))
                 .thenReturn(Optional.of(session));
+        org.mockito.Mockito.lenient().when(routeRecalculationRepository
+                .findTrainingSessionIdByIdAndSchoolName(any(), any()))
+                .thenReturn(Optional.of(sessionId));
         org.mockito.Mockito.lenient().when(schoolContextService.getSchoolName(MANAGER_EMAIL))
                 .thenReturn(SCHOOL_NAME);
 
@@ -436,6 +442,12 @@ class RouteRecalculationServiceTest {
         assertThat(recalculation.getResolvedBy()).isEqualTo(manager);
         verify(trainingEventPublisher, times(1)).publishEvacuationRouteUpdatedAfterCommit(recalculation);
         verify(ioTLightService, times(1)).applyRouteGuidance(recalculation.getRecalculatedNodeIds());
+        InOrder approvalOrder = inOrder(routeRecalculationRepository, trainingSessionRepository);
+        approvalOrder.verify(routeRecalculationRepository)
+                .findTrainingSessionIdByIdAndSchoolName(recalculation.getId(), SCHOOL_NAME);
+        approvalOrder.verify(trainingSessionRepository).findByIdForUpdate(session.getId());
+        approvalOrder.verify(routeRecalculationRepository)
+                .findByIdAndTrainingSession_Scenario_Building_SchoolName(recalculation.getId(), SCHOOL_NAME);
     }
 
     @Test

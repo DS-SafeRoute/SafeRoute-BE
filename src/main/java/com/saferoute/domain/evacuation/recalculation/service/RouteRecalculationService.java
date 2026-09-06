@@ -335,12 +335,21 @@ public class RouteRecalculationService {
 
     @Transactional
     public RouteRecalculationResponse approve(UUID recalculationId, String approverEmail) {
-        RouteRecalculation recalculation = findOrThrow(recalculationId, approverEmail);
+        String schoolName = schoolContextService.getSchoolName(approverEmail);
+        UUID sessionId = routeRecalculationRepository
+                .findTrainingSessionIdByIdAndSchoolName(recalculationId, schoolName)
+                .orElseThrow(() -> new ApiException(EvacuationErrorCode.ROUTE_RECALCULATION_NOT_FOUND));
+        trainingSessionRepository.findByIdForUpdate(sessionId)
+                .orElseThrow(() -> new ApiException(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND));
+
+        RouteRecalculation recalculation = routeRecalculationRepository
+                .findByIdAndTrainingSession_Scenario_Building_SchoolName(recalculationId, schoolName)
+                .orElseThrow(() -> new ApiException(EvacuationErrorCode.ROUTE_RECALCULATION_NOT_FOUND));
         validatePending(recalculation);
         User approver = findUserOrThrow(approverEmail);
         List<RouteRecalculation> siblingPending = routeRecalculationRepository
                 .findAllByTrainingSession_IdAndStatus(
-                        recalculation.getTrainingSession().getId(), RecalculationStatus.PENDING);
+                        sessionId, RecalculationStatus.PENDING);
 
         recalculation.approve(Instant.now(), approver);
         siblingPending.stream()
