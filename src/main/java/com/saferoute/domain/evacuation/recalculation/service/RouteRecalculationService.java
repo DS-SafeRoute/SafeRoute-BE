@@ -517,7 +517,11 @@ public class RouteRecalculationService {
                 .toList();
     }
 
-    @Transactional
+    // ROUTE_RECALCULATION_CROSSES_FIRE로 거부하는 경로에서 cancel()로 무효화까지 함께 한다
+    // (아래 참고). ApiException은 RuntimeException이라 기본 규칙대로면 그 cancel()까지 롤백돼
+    // 무효화가 그대로 사라지므로, 이 메서드에서는 ApiException을 롤백 대상에서 제외한다.
+    // 다른 예외 경로(NOT_FOUND 등)는 전부 그 이전에, 아무것도 변경하기 전에 발생하므로 영향 없다.
+    @Transactional(noRollbackFor = ApiException.class)
     public RouteRecalculationResponse approve(UUID recalculationId, String approverEmail) {
         String schoolName = schoolContextService.getSchoolName(approverEmail);
         UUID sessionId = routeRecalculationRepository
@@ -531,6 +535,10 @@ public class RouteRecalculationService {
                 .orElseThrow(() -> new ApiException(EvacuationErrorCode.ROUTE_RECALCULATION_NOT_FOUND));
         validatePending(recalculation);
         if (crossesCurrentFire(recalculation)) {
+            // 승인 거부로 끝내면 이 PENDING은 화재가 다시 번지기 전까지(=triggerForFireSpread가
+            // 다시 호출되기 전까지) 아무도 정리해주지 않아 승인 대기 목록에 그대로 남는다.
+            // 관리자가 놓치면 나중에 실수로 승인할 위험이 있으므로, 거부와 동시에 무효화한다.
+            cancel(recalculation, "화재 구간을 지나는 경로라 승인이 거부되어 무효화됨");
             throw new ApiException(EvacuationErrorCode.ROUTE_RECALCULATION_CROSSES_FIRE);
         }
         User approver = findUserOrThrow(approverEmail);
