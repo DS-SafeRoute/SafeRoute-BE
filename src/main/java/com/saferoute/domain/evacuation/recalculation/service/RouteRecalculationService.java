@@ -5,6 +5,10 @@ import com.saferoute.domain.device.service.IoTLightService;
 import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
+import com.saferoute.domain.evacuation.grid.entity.FloorGridCell;
+import com.saferoute.domain.evacuation.grid.entity.MapEdgeGridCell;
+import com.saferoute.domain.evacuation.grid.repository.FloorGridCellRepository;
+import com.saferoute.domain.evacuation.grid.repository.MapEdgeGridCellRepository;
 import com.saferoute.domain.evacuation.recalculation.dto.response.CurrentRouteResponse;
 import com.saferoute.domain.evacuation.recalculation.dto.response.RouteRecalculationDetailResponse;
 import com.saferoute.domain.evacuation.recalculation.dto.response.RouteRecalculationResponse;
@@ -26,6 +30,7 @@ import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -59,6 +64,8 @@ public class RouteRecalculationService {
     private final SchoolContextService schoolContextService;
     private final TrainingSessionRepository trainingSessionRepository;
     private final MapNodeJpaRepository mapNodeJpaRepository;
+    private final FloorGridCellRepository floorGridCellRepository;
+    private final MapEdgeGridCellRepository mapEdgeGridCellRepository;
 
     // 혼잡 감지로 트리거되는 우회 경로 재탐색.
     // - CCTV 한 대가 감시하는 모든 엣지를 한 번에 반영해 후보 경로 하나만 만든다.
@@ -138,8 +145,10 @@ public class RouteRecalculationService {
     //   이전 스텝에서 제외했던 구간이 다시 후보 경로에 섞여 들어가는 일이 없다.
     // - 혼잡과 달리 화재는 가중치가 아니라 항상 완전 제외(hard exclusion)로 처리한다.
     // - CongestionLevel/cctvCode/density 개념이 없으므로 별도 팩토리(createPendingForFireSpread)로 저장한다.
-    // - 기존 PENDING 무효화는 "새 후보를 실제로 저장하기 직전"에만 한다. 우회 경로를 못 찾거나
-    //   후보가 활성 경로와 같아 새로 저장할 게 없다면, 이미 제안돼있던 PENDING을 건드리지 않는다.
+    // - 기존 PENDING 중 이번에 새로 화재 구간이 된 엣지를 실제로 지나가는 건은, 새 대안 유무와
+    //   무관하게 즉시 무효화한다(관리자가 나중에 화재 통과 경로를 실수로 승인하는 일을 막기 위함).
+    //   화재와 무관한 나머지 PENDING은 "새 후보를 실제로 저장하기 직전"에만 무효화한다 - 우회
+    //   경로를 못 찾거나 후보가 활성 경로와 같아 새로 저장할 게 없다면 그대로 둔다.
     @Transactional
     public void triggerForFireSpread(TrainingSession session, List<MapEdge> affectedEdges) {
         if (affectedEdges.isEmpty()) {
@@ -148,6 +157,17 @@ public class RouteRecalculationService {
 
         TrainingSession lockedSession = trainingSessionRepository.findByIdForUpdate(session.getId()).orElse(session);
         MapEdge representativeEdge = affectedEdges.get(0);
+
+        List<RouteRecalculation> existingPending = routeRecalculationRepository
+                .findAllByTrainingSession_IdAndStatus(session.getId(), RecalculationStatus.PENDING);
+        List<RouteRecalculation> stillSafePending = new ArrayList<>();
+        for (RouteRecalculation pending : existingPending) {
+            if (crossesAnyEdge(pending.getRecalculatedNodeIds(), affectedEdges)) {
+                cancel(pending, "화재 확산으로 무효화됨");
+            } else {
+                stillSafePending.add(pending);
+            }
+        }
 
         UUID floorId = representativeEdge.getFloor().getId();
         MapNode representativeStart = lockedSession.getScenario().getStartNode();
@@ -178,9 +198,7 @@ public class RouteRecalculationService {
             return;
         }
 
-        List<RouteRecalculation> existingPending = routeRecalculationRepository
-                .findAllByTrainingSession_IdAndStatus(session.getId(), RecalculationStatus.PENDING);
-        for (RouteRecalculation pending : existingPending) {
+        for (RouteRecalculation pending : stillSafePending) {
             cancel(pending, "화재 확산으로 무효화됨");
         }
 
@@ -188,6 +206,45 @@ public class RouteRecalculationService {
                 lockedSession, representativeEdge, previous.nodeIds(), previous.totalWeight(),
                 candidateNodeIds, candidate.totalWeight()));
         trainingEventPublisher.publishRouteRecalculationRequestedAfterCommit(recalculation);
+    }
+
+    // nodeIds(순서대로 이어진 경로)가 edges 중 하나라도 연속된 두 노드로 포함하면 그 구간을
+    // 지나간다고 본다. 엣지 저장 방향과 실제 이동 방향이 다를 수 있어(양방향 통행) 순서 상관없이
+    // 두 노드 쌍이 일치하는지만 확인한다.
+    private boolean crossesAnyEdge(List<UUID> nodeIds, List<MapEdge> edges) {
+        if (nodeIds.size() < 2 || edges.isEmpty()) {
+            return false;
+        }
+        for (MapEdge edge : edges) {
+            UUID from = edge.getFromNode().getId();
+            UUID to = edge.getToNode().getId();
+            for (int i = 0; i < nodeIds.size() - 1; i++) {
+                UUID a = nodeIds.get(i);
+                UUID b = nodeIds.get(i + 1);
+                if ((a.equals(from) && b.equals(to)) || (a.equals(to) && b.equals(from))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    // 승인 시점 기준으로 그 재탐색이 제안한 경로가 현재 화재 구간을 지나는지 다시 확인한다.
+    // trigger()/triggerForFireSpread() 호출 이후에도 화재가 더 번질 수 있어, 승인 직전에
+    // 한 번 더 검증하지 않으면 관리자가 화재 통과 경로를 승인해버릴 수 있다.
+    private boolean crossesCurrentFire(RouteRecalculation recalculation) {
+        UUID floorId = recalculation.getTriggerEdge().getFloor().getId();
+        List<UUID> firedCellIds = floorGridCellRepository.findAllByFloor_IdAndIsFiredTrue(floorId).stream()
+                .map(FloorGridCell::getId)
+                .toList();
+        if (firedCellIds.isEmpty()) {
+            return false;
+        }
+        List<MapEdge> firedEdges = mapEdgeGridCellRepository.findAllByGridCell_IdIn(firedCellIds).stream()
+                .map(MapEdgeGridCell::getMapEdge)
+                .distinct()
+                .toList();
+        return crossesAnyEdge(recalculation.getRecalculatedNodeIds(), firedEdges);
     }
 
     // VERY_CROWDED만 완전 제외한다 - 배율만으로는 다른 대안이 훨씬 나쁠 때 여전히 그 엣지를
@@ -407,6 +464,9 @@ public class RouteRecalculationService {
                 .findByIdAndTrainingSession_Scenario_Building_SchoolName(recalculationId, schoolName)
                 .orElseThrow(() -> new ApiException(EvacuationErrorCode.ROUTE_RECALCULATION_NOT_FOUND));
         validatePending(recalculation);
+        if (crossesCurrentFire(recalculation)) {
+            throw new ApiException(EvacuationErrorCode.ROUTE_RECALCULATION_CROSSES_FIRE);
+        }
         User approver = findUserOrThrow(approverEmail);
         List<RouteRecalculation> siblingPending = routeRecalculationRepository
                 .findAllByTrainingSession_IdAndStatus(
