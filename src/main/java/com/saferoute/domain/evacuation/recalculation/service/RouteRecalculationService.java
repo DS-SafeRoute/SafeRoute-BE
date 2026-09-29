@@ -277,6 +277,14 @@ public class RouteRecalculationService {
         return firedEdgesForFloor(scenarioId, floorId).stream().map(MapEdge::getId).collect(Collectors.toSet());
     }
 
+    // firedEdgeIdsForFloor의 공개 버전. TrainingSessionService.start()가 발화점을 markFired()한
+    // 직후 계산하는 최초 안내 경로도 이 기준으로 화재 구간을 제외해야 한다(그러지 않으면 훈련
+    // 시작 직후부터 발화점을 지나는 경로가 유도등에 반영될 수 있다).
+    @Transactional(readOnly = true)
+    public Set<UUID> firedEdgeIds(UUID scenarioId, UUID floorId) {
+        return firedEdgeIdsForFloor(scenarioId, floorId);
+    }
+
     // 같은 층을 다른 시나리오가 동시에(RUNNING) 쓸 수 있어 FloorGridCell.isFired만으로는 화재가
     // "이 시나리오"의 것인지 구분할 수 없다 - 그 시나리오의 FireZone에 속한 셀이면서 동시에
     // 현재 실제로 isFired=true인 셀만 화재 구간으로 인정한다(FireZone은 세션 종료 뒤에도 이력으로

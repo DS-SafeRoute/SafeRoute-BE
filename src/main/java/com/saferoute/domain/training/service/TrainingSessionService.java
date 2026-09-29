@@ -36,6 +36,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -178,8 +179,12 @@ public class TrainingSessionService {
     // 훈련이 실제로 시작되는 시점에 최초 발화점 셀을 활성화한다.
     fireOrigins.forEach(origin -> origin.getGridCell().markFired());
 
+    // 방금 활성화한 발화점 구간은 최초 안내 경로 계산에서도 제외해야 한다. 그러지 않으면
+    // 훈련이 시작되자마자 발화점을 지나는 경로가 유도등에 그대로 반영될 수 있다.
+    Set<UUID> firedEdgeIds =
+        routeRecalculationService.firedEdgeIds(session.getScenario().getId(), startFloorId);
     EvacuationRoute initialRoute =
-        evacuationRouteService.findShortestRoute(startFloorId, startNode.getId());
+        evacuationRouteService.findShortestRoute(startFloorId, startNode.getId(), firedEdgeIds);
 
     session.start(Instant.now());
     session.getScenario().markInProgress();

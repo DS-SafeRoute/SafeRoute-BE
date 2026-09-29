@@ -3,6 +3,8 @@ package com.saferoute.domain.training.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anySet;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -331,7 +333,7 @@ class TrainingSessionServiceTest {
                 TrainingSession.create(TrainingStatus.SCHEDULED, Instant.now(), mock(User.class), scenario);
         ReflectionTestUtils.setField(session, "id", sessionId);
         given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME)).willReturn(Optional.of(session));
-        given(evacuationRouteService.findShortestRoute(floorId, startNodeId))
+        given(evacuationRouteService.findShortestRoute(eq(floorId), eq(startNodeId), anySet()))
                 .willReturn(new EvacuationRoute(List.of(startNode, exitNode), 12.0));
 
         trainingSessionService.start(sessionId, EMAIL);
@@ -342,6 +344,49 @@ class TrainingSessionServiceTest {
         verify(ioTLightService).applyRouteGuidance(List.of(startNodeId, exitNodeId));
         // 설정 단계에서는 isFired를 바꾸지 않으므로, 실제 화재 셀 활성화는 훈련 시작 시점에 일어나야 한다.
         verify(fireCell).markFired();
+    }
+
+    @Test
+    @DisplayName("훈련 시작 시 최초 경로는 방금 활성화한 발화점 구간을 제외하고 계산한다")
+    void start_excludesJustActivatedFireOriginEdgesFromInitialRoute() {
+        UUID scenarioId = UUID.randomUUID();
+        UUID floorId = UUID.randomUUID();
+        UUID startNodeId = UUID.randomUUID();
+        UUID exitNodeId = UUID.randomUUID();
+        UUID firedEdgeId = UUID.randomUUID();
+        MapNode startNode = mock(MapNode.class);
+        Floor floor = mock(Floor.class);
+        given(floor.getId()).willReturn(floorId);
+        given(startNode.getFloor()).willReturn(floor);
+        given(startNode.getId()).willReturn(startNodeId);
+        given(startNode.getType()).willReturn(NodeType.START);
+        MapNode exitNode = mock(MapNode.class);
+        given(exitNode.getId()).willReturn(exitNodeId);
+
+        TrainingScenario scenario = mock(TrainingScenario.class);
+        given(scenario.getId()).willReturn(scenarioId);
+        given(scenario.getStartNode()).willReturn(startNode);
+        FireZone fireOrigin = mock(FireZone.class);
+        FloorGridCell fireCell = mock(FloorGridCell.class);
+        given(fireOrigin.getFloorId()).willReturn(floorId);
+        given(fireOrigin.getGridCell()).willReturn(fireCell);
+        given(fireZoneRepository.findByScenario_IdAndIsManualAddTrue(scenarioId))
+                .willReturn(List.of(fireOrigin));
+        TrainingSession session =
+                TrainingSession.create(TrainingStatus.SCHEDULED, Instant.now(), mock(User.class), scenario);
+        ReflectionTestUtils.setField(session, "id", sessionId);
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME))
+                .willReturn(Optional.of(session));
+        given(routeRecalculationService.firedEdgeIds(scenarioId, floorId))
+                .willReturn(java.util.Set.of(firedEdgeId));
+        given(evacuationRouteService.findShortestRoute(floorId, startNodeId, java.util.Set.of(firedEdgeId)))
+                .willReturn(new EvacuationRoute(List.of(startNode, exitNode), 12.0));
+
+        trainingSessionService.start(sessionId, EMAIL);
+
+        assertThat(session.getStatus()).isEqualTo(TrainingStatus.RUNNING);
+        verify(evacuationRouteService).findShortestRoute(floorId, startNodeId, java.util.Set.of(firedEdgeId));
+        verify(ioTLightService).applyRouteGuidance(List.of(startNodeId, exitNodeId));
     }
 
     @Test
@@ -413,7 +458,7 @@ class TrainingSessionServiceTest {
                 TrainingSession.create(TrainingStatus.SCHEDULED, Instant.now(), mock(User.class), scenario);
         ReflectionTestUtils.setField(session, "id", sessionId);
         given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME)).willReturn(Optional.of(session));
-        given(evacuationRouteService.findShortestRoute(floorId, startNodeId))
+        given(evacuationRouteService.findShortestRoute(eq(floorId), eq(startNodeId), anySet()))
                 .willThrow(new ApiException(com.saferoute.global.api.error.EvacuationErrorCode.EVACUATION_ROUTE_NOT_FOUND));
 
         assertThatThrownBy(() -> trainingSessionService.start(sessionId, EMAIL))
