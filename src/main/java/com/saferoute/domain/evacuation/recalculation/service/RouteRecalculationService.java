@@ -156,7 +156,6 @@ public class RouteRecalculationService {
         }
 
         TrainingSession lockedSession = trainingSessionRepository.findByIdForUpdate(session.getId()).orElse(session);
-        MapEdge representativeEdge = affectedEdges.get(0);
 
         List<RouteRecalculation> existingPending = routeRecalculationRepository
                 .findAllByTrainingSession_IdAndStatus(session.getId(), RecalculationStatus.PENDING);
@@ -169,7 +168,7 @@ public class RouteRecalculationService {
             }
         }
 
-        UUID floorId = representativeEdge.getFloor().getId();
+        UUID floorId = affectedEdges.get(0).getFloor().getId();
         MapNode representativeStart = lockedSession.getScenario().getStartNode();
         if (representativeStart == null) {
             log.warn("시나리오에 대표 startNode가 없어 재탐색 승인 대기 항목을 생성하지 않음: sessionId={}",
@@ -179,6 +178,15 @@ public class RouteRecalculationService {
         UUID startNodeId = representativeStart.getId();
 
         RouteSnapshot previous = resolveActiveRoute(lockedSession, floorId, startNodeId);
+
+        // 지금 안내 중인 활성 경로가 이번에 새로 화재 구간이 된 엣지와 무관하면 다시 계산할 필요가
+        // 없다. 여기서 걸러내지 않으면, 화재와 무관한 곳에서 불이 나도(가중치/제외 없이 화재만
+        // 피한) 후보가 현재 활성 경로(예: 이미 승인된 혼잡 우회)와 달라져 버려서, 여전히 유효한
+        // 혼잡 우회를 원래의(다시 혼잡한) 직행 경로로 되돌리는 PENDING이 매 틱 반복 생성된다.
+        MapEdge representativeEdge = findCrossedEdge(previous.nodeIds(), affectedEdges).orElse(null);
+        if (representativeEdge == null) {
+            return;
+        }
 
         Set<UUID> excludedEdgeIds = affectedEdges.stream().map(MapEdge::getId).collect(Collectors.toSet());
         EvacuationRoute candidate;
@@ -212,8 +220,13 @@ public class RouteRecalculationService {
     // 지나간다고 본다. 엣지 저장 방향과 실제 이동 방향이 다를 수 있어(양방향 통행) 순서 상관없이
     // 두 노드 쌍이 일치하는지만 확인한다.
     private boolean crossesAnyEdge(List<UUID> nodeIds, List<MapEdge> edges) {
+        return findCrossedEdge(nodeIds, edges).isPresent();
+    }
+
+    // crossesAnyEdge와 같은 기준으로, 실제로 경로가 지나가는 첫 번째 엣지를 돌려준다.
+    private Optional<MapEdge> findCrossedEdge(List<UUID> nodeIds, List<MapEdge> edges) {
         if (nodeIds.size() < 2 || edges.isEmpty()) {
-            return false;
+            return Optional.empty();
         }
         for (MapEdge edge : edges) {
             UUID from = edge.getFromNode().getId();
@@ -222,11 +235,11 @@ public class RouteRecalculationService {
                 UUID a = nodeIds.get(i);
                 UUID b = nodeIds.get(i + 1);
                 if ((a.equals(from) && b.equals(to)) || (a.equals(to) && b.equals(from))) {
-                    return true;
+                    return Optional.of(edge);
                 }
             }
         }
-        return false;
+        return Optional.empty();
     }
 
     // 승인 시점 기준으로 그 재탐색이 제안한 경로가 현재 화재 구간을 지나는지 다시 확인한다.

@@ -100,6 +100,8 @@ class RouteRecalculationServiceTest {
     private TrainingSession session;
     private TrainingScenario scenario;
     private MapEdge triggerEdge;
+    private MapNode triggerEdgeFromNode;
+    private MapNode triggerEdgeToNode;
     private MapNode representativeStart;
     private UUID floorId;
     private UUID startNodeId;
@@ -130,9 +132,21 @@ class RouteRecalculationServiceTest {
         org.mockito.Mockito.lenient().when(scenario.getStartNode()).thenReturn(representativeStart);
         org.mockito.Mockito.lenient().when(session.getScenario()).thenReturn(scenario);
 
-        triggerEdge = MapEdge.create(floor, mock(MapNode.class), mock(MapNode.class), 5.0, true);
+        triggerEdgeFromNode = MapNode.create(floor, "FROM", NodeType.HALLWAY, "FROM", 0, 0, false);
+        ReflectionTestUtils.setField(triggerEdgeFromNode, "id", UUID.randomUUID());
+        triggerEdgeToNode = MapNode.create(floor, "TO", NodeType.HALLWAY, "TO", 0, 0, false);
+        ReflectionTestUtils.setField(triggerEdgeToNode, "id", UUID.randomUUID());
+        triggerEdge = MapEdge.create(floor, triggerEdgeFromNode, triggerEdgeToNode, 5.0, true);
         ReflectionTestUtils.setField(triggerEdge, "id", UUID.randomUUID());
         ReflectionTestUtils.setField(triggerEdge, "floor", floor);
+    }
+
+    // triggerForFireSpread()가 이제 "활성 경로가 실제로 화재 엣지를 지나는지"부터 확인하므로,
+    // 화재 재탐색 관련 테스트는 활성(직행) 경로가 triggerEdge의 두 노드를 연속으로 지나도록
+    // 세팅해야 그 다음 단계(우회 경로 계산)까지 도달한다.
+    private void givenDirectRouteCrossesTriggerEdge() {
+        given(evacuationRouteService.findShortestRoute(floorId, startNodeId))
+                .willReturn(new EvacuationRoute(List.of(triggerEdgeFromNode, triggerEdgeToNode), 8.0));
     }
 
     private void givenNoExistingPending() {
@@ -361,7 +375,7 @@ class RouteRecalculationServiceTest {
     void triggerForFireSpread_excludesAllAffectedEdges() {
         givenNoExistingPending();
         givenNoApprovedHistory();
-        givenNoDirectRoute();
+        givenDirectRouteCrossesTriggerEdge();
 
         MapNode exitNode = MapNode.create(mock(Floor.class), "STAIR1", NodeType.STAIR, "STAIR1", 0, 0, true);
         ReflectionTestUtils.setField(exitNode, "id", UUID.randomUUID());
@@ -397,7 +411,7 @@ class RouteRecalculationServiceTest {
         given(routeRecalculationRepository.findAllByTrainingSession_IdAndStatus(
                 session.getId(), RecalculationStatus.PENDING)).willReturn(List.of(existing));
         givenNoApprovedHistory();
-        givenNoDirectRoute();
+        givenDirectRouteCrossesTriggerEdge();
 
         MapNode exitNode = MapNode.create(mock(Floor.class), "STAIR1", NodeType.STAIR, "STAIR1", 0, 0, true);
         ReflectionTestUtils.setField(exitNode, "id", UUID.randomUUID());
@@ -419,13 +433,13 @@ class RouteRecalculationServiceTest {
         given(routeRecalculationRepository.findAllByTrainingSession_IdAndStatus(
                 session.getId(), RecalculationStatus.PENDING)).willReturn(List.of(existing));
         givenNoApprovedHistory();
-        givenNoDirectRoute();
+        givenDirectRouteCrossesTriggerEdge();
         given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any()))
                 .willThrow(new ApiException(EvacuationErrorCode.EVACUATION_ROUTE_NOT_FOUND));
 
         routeRecalculationService.triggerForFireSpread(session, List.of(triggerEdge));
 
-        // existing의 경로(triggerEdge와 무관한 임의 노드 두 개)는 triggerEdge를 지나지 않으므로 무효화되지 않는다.
+        // existing의 경로(triggerEdge와 무관한 임의 노드 한 개)는 triggerEdge를 지나지 않으므로 무효화되지 않는다.
         assertThat(existing.getStatus()).isEqualTo(RecalculationStatus.PENDING);
         verify(trainingEventPublisher, never()).publishRouteRecalculationCancelledAfterCommit(any());
         verify(routeRecalculationRepository, never()).save(any());
@@ -433,25 +447,26 @@ class RouteRecalculationServiceTest {
     }
 
     @Test
-    @DisplayName("화재 확산 후보가 이미 승인된 활성 경로와 동일하면 새 승인 요청을 만들지 않고, 화재와 무관한 기존 PENDING은 그대로 둔다")
-    void triggerForFireSpread_skipsWhenCandidateMatchesActiveRoute() {
+    @DisplayName("현재 활성 경로가 화재 구간과 무관하면 우회 경로를 다시 계산하지 않는다")
+    void triggerForFireSpread_skipsWhenActiveRouteDoesNotCrossFire() {
+        // 승인된 혼잡 우회 경로 D가 활성 상태이고, 그 경로는 이번 화재 엣지(triggerEdge)와 무관하다.
+        // (버그 재현: 예전에는 이 경우에도 "화재만 피한 최단 경로"를 새로 계산해 D와 비교했는데,
+        // D는 혼잡 우회라 화재-only 최단 경로와 항상 다르게 나와서 화재와 무관한 틱마다 D를
+        // 원래의(다시 혼잡한) 직행 경로로 되돌리는 PENDING이 반복 생성됐다.)
         RouteRecalculation existing = pendingRecalculation(CongestionLevel.CROWDED);
         given(routeRecalculationRepository.findAllByTrainingSession_IdAndStatus(
                 session.getId(), RecalculationStatus.PENDING)).willReturn(List.of(existing));
-        UUID sharedNodeId = UUID.randomUUID();
-        RouteRecalculation approvedDetour = approvedRecalculation(List.of(sharedNodeId), 20.0);
+        UUID unrelatedNodeId1 = UUID.randomUUID();
+        UUID unrelatedNodeId2 = UUID.randomUUID();
+        RouteRecalculation approvedDetour = approvedRecalculation(List.of(unrelatedNodeId1, unrelatedNodeId2), 20.0);
         given(routeRecalculationRepository.findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(
                 session.getId(), RecalculationStatus.APPROVED))
                 .willReturn(Optional.of(approvedDetour));
 
-        MapNode exitNode = MapNode.create(mock(Floor.class), "STAIR1", NodeType.STAIR, "STAIR1", 0, 0, true);
-        ReflectionTestUtils.setField(exitNode, "id", sharedNodeId);
-        EvacuationRoute candidateRoute = new EvacuationRoute(List.of(exitNode), 20.0);
-        given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any())).willReturn(candidateRoute);
-
         routeRecalculationService.triggerForFireSpread(session, List.of(triggerEdge));
 
         assertThat(existing.getStatus()).isEqualTo(RecalculationStatus.PENDING);
+        verify(evacuationRouteService, never()).findShortestRoute(any(), any(), anySet(), any());
         verify(routeRecalculationRepository, never()).save(any());
         verify(trainingEventPublisher, never()).publishRouteRecalculationRequestedAfterCommit(any());
     }
@@ -477,8 +492,6 @@ class RouteRecalculationServiceTest {
                 session.getId(), RecalculationStatus.PENDING)).willReturn(List.of(crossingPending));
         givenNoApprovedHistory();
         givenNoDirectRoute();
-        given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any()))
-                .willThrow(new ApiException(EvacuationErrorCode.EVACUATION_ROUTE_NOT_FOUND));
 
         routeRecalculationService.triggerForFireSpread(session, List.of(triggerEdge));
 
