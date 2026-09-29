@@ -129,6 +129,61 @@ public class RouteRecalculationService {
                 previous, candidate, candidateNodeIds);
     }
 
+    // 화재 확산으로 트리거되는 우회 경로 재탐색.
+    // - affectedEdges는 "현재 그 층에서 불이 붙은 모든 구간"이어야 한다(이번 틱에 새로 옮겨붙은
+    //   구간만이 아니라 누적본). 화재는 꺼지지 않으므로 매번 전체 화재 구간을 다시 완전 제외해야
+    //   이전 스텝에서 제외했던 구간이 다시 후보 경로에 섞여 들어가는 일이 없다.
+    // - 혼잡과 달리 화재는 가중치가 아니라 항상 완전 제외(hard exclusion)로 처리한다.
+    // - CongestionLevel/cctvCode/density 개념이 없으므로 별도 팩토리(createPendingForFireSpread)로 저장한다.
+    @Transactional
+    public void triggerForFireSpread(TrainingSession session, List<MapEdge> affectedEdges) {
+        if (affectedEdges.isEmpty()) {
+            return;
+        }
+
+        TrainingSession lockedSession = trainingSessionRepository.findByIdForUpdate(session.getId()).orElse(session);
+        MapEdge representativeEdge = affectedEdges.get(0);
+        List<RouteRecalculation> existingPending = routeRecalculationRepository
+                .findAllByTrainingSession_IdAndStatus(session.getId(), RecalculationStatus.PENDING);
+        for (RouteRecalculation pending : existingPending) {
+            cancel(pending, "화재 확산으로 무효화됨");
+        }
+
+        UUID floorId = representativeEdge.getFloor().getId();
+        MapNode representativeStart = lockedSession.getScenario().getStartNode();
+        if (representativeStart == null) {
+            log.warn("시나리오에 대표 startNode가 없어 재탐색 승인 대기 항목을 생성하지 않음: sessionId={}",
+                    lockedSession.getId());
+            return;
+        }
+        UUID startNodeId = representativeStart.getId();
+
+        RouteSnapshot previous = resolveActiveRoute(lockedSession, floorId, startNodeId);
+
+        Set<UUID> excludedEdgeIds = affectedEdges.stream().map(MapEdge::getId).collect(Collectors.toSet());
+        EvacuationRoute candidate;
+        try {
+            candidate = evacuationRouteService.findShortestRoute(floorId, startNodeId, excludedEdgeIds, Map.of());
+        } catch (ApiException exception) {
+            if (exception.getErrorCode() == EvacuationErrorCode.EVACUATION_ROUTE_NOT_FOUND) {
+                log.warn("화재로 막힌 구간을 피해 우회 경로를 찾을 수 없어 재탐색 승인 대기 항목을 생성하지 않음: sessionId={}",
+                        lockedSession.getId());
+                return;
+            }
+            throw exception;
+        }
+
+        List<UUID> candidateNodeIds = candidate.path().stream().map(MapNode::getId).toList();
+        if (candidateNodeIds.equals(previous.nodeIds())) {
+            return;
+        }
+
+        RouteRecalculation recalculation = save(RouteRecalculation.createPendingForFireSpread(
+                lockedSession, representativeEdge, previous.nodeIds(), previous.totalWeight(),
+                candidateNodeIds, candidate.totalWeight()));
+        trainingEventPublisher.publishRouteRecalculationRequestedAfterCommit(recalculation);
+    }
+
     // VERY_CROWDED만 완전 제외한다 - 배율만으로는 다른 대안이 훨씬 나쁠 때 여전히 그 엣지를
     // 통과하는 경로가 선택될 수 있어, "사실상 통행 불가"를 표현하려면 그래프에서 아예 빼야 한다.
     private Set<UUID> excludedEdgesFor(List<MapEdge> affectedEdges, CongestionLevel level) {

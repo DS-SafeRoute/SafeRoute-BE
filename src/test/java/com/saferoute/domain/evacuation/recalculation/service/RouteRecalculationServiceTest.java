@@ -347,6 +347,72 @@ class RouteRecalculationServiceTest {
     }
 
     @Test
+    @DisplayName("화재 확산이면 화재 구간 엣지를 모두 제외하고(가중치 아님) 우회 경로를 계산한다")
+    void triggerForFireSpread_excludesAllAffectedEdges() {
+        givenNoExistingPending();
+        givenNoApprovedHistory();
+        givenNoDirectRoute();
+
+        MapNode exitNode = MapNode.create(mock(Floor.class), "STAIR1", NodeType.STAIR, "STAIR1", 0, 0, true);
+        ReflectionTestUtils.setField(exitNode, "id", UUID.randomUUID());
+        EvacuationRoute route = new EvacuationRoute(List.of(exitNode), 12.5);
+        given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any())).willReturn(route);
+
+        RouteRecalculation saved = pendingRecalculation(CongestionLevel.CROWDED);
+        given(routeRecalculationRepository.save(any())).willReturn(saved);
+        MapEdge secondEdge = MapEdge.create(triggerEdge.getFloor(), mock(MapNode.class), mock(MapNode.class), 4.0, true);
+        ReflectionTestUtils.setField(secondEdge, "id", UUID.randomUUID());
+
+        routeRecalculationService.triggerForFireSpread(session, List.of(triggerEdge, secondEdge));
+
+        ArgumentCaptor<Set<UUID>> excludedEdgesCaptor = ArgumentCaptor.forClass(Set.class);
+        ArgumentCaptor<Map<UUID, Double>> multipliersCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(evacuationRouteService).findShortestRoute(
+                any(), any(), excludedEdgesCaptor.capture(), multipliersCaptor.capture());
+        assertThat(excludedEdgesCaptor.getValue()).containsExactlyInAnyOrder(triggerEdge.getId(), secondEdge.getId());
+        assertThat(multipliersCaptor.getValue()).isEmpty();
+
+        ArgumentCaptor<RouteRecalculation> savedCaptor = ArgumentCaptor.forClass(RouteRecalculation.class);
+        verify(routeRecalculationRepository, times(1)).save(savedCaptor.capture());
+        assertThat(savedCaptor.getValue().getTriggerType()).isEqualTo(RecalculationTriggerType.FIRE_SPREAD);
+        assertThat(savedCaptor.getValue().getCctvCode()).isNull();
+        assertThat(savedCaptor.getValue().getCongestionLevel()).isNull();
+        verify(trainingEventPublisher, times(1)).publishRouteRecalculationRequestedAfterCommit(saved);
+    }
+
+    @Test
+    @DisplayName("화재 확산 트리거 시 기존 PENDING이 있으면 무효화하고 새로 계산한다")
+    void triggerForFireSpread_cancelsExistingPending() {
+        RouteRecalculation existing = pendingRecalculation(CongestionLevel.CROWDED);
+        given(routeRecalculationRepository.findAllByTrainingSession_IdAndStatus(
+                session.getId(), RecalculationStatus.PENDING)).willReturn(List.of(existing));
+        givenNoApprovedHistory();
+        givenNoDirectRoute();
+        given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any()))
+                .willThrow(new ApiException(EvacuationErrorCode.EVACUATION_ROUTE_NOT_FOUND));
+
+        routeRecalculationService.triggerForFireSpread(session, List.of(triggerEdge));
+
+        assertThat(existing.getStatus()).isEqualTo(RecalculationStatus.CANCELLED);
+        verify(trainingEventPublisher).publishRouteRecalculationCancelledAfterCommit(existing);
+    }
+
+    @Test
+    @DisplayName("화재로 막힌 구간을 피할 경로가 없으면 승인 대기 항목을 만들지 않는다")
+    void triggerForFireSpread_skipsWhenNoDetourRouteFound() {
+        givenNoExistingPending();
+        givenNoApprovedHistory();
+        givenNoDirectRoute();
+        given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any()))
+                .willThrow(new ApiException(EvacuationErrorCode.EVACUATION_ROUTE_NOT_FOUND));
+
+        routeRecalculationService.triggerForFireSpread(session, List.of(triggerEdge));
+
+        verify(routeRecalculationRepository, never()).save(any());
+        verify(trainingEventPublisher, never()).publishRouteRecalculationRequestedAfterCommit(any());
+    }
+
+    @Test
     @DisplayName("훈련 세션의 남은 PENDING을 일괄 CANCELLED 처리한다")
     void cancelAllPendingForSession_cancelsEachPending() {
         RouteRecalculation pendingA = pendingRecalculation(CongestionLevel.CROWDED);
