@@ -381,15 +381,20 @@ class RouteRecalculationServiceTest {
     }
 
     @Test
-    @DisplayName("화재 확산 트리거 시 기존 PENDING이 있으면 무효화하고 새로 계산한다")
-    void triggerForFireSpread_cancelsExistingPending() {
+    @DisplayName("화재 확산으로 새 우회 후보를 실제로 저장할 때만 기존 PENDING을 무효화한다")
+    void triggerForFireSpread_cancelsExistingPendingOnlyWhenSavingNewCandidate() {
         RouteRecalculation existing = pendingRecalculation(CongestionLevel.CROWDED);
         given(routeRecalculationRepository.findAllByTrainingSession_IdAndStatus(
                 session.getId(), RecalculationStatus.PENDING)).willReturn(List.of(existing));
         givenNoApprovedHistory();
         givenNoDirectRoute();
-        given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any()))
-                .willThrow(new ApiException(EvacuationErrorCode.EVACUATION_ROUTE_NOT_FOUND));
+
+        MapNode exitNode = MapNode.create(mock(Floor.class), "STAIR1", NodeType.STAIR, "STAIR1", 0, 0, true);
+        ReflectionTestUtils.setField(exitNode, "id", UUID.randomUUID());
+        EvacuationRoute route = new EvacuationRoute(List.of(exitNode), 12.5);
+        given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any())).willReturn(route);
+        RouteRecalculation saved = pendingRecalculation(CongestionLevel.CROWDED);
+        given(routeRecalculationRepository.save(any())).willReturn(saved);
 
         routeRecalculationService.triggerForFireSpread(session, List.of(triggerEdge));
 
@@ -398,9 +403,8 @@ class RouteRecalculationServiceTest {
     }
 
     @Test
-    @DisplayName("화재로 막힌 구간을 피할 경로가 없으면 승인 대기 항목을 만들지 않는다")
+    @DisplayName("화재로 막힌 구간을 피할 경로가 없으면 승인 대기 항목을 만들지 않고 기존 PENDING 조회조차 하지 않는다")
     void triggerForFireSpread_skipsWhenNoDetourRouteFound() {
-        givenNoExistingPending();
         givenNoApprovedHistory();
         givenNoDirectRoute();
         given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any()))
@@ -408,8 +412,54 @@ class RouteRecalculationServiceTest {
 
         routeRecalculationService.triggerForFireSpread(session, List.of(triggerEdge));
 
+        verify(routeRecalculationRepository, never())
+                .findAllByTrainingSession_IdAndStatus(any(), any());
+        verify(trainingEventPublisher, never()).publishRouteRecalculationCancelledAfterCommit(any());
         verify(routeRecalculationRepository, never()).save(any());
         verify(trainingEventPublisher, never()).publishRouteRecalculationRequestedAfterCommit(any());
+    }
+
+    @Test
+    @DisplayName("화재 확산 후보가 이미 승인된 활성 경로와 동일하면 새 승인 요청도, 기존 PENDING 조회도 하지 않는다")
+    void triggerForFireSpread_skipsWhenCandidateMatchesActiveRoute() {
+        UUID sharedNodeId = UUID.randomUUID();
+        RouteRecalculation approvedDetour = approvedRecalculation(List.of(sharedNodeId), 20.0);
+        given(routeRecalculationRepository.findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(
+                session.getId(), RecalculationStatus.APPROVED))
+                .willReturn(Optional.of(approvedDetour));
+
+        MapNode exitNode = MapNode.create(mock(Floor.class), "STAIR1", NodeType.STAIR, "STAIR1", 0, 0, true);
+        ReflectionTestUtils.setField(exitNode, "id", sharedNodeId);
+        EvacuationRoute candidateRoute = new EvacuationRoute(List.of(exitNode), 20.0);
+        given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any())).willReturn(candidateRoute);
+
+        routeRecalculationService.triggerForFireSpread(session, List.of(triggerEdge));
+
+        verify(routeRecalculationRepository, never())
+                .findAllByTrainingSession_IdAndStatus(any(), any());
+        verify(routeRecalculationRepository, never()).save(any());
+        verify(trainingEventPublisher, never()).publishRouteRecalculationRequestedAfterCommit(any());
+    }
+
+    @Test
+    @DisplayName("화재 확산 대상 엣지가 없으면 아무 것도 하지 않는다")
+    void triggerForFireSpread_skipsWhenNoAffectedEdges() {
+        routeRecalculationService.triggerForFireSpread(session, List.of());
+
+        verify(trainingSessionRepository, never()).findByIdForUpdate(any());
+        verify(routeRecalculationRepository, never()).save(any());
+        verify(trainingEventPublisher, never()).publishRouteRecalculationRequestedAfterCommit(any());
+    }
+
+    @Test
+    @DisplayName("시나리오에 대표 startNode가 없으면 화재 확산 재탐색도 승인 대기 항목을 만들지 않는다")
+    void triggerForFireSpread_noRepresentativeStartNode_doesNothing() {
+        given(scenario.getStartNode()).willReturn(null);
+
+        routeRecalculationService.triggerForFireSpread(session, List.of(triggerEdge));
+
+        verify(routeRecalculationRepository, never()).save(any());
+        verify(evacuationRouteService, never()).findShortestRoute(any(), any(), anySet(), any());
     }
 
     @Test

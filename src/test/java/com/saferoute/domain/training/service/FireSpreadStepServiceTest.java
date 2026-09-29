@@ -233,4 +233,65 @@ class FireSpreadStepServiceTest {
 
         verify(routeRecalculationService, never()).triggerForFireSpread(any(), any());
     }
+
+    @Test
+    @DisplayName("프론티어는 있지만 인접 셀이 모두 이미 발화했거나 통행 불가라 새로 옮겨붙은 셀이 없으면 재탐색을 트리거하지 않는다")
+    void spreadOneStep_noNewlyFiredNeighbors_doesNotTriggerRouteRecalculation() {
+        Floor floor = mock(Floor.class);
+        given(floor.getId()).willReturn(floorId);
+
+        TrainingScenario scenario = mock(TrainingScenario.class);
+        given(scenario.getId()).willReturn(scenarioId);
+        given(scenario.getFireSpreadSpeed()).willReturn(FireSpreadSpeed.FAST);
+
+        TrainingSession session = sessionWith(Instant.now().minusSeconds(10), 0, scenario);
+        given(sessionRepository.getReferenceById(sessionId)).willReturn(session);
+
+        FloorGridCell originCell = cellAt(floor, 1, 1, true);
+        FireZone origin = FireZone.createOrigin(scenario, floor, originCell);
+        given(fireZoneRepository.findByScenario_IdAndSpreadGeneration(scenarioId, 0))
+                .willReturn(List.of(origin));
+
+        FloorGridCell alreadyFired = cellAt(floor, 1, 0, true);
+        alreadyFired.markFired();
+        FloorGridCell notWalkable = cellAt(floor, 0, 1, false);
+        given(gridCellRepository.findAdjacent(floorId, 1, 1))
+                .willReturn(List.of(alreadyFired, notWalkable));
+
+        fireSpreadStepService.spreadOneStep(sessionId);
+
+        verify(routeRecalculationService, never()).triggerForFireSpread(any(), any());
+        verify(gridCellRepository, never()).findAllByFloor_IdAndIsFiredTrue(any());
+    }
+
+    @Test
+    @DisplayName("새로 옮겨붙은 셀이 있어도 그 층의 발화 셀에 걸린 엣지가 없으면 재탐색을 트리거하지 않는다")
+    void spreadOneStep_newlyFiredCellsWithoutConnectedEdges_doesNotTriggerRouteRecalculation() {
+        Floor floor = mock(Floor.class);
+        given(floor.getId()).willReturn(floorId);
+
+        TrainingScenario scenario = mock(TrainingScenario.class);
+        given(scenario.getId()).willReturn(scenarioId);
+        given(scenario.getFireSpreadSpeed()).willReturn(FireSpreadSpeed.FAST);
+
+        TrainingSession session = sessionWith(Instant.now().minusSeconds(10), 0, scenario);
+        given(sessionRepository.getReferenceById(sessionId)).willReturn(session);
+
+        FloorGridCell originCell = cellAt(floor, 1, 1, true);
+        originCell.markFired();
+        FireZone origin = FireZone.createOrigin(scenario, floor, originCell);
+        given(fireZoneRepository.findByScenario_IdAndSpreadGeneration(scenarioId, 0))
+                .willReturn(List.of(origin));
+
+        FloorGridCell newlyFiredCell = cellAt(floor, 1, 2, true);
+        given(gridCellRepository.findAdjacent(floorId, 1, 1))
+                .willReturn(List.of(newlyFiredCell));
+        given(gridCellRepository.findAllByFloor_IdAndIsFiredTrue(floorId))
+                .willReturn(List.of(originCell, newlyFiredCell));
+        given(mapEdgeGridCellRepository.findAllByGridCell_IdIn(any())).willReturn(List.of());
+
+        fireSpreadStepService.spreadOneStep(sessionId);
+
+        verify(routeRecalculationService, never()).triggerForFireSpread(any(), any());
+    }
 }

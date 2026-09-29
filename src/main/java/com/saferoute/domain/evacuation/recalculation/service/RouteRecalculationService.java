@@ -28,6 +28,7 @@ import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -82,8 +83,10 @@ public class RouteRecalculationService {
             return;
         }
 
+        // getCctvCode()는 FIRE_SPREAD 트리거 건에서는 null이라(RouteRecalculation 참고),
+        // 같은 세션에 화재 유발 PENDING이 섞여 있어도 NPE 없이 비교되도록 null-safe하게 비교한다.
         boolean samePendingExists = existingPending.stream().anyMatch(pending ->
-                pending.getCctvCode().equals(cctvCode) && pending.getCongestionLevel() == level);
+                Objects.equals(pending.getCctvCode(), cctvCode) && pending.getCongestionLevel() == level);
         if (samePendingExists) {
             return;
         }
@@ -135,6 +138,8 @@ public class RouteRecalculationService {
     //   이전 스텝에서 제외했던 구간이 다시 후보 경로에 섞여 들어가는 일이 없다.
     // - 혼잡과 달리 화재는 가중치가 아니라 항상 완전 제외(hard exclusion)로 처리한다.
     // - CongestionLevel/cctvCode/density 개념이 없으므로 별도 팩토리(createPendingForFireSpread)로 저장한다.
+    // - 기존 PENDING 무효화는 "새 후보를 실제로 저장하기 직전"에만 한다. 우회 경로를 못 찾거나
+    //   후보가 활성 경로와 같아 새로 저장할 게 없다면, 이미 제안돼있던 PENDING을 건드리지 않는다.
     @Transactional
     public void triggerForFireSpread(TrainingSession session, List<MapEdge> affectedEdges) {
         if (affectedEdges.isEmpty()) {
@@ -143,11 +148,6 @@ public class RouteRecalculationService {
 
         TrainingSession lockedSession = trainingSessionRepository.findByIdForUpdate(session.getId()).orElse(session);
         MapEdge representativeEdge = affectedEdges.get(0);
-        List<RouteRecalculation> existingPending = routeRecalculationRepository
-                .findAllByTrainingSession_IdAndStatus(session.getId(), RecalculationStatus.PENDING);
-        for (RouteRecalculation pending : existingPending) {
-            cancel(pending, "화재 확산으로 무효화됨");
-        }
 
         UUID floorId = representativeEdge.getFloor().getId();
         MapNode representativeStart = lockedSession.getScenario().getStartNode();
@@ -176,6 +176,12 @@ public class RouteRecalculationService {
         List<UUID> candidateNodeIds = candidate.path().stream().map(MapNode::getId).toList();
         if (candidateNodeIds.equals(previous.nodeIds())) {
             return;
+        }
+
+        List<RouteRecalculation> existingPending = routeRecalculationRepository
+                .findAllByTrainingSession_IdAndStatus(session.getId(), RecalculationStatus.PENDING);
+        for (RouteRecalculation pending : existingPending) {
+            cancel(pending, "화재 확산으로 무효화됨");
         }
 
         RouteRecalculation recalculation = save(RouteRecalculation.createPendingForFireSpread(
