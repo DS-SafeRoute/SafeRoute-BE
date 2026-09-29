@@ -31,6 +31,7 @@ import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -41,6 +42,7 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
@@ -81,8 +83,14 @@ public class RouteRecalculationService {
 
         TrainingSession lockedSession = trainingSessionRepository.findByIdForUpdate(session.getId()).orElse(session);
         MapEdge representativeEdge = affectedEdges.get(0);
+        // 화재 확산이 만든 PENDING(FIRE_SPREAD)은 혼잡 판단과 무관하므로, 혼잡 트리거가 여기서
+        // 건드리는 대상에서 제외한다 - 그대로 두면 혼잡 이벤트 하나가 여전히 유효한 화재 우회
+        // 제안을 대체 없이 지워버릴 수 있다(triggerForFireSpread()가 대칭적으로 혼잡 PENDING을
+        // 취급하는 방식과 맞춘 것).
         List<RouteRecalculation> existingPending = routeRecalculationRepository
-                .findAllByTrainingSession_IdAndStatus(session.getId(), RecalculationStatus.PENDING);
+                .findAllByTrainingSession_IdAndStatus(session.getId(), RecalculationStatus.PENDING).stream()
+                .filter(pending -> pending.getTriggerType() != RecalculationTriggerType.FIRE_SPREAD)
+                .toList();
 
         if (triggerType == RecalculationTriggerType.ENDED) {
             existingPending.forEach(pending -> cancel(pending, "혼잡 종료로 무효화됨"));
@@ -90,8 +98,6 @@ public class RouteRecalculationService {
             return;
         }
 
-        // getCctvCode()는 FIRE_SPREAD 트리거 건에서는 null이라(RouteRecalculation 참고),
-        // 같은 세션에 화재 유발 PENDING이 섞여 있어도 NPE 없이 비교되도록 null-safe하게 비교한다.
         boolean samePendingExists = existingPending.stream().anyMatch(pending ->
                 Objects.equals(pending.getCctvCode(), cctvCode) && pending.getCongestionLevel() == level);
         if (samePendingExists) {
@@ -114,10 +120,15 @@ public class RouteRecalculationService {
 
         RouteSnapshot previous = resolveActiveRoute(lockedSession, floorId, startNodeId);
 
+        // 혼잡 우회 후보도 지금 그 층에 번진 화재 구간은 항상 제외한다 - 그렇지 않으면 혼잡을
+        // 피하려다 화재 구간을 지나는 경로를 제안할 수 있다.
+        Set<UUID> excludedEdgeIds = new HashSet<>(excludedEdgesFor(affectedEdges, level));
+        excludedEdgeIds.addAll(firedEdgeIdsForFloor(floorId));
+
         EvacuationRoute candidate;
         try {
             candidate = evacuationRouteService.findShortestRoute(
-                    floorId, startNodeId, excludedEdgesFor(affectedEdges, level),
+                    floorId, startNodeId, excludedEdgeIds,
                     weightMultipliersFor(affectedEdges, level));
         } catch (ApiException exception) {
             if (exception.getErrorCode() == EvacuationErrorCode.EVACUATION_ROUTE_NOT_FOUND) {
@@ -149,7 +160,13 @@ public class RouteRecalculationService {
     //   무관하게 즉시 무효화한다(관리자가 나중에 화재 통과 경로를 실수로 승인하는 일을 막기 위함).
     //   화재와 무관한 나머지 PENDING은 "새 후보를 실제로 저장하기 직전"에만 무효화한다 - 우회
     //   경로를 못 찾거나 후보가 활성 경로와 같아 새로 저장할 게 없다면 그대로 둔다.
-    @Transactional
+    // - 유일한 호출부(FireSpreadStepService)가 화재 확산 트랜잭션의 afterCommit 콜백에서 이
+    //   메서드를 부른다. 그 시점엔 원 트랜잭션이 이미 물리적으로 커밋됐지만
+    //   TransactionSynchronizationManager 정리는 아직 끝나지 않아서, 평범한 REQUIRED로는
+    //   Spring이 "이미 트랜잭션 안"이라고 오판해 새 트랜잭션을 시작하지 않는다 - 그 상태에서
+    //   findByIdForUpdate()의 비관적 락 쿼리가 "no transaction in progress"로 실패한다
+    //   (실제 SpringBootTest로 재현 확인). REQUIRES_NEW로 항상 진짜 새 트랜잭션을 강제한다.
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void triggerForFireSpread(TrainingSession session, List<MapEdge> affectedEdges) {
         if (affectedEdges.isEmpty()) {
             return;
@@ -247,17 +264,26 @@ public class RouteRecalculationService {
     // 한 번 더 검증하지 않으면 관리자가 화재 통과 경로를 승인해버릴 수 있다.
     private boolean crossesCurrentFire(RouteRecalculation recalculation) {
         UUID floorId = recalculation.getTriggerEdge().getFloor().getId();
+        return crossesAnyEdge(recalculation.getRecalculatedNodeIds(), firedEdgesForFloor(floorId));
+    }
+
+    // 그 층에서 현재 화재로 통행 불가한 MapEdge id 집합. 혼잡 우회 후보를 계산할 때 이것도 함께
+    // 제외해야, 혼잡을 피하려다 화재 구간을 지나는 경로를 제안하는 일이 없다.
+    private Set<UUID> firedEdgeIdsForFloor(UUID floorId) {
+        return firedEdgesForFloor(floorId).stream().map(MapEdge::getId).collect(Collectors.toSet());
+    }
+
+    private List<MapEdge> firedEdgesForFloor(UUID floorId) {
         List<UUID> firedCellIds = floorGridCellRepository.findAllByFloor_IdAndIsFiredTrue(floorId).stream()
                 .map(FloorGridCell::getId)
                 .toList();
         if (firedCellIds.isEmpty()) {
-            return false;
+            return List.of();
         }
-        List<MapEdge> firedEdges = mapEdgeGridCellRepository.findAllByGridCell_IdIn(firedCellIds).stream()
+        return mapEdgeGridCellRepository.findAllByGridCell_IdIn(firedCellIds).stream()
                 .map(MapEdgeGridCell::getMapEdge)
                 .distinct()
                 .toList();
-        return crossesAnyEdge(recalculation.getRecalculatedNodeIds(), firedEdges);
     }
 
     // VERY_CROWDED만 완전 제외한다 - 배율만으로는 다른 대안이 훨씬 나쁠 때 여전히 그 엣지를

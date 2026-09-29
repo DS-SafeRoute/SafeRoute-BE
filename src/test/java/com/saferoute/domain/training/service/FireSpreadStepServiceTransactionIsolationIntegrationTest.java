@@ -3,7 +3,9 @@ package com.saferoute.domain.training.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.verify;
 
 import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.building.entity.BuildingType;
@@ -81,9 +83,16 @@ class FireSpreadStepServiceTransactionIsolationIntegrationTest {
         willThrow(new RuntimeException("경로 재탐색 중 예상치 못한 오류"))
                 .given(routeRecalculationService).triggerForFireSpread(any(), any());
 
-        UUID sessionId = transactionTemplate.execute(status -> createRunningSessionWithAdjacentFireCells());
+        Fixture fixture = transactionTemplate.execute(status -> createRunningSessionWithAdjacentFireCells());
+        UUID sessionId = fixture.sessionId();
 
         assertThatCode(() -> fireSpreadStepService.spreadOneStep(sessionId)).doesNotThrowAnyException();
+
+        // 재탐색 실패 경로가 실제로 실행됐는지(=단순히 호출 자체가 안 일어나 통과한 게 아닌지)
+        // 화재 엣지를 포함해 트리거됐음을 먼저 확인한다.
+        verify(routeRecalculationService).triggerForFireSpread(
+                argThat(session -> session.getId().equals(sessionId)),
+                argThat(edges -> edges.stream().anyMatch(edge -> edge.getId().equals(fixture.edge().getId()))));
 
         TrainingSession reloaded = trainingSessionRepository.findById(sessionId).orElseThrow();
         assertThat(reloaded.getCurrentGeneration()).isEqualTo(1);
@@ -94,7 +103,10 @@ class FireSpreadStepServiceTransactionIsolationIntegrationTest {
         assertThat(fireZones).extracting(FireZone::getSpreadGeneration).containsExactlyInAnyOrder(0, 1);
     }
 
-    private UUID createRunningSessionWithAdjacentFireCells() {
+    private record Fixture(UUID sessionId, MapEdge edge) {
+    }
+
+    private Fixture createRunningSessionWithAdjacentFireCells() {
         Building building = buildingRepository.save(Building.create(
                 "화재 격리 테스트 건물", "부산광역시 해운대구 우동 123-45", BuildingType.CLASSROOM, SCHOOL_NAME));
         Floor floor = Floor.create(building, 1);
@@ -124,6 +136,6 @@ class FireSpreadStepServiceTransactionIsolationIntegrationTest {
         TrainingSession session = TrainingSession.create(
                 TrainingStatus.RUNNING, Instant.now().minusSeconds(30), admin, scenario);
         trainingSessionRepository.save(session);
-        return session.getId();
+        return new Fixture(session.getId(), edge);
     }
 }

@@ -212,6 +212,77 @@ class RouteRecalculationServiceTest {
     }
 
     @Test
+    @DisplayName("혼잡 트리거는 화재 확산이 만든 PENDING(FIRE_SPREAD)을 건드리지 않는다")
+    void trigger_doesNotTouchFireSpreadPending() {
+        RouteRecalculation firePending = firePendingRecalculation();
+        given(routeRecalculationRepository.findAllByTrainingSession_IdAndStatus(
+                session.getId(), RecalculationStatus.PENDING)).willReturn(List.of(firePending));
+        givenNoApprovedHistory();
+        givenNoDirectRoute();
+
+        MapNode exitNode = MapNode.create(mock(Floor.class), "STAIR1", NodeType.STAIR, "STAIR1", 0, 0, true);
+        ReflectionTestUtils.setField(exitNode, "id", UUID.randomUUID());
+        EvacuationRoute route = new EvacuationRoute(List.of(exitNode), 12.5);
+        given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any())).willReturn(route);
+        RouteRecalculation saved = pendingRecalculation(CongestionLevel.CROWDED);
+        given(routeRecalculationRepository.save(any())).willReturn(saved);
+
+        routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.CROWDED,
+                RecalculationTriggerType.STARTED, "CCTV_001", 3.5);
+
+        assertThat(firePending.getStatus()).isEqualTo(RecalculationStatus.PENDING);
+        verify(trainingEventPublisher, never()).publishRouteRecalculationCancelledAfterCommit(firePending);
+    }
+
+    @Test
+    @DisplayName("혼잡 종료(ENDED) 트리거도 화재 확산 PENDING은 무효화하지 않는다")
+    void trigger_ended_doesNotCancelFireSpreadPending() {
+        RouteRecalculation firePending = firePendingRecalculation();
+        given(routeRecalculationRepository.findAllByTrainingSession_IdAndStatus(
+                session.getId(), RecalculationStatus.PENDING)).willReturn(List.of(firePending));
+        givenNoApprovedHistory();
+
+        routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.NORMAL,
+                RecalculationTriggerType.ENDED, "CCTV_001", 1.0);
+
+        assertThat(firePending.getStatus()).isEqualTo(RecalculationStatus.PENDING);
+        verify(trainingEventPublisher, never()).publishRouteRecalculationCancelledAfterCommit(firePending);
+    }
+
+    @Test
+    @DisplayName("혼잡 우회 후보를 계산할 때 현재 그 층에 번진 화재 구간도 함께 제외한다")
+    void trigger_excludesCurrentlyFiredEdgesFromCongestionCandidate() {
+        givenNoExistingPending();
+        givenNoApprovedHistory();
+        givenNoDirectRoute();
+
+        FloorGridCell firedCell = mock(FloorGridCell.class);
+        UUID firedCellId = UUID.randomUUID();
+        given(firedCell.getId()).willReturn(firedCellId);
+        given(floorGridCellRepository.findAllByFloor_IdAndIsFiredTrue(floorId)).willReturn(List.of(firedCell));
+
+        MapEdge firedEdge = MapEdge.create(triggerEdge.getFloor(), mock(MapNode.class), mock(MapNode.class), 3.0, true);
+        UUID firedEdgeId = UUID.randomUUID();
+        ReflectionTestUtils.setField(firedEdge, "id", firedEdgeId);
+        MapEdgeGridCell mapping = MapEdgeGridCell.create(firedEdge, firedCell);
+        given(mapEdgeGridCellRepository.findAllByGridCell_IdIn(List.of(firedCellId))).willReturn(List.of(mapping));
+
+        MapNode exitNode = MapNode.create(mock(Floor.class), "STAIR1", NodeType.STAIR, "STAIR1", 0, 0, true);
+        ReflectionTestUtils.setField(exitNode, "id", UUID.randomUUID());
+        EvacuationRoute route = new EvacuationRoute(List.of(exitNode), 12.5);
+        given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any())).willReturn(route);
+        RouteRecalculation saved = pendingRecalculation(CongestionLevel.CROWDED);
+        given(routeRecalculationRepository.save(any())).willReturn(saved);
+
+        routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.CROWDED,
+                RecalculationTriggerType.STARTED, "CCTV_001", 3.5);
+
+        ArgumentCaptor<Set<UUID>> excludedEdgesCaptor = ArgumentCaptor.forClass(Set.class);
+        verify(evacuationRouteService).findShortestRoute(any(), any(), excludedEdgesCaptor.capture(), any());
+        assertThat(excludedEdgesCaptor.getValue()).contains(firedEdgeId);
+    }
+
+    @Test
     @DisplayName("우회 경로가 없으면 로그만 남기고 승인 대기 항목을 만들지 않는다")
     void trigger_skipsWhenNoDetourRouteFound() {
         givenNoExistingPending();
@@ -552,6 +623,13 @@ class RouteRecalculationServiceTest {
                 List.of(UUID.randomUUID()), 10.0, nodeIds, totalWeight);
         ReflectionTestUtils.setField(recalculation, "id", UUID.randomUUID());
         recalculation.approve(Instant.now(), mock(User.class));
+        return recalculation;
+    }
+
+    private RouteRecalculation firePendingRecalculation() {
+        RouteRecalculation recalculation = RouteRecalculation.createPendingForFireSpread(
+                session, triggerEdge, List.of(UUID.randomUUID()), 10.0, List.of(UUID.randomUUID()), 12.5);
+        ReflectionTestUtils.setField(recalculation, "id", UUID.randomUUID());
         return recalculation;
     }
 
