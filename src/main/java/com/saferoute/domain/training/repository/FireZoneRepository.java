@@ -23,6 +23,10 @@ public interface FireZoneRepository extends JpaRepository<FireZone, UUID> {
     // 시나리오의 전체 FireZone(수동 발화점 + 확산으로 옮겨붙은 셀) 조회 - 세대 오름차순, 같은 세대는 등록 시각 오름차순
     List<FireZone> findByScenario_IdOrderBySpreadGenerationAscAddedAtAsc(UUID scenarioId);
 
+    // 같은 층을 여러 시나리오가 동시에(RUNNING) 쓸 수 있어, FloorGridCell.isFired만으로는 그
+    // 화재가 "이 시나리오"의 것인지 알 수 없다 - 특정 시나리오가 그 층에 낸 화재 셀만 조회한다.
+    List<FireZone> findByScenario_IdAndFloor_Id(UUID scenarioId, UUID floorId);
+
     // 세션 종료 시 해당 시나리오의 화재 셀들 isFired = false로 일괄 초기화
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""

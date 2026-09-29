@@ -136,7 +136,6 @@ class FireSpreadStepServiceTest {
         FloorGridCell notWalkable = cellAt(floor, 0, 1, false);
         given(gridCellRepository.findAdjacent(floorId, 1, 1))
                 .willReturn(List.of(walkableUnfired, alreadyFired, notWalkable));
-        given(gridCellRepository.findAllByFloor_IdAndIsFiredTrue(floorId)).willReturn(List.of());
 
         fireSpreadStepService.spreadOneStep(sessionId);
 
@@ -199,6 +198,11 @@ class FireSpreadStepServiceTest {
         // 이번 틱 이전부터 불이 붙어있던 셀 + 이번 틱에 새로 옮겨붙은 셀, 둘 다 조회되어야 한다(누적).
         given(gridCellRepository.findAllByFloor_IdAndIsFiredTrue(floorId))
                 .willReturn(List.of(originCell, newlyFiredCell));
+        // 이 시나리오가 그 층에 낸 FireZone(누적 발화 셀)으로도 잡혀야, 다른 시나리오의 화재와
+        // 섞이지 않는다는 필터를 통과해 위 두 셀이 실제로 반영된다.
+        FireZone spreadZone = FireZone.createSpread(scenario, floor, newlyFiredCell, 1);
+        given(fireZoneRepository.findByScenario_IdAndFloor_Id(scenarioId, floorId))
+                .willReturn(List.of(origin, spreadZone));
 
         MapEdge previouslyFiredEdge = MapEdge.create(floor, mock(MapNode.class), mock(MapNode.class), 3.0, true);
         ReflectionTestUtils.setField(previouslyFiredEdge, "id", UUID.randomUUID());
@@ -288,6 +292,9 @@ class FireSpreadStepServiceTest {
                 .willReturn(List.of(newlyFiredCell));
         given(gridCellRepository.findAllByFloor_IdAndIsFiredTrue(floorId))
                 .willReturn(List.of(originCell, newlyFiredCell));
+        FireZone spreadZone = FireZone.createSpread(scenario, floor, newlyFiredCell, 1);
+        given(fireZoneRepository.findByScenario_IdAndFloor_Id(scenarioId, floorId))
+                .willReturn(List.of(origin, spreadZone));
         given(mapEdgeGridCellRepository.findAllByGridCell_IdIn(any())).willReturn(List.of());
 
         fireSpreadStepService.spreadOneStep(sessionId);

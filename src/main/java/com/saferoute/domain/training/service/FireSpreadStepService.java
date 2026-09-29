@@ -117,14 +117,26 @@ public class FireSpreadStepService {
     // 새로 옮겨붙은 셀이 걸린 층마다, "현재 그 층에서 불이 붙은 모든 셀"을 기준으로 영향받는
     // MapEdge를 다시 구해 재탐색을 트리거한다. 이번 틱에 새로 옮겨붙은 셀만 넘기면 이전 틱에
     // 이미 제외됐던 구간이 이번 후보 경로에 다시 섞여 들어갈 수 있으므로 반드시 누적 상태로 조회한다.
+    // 같은 층을 다른 시나리오가 동시에(RUNNING) 쓸 수 있어, FloorGridCell.isFired만으로 걸러내면
+    // 이 세션과 무관한 다른 시나리오의 화재까지 영향받은 엣지로 잡힐 수 있다 - 이 세션의
+    // scenario가 그 층에 낸 FireZone에 속한 셀로 한 번 더 교집합을 취한다.
     private void triggerRouteRecalculationForNewlyFired(TrainingSession session, List<FireZone> newlyFired) {
+        UUID scenarioId = session.getScenario().getId();
         Set<UUID> affectedFloorIds = newlyFired.stream()
                 .map(FireZone::getFloorId)
                 .collect(Collectors.toSet());
 
         for (UUID floorId : affectedFloorIds) {
+            Set<UUID> scenarioFireCellIds = fireZoneRepository.findByScenario_IdAndFloor_Id(scenarioId, floorId)
+                    .stream()
+                    .map(FireZone::getGridCellId)
+                    .collect(Collectors.toSet());
+            if (scenarioFireCellIds.isEmpty()) {
+                continue;
+            }
             List<UUID> firedCellIds = gridCellRepository.findAllByFloor_IdAndIsFiredTrue(floorId).stream()
                     .map(FloorGridCell::getId)
+                    .filter(scenarioFireCellIds::contains)
                     .toList();
             if (firedCellIds.isEmpty()) {
                 continue;

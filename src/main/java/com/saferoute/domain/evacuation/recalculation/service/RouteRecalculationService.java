@@ -19,8 +19,10 @@ import com.saferoute.domain.evacuation.recalculation.entity.RouteRecalculation;
 import com.saferoute.domain.evacuation.recalculation.repository.RouteRecalculationRepository;
 import com.saferoute.domain.evacuation.service.EvacuationRoute;
 import com.saferoute.domain.evacuation.service.EvacuationRouteService;
+import com.saferoute.domain.training.entity.FireZone;
 import com.saferoute.domain.training.entity.TrainingScenario;
 import com.saferoute.domain.training.entity.TrainingSession;
+import com.saferoute.domain.training.repository.FireZoneRepository;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.user.entity.User;
 import com.saferoute.domain.user.repository.UserRepository;
@@ -68,6 +70,7 @@ public class RouteRecalculationService {
     private final MapNodeJpaRepository mapNodeJpaRepository;
     private final FloorGridCellRepository floorGridCellRepository;
     private final MapEdgeGridCellRepository mapEdgeGridCellRepository;
+    private final FireZoneRepository fireZoneRepository;
 
     // 혼잡 감지로 트리거되는 우회 경로 재탐색.
     // - CCTV 한 대가 감시하는 모든 엣지를 한 번에 반영해 후보 경로 하나만 만든다.
@@ -120,10 +123,10 @@ public class RouteRecalculationService {
 
         RouteSnapshot previous = resolveActiveRoute(lockedSession, floorId, startNodeId);
 
-        // 혼잡 우회 후보도 지금 그 층에 번진 화재 구간은 항상 제외한다 - 그렇지 않으면 혼잡을
-        // 피하려다 화재 구간을 지나는 경로를 제안할 수 있다.
+        // 혼잡 우회 후보도 지금 이 시나리오가 그 층에 낸 화재 구간은 항상 제외한다 - 그렇지
+        // 않으면 혼잡을 피하려다 화재 구간을 지나는 경로를 제안할 수 있다.
         Set<UUID> excludedEdgeIds = new HashSet<>(excludedEdgesFor(affectedEdges, level));
-        excludedEdgeIds.addAll(firedEdgeIdsForFloor(floorId));
+        excludedEdgeIds.addAll(firedEdgeIdsForFloor(lockedSession.getScenario().getId(), floorId));
 
         EvacuationRoute candidate;
         try {
@@ -264,18 +267,30 @@ public class RouteRecalculationService {
     // 한 번 더 검증하지 않으면 관리자가 화재 통과 경로를 승인해버릴 수 있다.
     private boolean crossesCurrentFire(RouteRecalculation recalculation) {
         UUID floorId = recalculation.getTriggerEdge().getFloor().getId();
-        return crossesAnyEdge(recalculation.getRecalculatedNodeIds(), firedEdgesForFloor(floorId));
+        UUID scenarioId = recalculation.getTrainingSession().getScenario().getId();
+        return crossesAnyEdge(recalculation.getRecalculatedNodeIds(), firedEdgesForFloor(scenarioId, floorId));
     }
 
-    // 그 층에서 현재 화재로 통행 불가한 MapEdge id 집합. 혼잡 우회 후보를 계산할 때 이것도 함께
-    // 제외해야, 혼잡을 피하려다 화재 구간을 지나는 경로를 제안하는 일이 없다.
-    private Set<UUID> firedEdgeIdsForFloor(UUID floorId) {
-        return firedEdgesForFloor(floorId).stream().map(MapEdge::getId).collect(Collectors.toSet());
+    // 그 시나리오가 그 층에 낸 화재 구간 중 현재 통행 불가한 MapEdge id 집합. 혼잡 우회 후보를
+    // 계산할 때 이것도 함께 제외해야, 혼잡을 피하려다 화재 구간을 지나는 경로를 제안하는 일이 없다.
+    private Set<UUID> firedEdgeIdsForFloor(UUID scenarioId, UUID floorId) {
+        return firedEdgesForFloor(scenarioId, floorId).stream().map(MapEdge::getId).collect(Collectors.toSet());
     }
 
-    private List<MapEdge> firedEdgesForFloor(UUID floorId) {
+    // 같은 층을 다른 시나리오가 동시에(RUNNING) 쓸 수 있어 FloorGridCell.isFired만으로는 화재가
+    // "이 시나리오"의 것인지 구분할 수 없다 - 그 시나리오의 FireZone에 속한 셀이면서 동시에
+    // 현재 실제로 isFired=true인 셀만 화재 구간으로 인정한다(FireZone은 세션 종료 뒤에도 이력으로
+    // 남을 수 있으므로 isFired 교집합 없이 FireZone만 보면 이미 꺼진 화재까지 잡힐 수 있다).
+    private List<MapEdge> firedEdgesForFloor(UUID scenarioId, UUID floorId) {
+        Set<UUID> scenarioFireCellIds = fireZoneRepository.findByScenario_IdAndFloor_Id(scenarioId, floorId).stream()
+                .map(FireZone::getGridCellId)
+                .collect(Collectors.toSet());
+        if (scenarioFireCellIds.isEmpty()) {
+            return List.of();
+        }
         List<UUID> firedCellIds = floorGridCellRepository.findAllByFloor_IdAndIsFiredTrue(floorId).stream()
                 .map(FloorGridCell::getId)
+                .filter(scenarioFireCellIds::contains)
                 .toList();
         if (firedCellIds.isEmpty()) {
             return List.of();
@@ -328,12 +343,16 @@ public class RouteRecalculationService {
         }
         UUID startNodeId = representativeStart.getId();
 
+        // 혼잡이 끝나 정상 경로로 복구하려는 순간에도 그 사이 화재가 번졌을 수 있으므로, 복구
+        // 후보 역시 지금 이 시나리오가 낸 화재 구간은 제외한다 - 그렇지 않으면 "정상 경로"라는
+        // 이유로 화재 구간을 지나는 복구 후보를 제안할 수 있다.
+        Set<UUID> excludedEdgeIds = firedEdgeIdsForFloor(session.getScenario().getId(), floorId);
         EvacuationRoute recovery;
         try {
-            recovery = evacuationRouteService.findShortestRoute(floorId, startNodeId);
+            recovery = evacuationRouteService.findShortestRoute(floorId, startNodeId, excludedEdgeIds);
         } catch (ApiException exception) {
             if (exception.getErrorCode() == EvacuationErrorCode.EVACUATION_ROUTE_NOT_FOUND) {
-                log.warn("복구 경로를 찾을 수 없어 재탐색 승인 대기 항목을 생성하지 않음: sessionId={}, edgeId={}",
+                log.warn("화재를 피한 복구 경로를 찾을 수 없어 재탐색 승인 대기 항목을 생성하지 않음: sessionId={}, edgeId={}",
                         session.getId(), triggerEdge.getId());
                 return;
             }

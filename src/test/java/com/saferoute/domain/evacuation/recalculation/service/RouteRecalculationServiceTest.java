@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anySet;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -30,9 +31,11 @@ import com.saferoute.domain.evacuation.recalculation.repository.RouteRecalculati
 import com.saferoute.domain.evacuation.service.EvacuationRoute;
 import com.saferoute.domain.evacuation.service.EvacuationRouteService;
 import com.saferoute.domain.floor.entity.Floor;
+import com.saferoute.domain.training.entity.FireZone;
 import com.saferoute.domain.training.entity.TrainingScenario;
 import com.saferoute.domain.training.entity.TrainingSession;
 import com.saferoute.domain.training.entity.TrainingStatus;
+import com.saferoute.domain.training.repository.FireZoneRepository;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.user.entity.User;
 import com.saferoute.domain.user.repository.UserRepository;
@@ -96,6 +99,9 @@ class RouteRecalculationServiceTest {
 
     @Mock
     private MapEdgeGridCellRepository mapEdgeGridCellRepository;
+
+    @Mock
+    private FireZoneRepository fireZoneRepository;
 
     private TrainingSession session;
     private TrainingScenario scenario;
@@ -256,10 +262,17 @@ class RouteRecalculationServiceTest {
         givenNoApprovedHistory();
         givenNoDirectRoute();
 
+        UUID scenarioId = UUID.randomUUID();
+        given(scenario.getId()).willReturn(scenarioId);
+
         FloorGridCell firedCell = mock(FloorGridCell.class);
         UUID firedCellId = UUID.randomUUID();
         given(firedCell.getId()).willReturn(firedCellId);
         given(floorGridCellRepository.findAllByFloor_IdAndIsFiredTrue(floorId)).willReturn(List.of(firedCell));
+
+        FireZone fireZone = mock(FireZone.class);
+        given(fireZone.getGridCellId()).willReturn(firedCellId);
+        given(fireZoneRepository.findByScenario_IdAndFloor_Id(scenarioId, floorId)).willReturn(List.of(fireZone));
 
         MapEdge firedEdge = MapEdge.create(triggerEdge.getFloor(), mock(MapNode.class), mock(MapNode.class), 3.0, true);
         UUID firedEdgeId = UUID.randomUUID();
@@ -408,7 +421,7 @@ class RouteRecalculationServiceTest {
         MapNode exitNode = MapNode.create(mock(Floor.class), "STAIR1", NodeType.STAIR, "STAIR1", 0, 0, true);
         ReflectionTestUtils.setField(exitNode, "id", UUID.randomUUID());
         EvacuationRoute directRoute = new EvacuationRoute(List.of(exitNode), 12.5);
-        given(evacuationRouteService.findShortestRoute(floorId, startNodeId)).willReturn(directRoute);
+        given(evacuationRouteService.findShortestRoute(eq(floorId), eq(startNodeId), anySet())).willReturn(directRoute);
 
         RouteRecalculation saved = pendingRecalculation(CongestionLevel.NORMAL);
         given(routeRecalculationRepository.save(any())).willReturn(saved);
@@ -433,7 +446,7 @@ class RouteRecalculationServiceTest {
         MapNode exitNode = MapNode.create(mock(Floor.class), "STAIR1", NodeType.STAIR, "STAIR1", 0, 0, true);
         ReflectionTestUtils.setField(exitNode, "id", sharedNodeId);
         EvacuationRoute directRoute = new EvacuationRoute(List.of(exitNode), 20.0);
-        given(evacuationRouteService.findShortestRoute(floorId, startNodeId)).willReturn(directRoute);
+        given(evacuationRouteService.findShortestRoute(eq(floorId), eq(startNodeId), anySet())).willReturn(directRoute);
 
         routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.NORMAL,
                 RecalculationTriggerType.ENDED, "CCTV_001", 1.0);
@@ -675,11 +688,19 @@ class RouteRecalculationServiceTest {
                 .findByIdAndTrainingSession_Scenario_Building_SchoolName(
                         recalculation.getId(), SCHOOL_NAME)).willReturn(Optional.of(recalculation));
 
+        UUID scenarioId = UUID.randomUUID();
+        given(scenario.getId()).willReturn(scenarioId);
+
         FloorGridCell firedCell = mock(FloorGridCell.class);
         UUID firedCellId = UUID.randomUUID();
         given(firedCell.getId()).willReturn(firedCellId);
         given(floorGridCellRepository.findAllByFloor_IdAndIsFiredTrue(triggerEdge.getFloor().getId()))
                 .willReturn(List.of(firedCell));
+
+        FireZone fireZone = mock(FireZone.class);
+        given(fireZone.getGridCellId()).willReturn(firedCellId);
+        given(fireZoneRepository.findByScenario_IdAndFloor_Id(scenarioId, triggerEdge.getFloor().getId()))
+                .willReturn(List.of(fireZone));
 
         MapEdge firedEdge = MapEdge.create(triggerEdge.getFloor(), mock(MapNode.class), mock(MapNode.class), 3.0, true);
         ReflectionTestUtils.setField(firedEdge, "fromNode", withId(crossedFromId));

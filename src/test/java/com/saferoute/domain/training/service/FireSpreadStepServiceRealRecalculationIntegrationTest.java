@@ -133,6 +133,11 @@ class FireSpreadStepServiceRealRecalculationIntegrationTest {
         TrainingScenario scenario = trainingScenarioRepository.save(TrainingScenario.create(
                 "화재 재탐색 테스트 시나리오", 10, Instant.now(), false, FireSpreadSpeed.FAST, building, admin, start));
 
+        // 같은 층을 다른 시나리오가 동시에 쓸 수 있어 FloorGridCell.isFired만으로는 부족하다 -
+        // firedCell이 "이 시나리오"의 화재 구간이라는 FireZone 기록도 함께 남긴다(RouteRecalculationService/
+        // FireSpreadStepService의 시나리오 범위 필터를 실제로 통과하는지 검증).
+        fireZoneRepository.save(FireZone.createOrigin(scenario, floor, firedCell));
+
         TrainingSession session = TrainingSession.create(
                 TrainingStatus.RUNNING, Instant.now().minusSeconds(30), admin, scenario);
         trainingSessionRepository.save(session);
