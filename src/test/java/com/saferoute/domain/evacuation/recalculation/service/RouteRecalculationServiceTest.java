@@ -676,8 +676,8 @@ class RouteRecalculationServiceTest {
     }
 
     @Test
-    @DisplayName("승인하려는 경로가 현재 화재 구간을 지나면 ROUTE_RECALCULATION_CROSSES_FIRE를 던지고 유도등을 반영하지 않는다")
-    void approve_whenCandidateCrossesCurrentFire_throwsAndSkipsGuidance() {
+    @DisplayName("승인하려는 경로가 현재 화재 구간을 지나면 ROUTE_RECALCULATION_CROSSES_FIRE를 던지고, 그 PENDING을 즉시 무효화하며, 유도등은 반영하지 않는다")
+    void approve_whenCandidateCrossesCurrentFire_throwsCancelsAndSkipsGuidance() {
         UUID crossedFromId = UUID.randomUUID();
         UUID crossedToId = UUID.randomUUID();
         RouteRecalculation recalculation = RouteRecalculation.createPending(
@@ -712,7 +712,9 @@ class RouteRecalculationServiceTest {
                 .isInstanceOf(ApiException.class)
                 .hasFieldOrPropertyWithValue("errorCode", EvacuationErrorCode.ROUTE_RECALCULATION_CROSSES_FIRE);
 
-        assertThat(recalculation.getStatus()).isEqualTo(RecalculationStatus.PENDING);
+        assertThat(recalculation.getStatus()).isEqualTo(RecalculationStatus.CANCELLED);
+        assertThat(recalculation.getCancelReason()).isNotBlank();
+        verify(trainingEventPublisher).publishRouteRecalculationCancelledAfterCommit(recalculation);
         verify(ioTLightService, never()).applyRouteGuidance(any());
         verify(trainingEventPublisher, never()).publishEvacuationRouteUpdatedAfterCommit(any());
     }
