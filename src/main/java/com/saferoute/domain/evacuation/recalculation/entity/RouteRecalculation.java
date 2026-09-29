@@ -51,19 +51,20 @@ public class RouteRecalculation {
     @JoinColumn(name = "trigger_edge_id", nullable = false)
     private MapEdge triggerEdge;
 
-    // 트리거를 발생시킨 CCTV
-    @Column(name = "cctv_code", nullable = false, length = 50)
+    // 트리거를 발생시킨 CCTV. FIRE_SPREAD 트리거는 CCTV와 무관하므로 null.
+    @Column(name = "cctv_code", length = 50)
     private String cctvCode;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "trigger_type", nullable = false, length = 20)
     private RecalculationTriggerType triggerType;
 
+    // FIRE_SPREAD 트리거는 혼잡 레벨이 아니므로 null.
     @Enumerated(EnumType.STRING)
-    @Column(name = "congestion_level", nullable = false, length = 20)
+    @Column(name = "congestion_level", length = 20)
     private CongestionLevel congestionLevel;
 
-    // 트리거 시점에 BE가 계산한 density
+    // 트리거 시점에 BE가 계산한 density. FIRE_SPREAD 트리거는 혼잡 지표가 없으므로 0.
     @Column(name = "density", nullable = false)
     private double density;
 
@@ -139,6 +140,14 @@ public class RouteRecalculation {
             List<UUID> recalculatedNodeIds, double totalWeight) {
         return new RouteRecalculation(trainingSession, triggerEdge, cctvCode, triggerType, congestionLevel, density,
                 previousNodeIds, previousTotalWeight, recalculatedNodeIds, totalWeight);
+    }
+
+    // 화재 확산으로 트리거된 승인 대기 항목. CCTV/혼잡 레벨과 무관하므로 각각 null, 0으로 저장한다.
+    public static RouteRecalculation createPendingForFireSpread(TrainingSession trainingSession, MapEdge triggerEdge,
+            List<UUID> previousNodeIds, double previousTotalWeight,
+            List<UUID> recalculatedNodeIds, double totalWeight) {
+        return new RouteRecalculation(trainingSession, triggerEdge, null, RecalculationTriggerType.FIRE_SPREAD, null,
+                0.0, previousNodeIds, previousTotalWeight, recalculatedNodeIds, totalWeight);
     }
 
     // 상태 전이 검증은 이 엔티티가 아니라 RouteRecalculationService가 담당한다
