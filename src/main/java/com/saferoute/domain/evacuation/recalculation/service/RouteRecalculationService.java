@@ -392,12 +392,25 @@ public class RouteRecalculationService {
         }
 
         try {
-            // 여기서 화재를 제외하면 안 된다: triggerForFireSpread()의 candidate도 같은 시나리오+층
-            // 기준으로 "현재 화재 구간"을 제외해 계산하므로, 승인된 경로가 아직 없는 상태에서 이
-            // previous에도 똑같이 화재를 제외해버리면 두 값이 항상 같아져서
-            // candidateNodeIds.equals(previous.nodeIds())가 영원히 true가 된다 - 즉 승인된 경로가
-            // 없는 세션에서는 화재가 아무리 번져도 다시는 PENDING이 안 생기게 된다(직접 확인함).
-            // previous는 "화재를 몰랐던 이전 기준"이어야 candidate와의 차이가 의미 있게 드러난다.
+            // [의도적 설계 결정 - 이슈 #247] 여기서 화재를 제외하면 안 된다: triggerForFireSpread()의
+            // candidate도 같은 시나리오+층 기준으로 "현재 화재 구간"을 제외해 계산하므로, 승인된
+            // 경로가 아직 없는 상태에서 previous에도 똑같이 화재를 제외해버리면 두 값이 항상
+            // 같아져서 candidateNodeIds.equals(previous.nodeIds())가 영원히 true가 된다 - 즉 승인된
+            // 경로가 없는 세션에서는 화재가 아무리 번져도 다시는 PENDING이 안 생기게 된다(직접
+            // 재현해서 확인함, TrainingSessionServiceRealRecalculationIntegrationTest류 참고).
+            //
+            // 이 부정확함(previous가 화재를 모름)은 의도적으로 남겨뒀다: 실패 방향이 안전 쪽이다.
+            // "불필요한 PENDING이 한 번 더 뜬다"가 "떠야 할 PENDING이 안 뜬다"보다 훨씬 싸다
+            // (관리자가 한 번 확인/승인하면 끝, 세션당 최대 한 번). 근본 해결(훈련 시작 시 초기
+            // 경로를 시스템 자동 승인 APPROVED 레코드로 남겨서 이 폴백 자체를 거의 안 타게 만드는
+            // 것)은 triggerEdge nullable화 + DB 수동 마이그레이션 + 재탐색 이력 노출 여부 결정이
+            // 필요해 비용이 더 크다고 판단해 보류했다.
+            //
+            // 재검토 조건: (1) 관리자가 "현재 경로와 동일한 PENDING"을 노이즈로 느낀다는 피드백이
+            // 쌓이면, (2) 혼잡도·위험도 가중치(α, β) 같은 걸 도입해 previous/candidate 비교 기준
+            // 자체가 바뀌는 시점에 함께 재평가한다. crossesAnyEdge를 활용한 가드 테스트가
+            // trigger_...NoApprovedHistoryPendingCreatedOnce 계열 테스트에 있으니, 여길 고칠 땐
+            // 그 테스트가 먼저 깨지는지 확인할 것.
             EvacuationRoute direct = evacuationRouteService.findShortestRoute(floorId, startNodeId);
             List<UUID> nodeIds = direct.path().stream().map(node -> node.getId()).toList();
             return new RouteSnapshot(nodeIds, direct.totalWeight());
