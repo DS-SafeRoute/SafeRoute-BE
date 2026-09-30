@@ -392,6 +392,12 @@ public class RouteRecalculationService {
         }
 
         try {
+            // 여기서 화재를 제외하면 안 된다: triggerForFireSpread()의 candidate도 같은 시나리오+층
+            // 기준으로 "현재 화재 구간"을 제외해 계산하므로, 승인된 경로가 아직 없는 상태에서 이
+            // previous에도 똑같이 화재를 제외해버리면 두 값이 항상 같아져서
+            // candidateNodeIds.equals(previous.nodeIds())가 영원히 true가 된다 - 즉 승인된 경로가
+            // 없는 세션에서는 화재가 아무리 번져도 다시는 PENDING이 안 생기게 된다(직접 확인함).
+            // previous는 "화재를 몰랐던 이전 기준"이어야 candidate와의 차이가 의미 있게 드러난다.
             EvacuationRoute direct = evacuationRouteService.findShortestRoute(floorId, startNodeId);
             List<UUID> nodeIds = direct.path().stream().map(node -> node.getId()).toList();
             return new RouteSnapshot(nodeIds, direct.totalWeight());
@@ -488,8 +494,9 @@ public class RouteRecalculationService {
             throw new ApiException(TrainingErrorCode.START_NODE_NOT_CONFIGURED);
         }
         UUID floorId = representativeStart.getFloor().getId();
+        Set<UUID> excludedEdgeIds = firedEdgeIdsForFloor(scenario.getId(), floorId);
         EvacuationRoute directRoute =
-                evacuationRouteService.findShortestRoute(floorId, representativeStart.getId());
+                evacuationRouteService.findShortestRoute(floorId, representativeStart.getId(), excludedEdgeIds);
         List<CurrentRouteResponse.NodePoint> path = directRoute.path().stream()
                 .map(CurrentRouteResponse.NodePoint::from)
                 .toList();
