@@ -915,7 +915,7 @@ class RouteRecalculationServiceTest {
         given(exitNode.getX()).willReturn(0.8);
         given(exitNode.getY()).willReturn(0.3);
 
-        given(evacuationRouteService.findShortestRoute(floorId, startNodeId))
+        given(evacuationRouteService.findShortestRoute(eq(floorId), eq(startNodeId), anySet()))
                 .willReturn(new EvacuationRoute(List.of(representativeStart, exitNode), 9.5));
 
         CurrentRouteResponse response = routeRecalculationService.getCurrentRoute(recSessionId, MANAGER_EMAIL);
@@ -932,6 +932,47 @@ class RouteRecalculationServiceTest {
         assertThat(response.updatedAt()).isEqualTo(createdAt);
         assertThat(scheduledSession.getStatus()).isEqualTo(TrainingStatus.SCHEDULED);
         assertThat(scheduledSession.getStartedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("승인된 재탐색이 없으면 INITIAL 경로 조회도 현재 화재 구간을 제외하고 계산한다")
+    void getCurrentRoute_withoutApprovedRecalculation_excludesCurrentlyFiredEdges() {
+        UUID recSessionId = UUID.randomUUID();
+        UUID scenarioId = UUID.randomUUID();
+        Instant createdAt = Instant.now();
+        TrainingSession scheduledSession = TrainingSession.schedule(mock(User.class), scenario);
+        ReflectionTestUtils.setField(scheduledSession, "id", recSessionId);
+        ReflectionTestUtils.setField(scheduledSession, "createdAt", createdAt);
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(recSessionId, SCHOOL_NAME))
+                .willReturn(Optional.of(scheduledSession));
+        given(routeRecalculationRepository.findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(
+                recSessionId, RecalculationStatus.APPROVED))
+                .willReturn(Optional.empty());
+        given(scenario.getId()).willReturn(scenarioId);
+
+        FloorGridCell firedCell = mock(FloorGridCell.class);
+        UUID firedCellId = UUID.randomUUID();
+        given(firedCell.getId()).willReturn(firedCellId);
+        given(floorGridCellRepository.findAllByFloor_IdAndIsFiredTrue(floorId)).willReturn(List.of(firedCell));
+
+        FireZone fireZone = mock(FireZone.class);
+        given(fireZone.getGridCellId()).willReturn(firedCellId);
+        given(fireZoneRepository.findByScenario_IdAndFloor_Id(scenarioId, floorId)).willReturn(List.of(fireZone));
+
+        MapEdge firedEdge = MapEdge.create(triggerEdge.getFloor(), mock(MapNode.class), mock(MapNode.class), 3.0, true);
+        UUID firedEdgeId = UUID.randomUUID();
+        ReflectionTestUtils.setField(firedEdge, "id", firedEdgeId);
+        MapEdgeGridCell mapping = MapEdgeGridCell.create(firedEdge, firedCell);
+        given(mapEdgeGridCellRepository.findAllByGridCell_IdIn(List.of(firedCellId))).willReturn(List.of(mapping));
+
+        given(evacuationRouteService.findShortestRoute(eq(floorId), eq(startNodeId), anySet()))
+                .willReturn(new EvacuationRoute(List.of(representativeStart), 5.0));
+
+        routeRecalculationService.getCurrentRoute(recSessionId, MANAGER_EMAIL);
+
+        ArgumentCaptor<Set<UUID>> excludedEdgesCaptor = ArgumentCaptor.forClass(Set.class);
+        verify(evacuationRouteService).findShortestRoute(eq(floorId), eq(startNodeId), excludedEdgesCaptor.capture());
+        assertThat(excludedEdgesCaptor.getValue()).contains(firedEdgeId);
     }
 
     @Test
