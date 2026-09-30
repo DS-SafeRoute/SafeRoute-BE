@@ -457,6 +457,12 @@ class RouteRecalculationServiceTest {
     @Test
     @DisplayName("화재 확산이면 화재 구간 엣지를 모두 제외하고(가중치 아님) 우회 경로를 계산한다")
     void triggerForFireSpread_excludesAllAffectedEdges() {
+        // [설계 결정 가드 - 이슈 #247] 승인된 경로가 없어 resolveActiveRoute가 화재를 모른 채
+        // (givenDirectRouteCrossesTriggerEdge) previous를 계산해도, candidate와 달라 PENDING이
+        // 정상적으로 생성되는지 고정한다. resolveActiveRoute를 getCurrentRoute처럼 화재 인지하게
+        // "고치면" candidate와 previous가 항상 같아져 아래 save 검증이 깨진다 - 그게 의도다
+        // (resolveActiveRoute의 주석 참고: 승인 경로 없는 세션에서 PENDING이 영원히 안 생기는
+        // 회귀를 막기 위해 이 부정확함을 의도적으로 유지 중).
         givenNoExistingPending();
         givenNoApprovedHistory();
         givenDirectRouteCrossesTriggerEdge();
