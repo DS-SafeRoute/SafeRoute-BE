@@ -213,7 +213,7 @@ class CongestionEventServiceTest {
         // headcount=5 -> density=1.25 -> NORMAL
         service.reportCongestionEvent(cctv, request(5));
 
-        verify(routeRecalculationService, never()).trigger(any(), any(), any(), any(), any(), anyDouble());
+        verify(routeRecalculationService, never()).triggerAsync(any(), any(), any(), any(), any(), anyDouble());
     }
 
     @Test
@@ -253,7 +253,7 @@ class CongestionEventServiceTest {
         // headcount=13 -> density=3.25 -> CROWDED
         service.reportCongestionEvent(cctv, request(13));
 
-        verify(routeRecalculationService).trigger(eq(session), eq(List.of(edgeA, edgeB)),
+        verify(routeRecalculationService).triggerAsync(eq(session), eq(List.of(edgeA, edgeB)),
                 eq(CongestionLevel.CROWDED),
                 eq(RecalculationTriggerType.STARTED), eq("CCTV_001"), anyDouble());
         verify(trainingEventPublisher, times(1))
@@ -275,7 +275,7 @@ class CongestionEventServiceTest {
         // headcount=13 -> density=3.25 -> CROWDED, 그래도 Edge가 없으니 트리거는 없음
         service.reportCongestionEvent(cctv, request(13));
 
-        verify(routeRecalculationService, never()).trigger(any(), any(), any(), any(), any(), anyDouble());
+        verify(routeRecalculationService, never()).triggerAsync(any(), any(), any(), any(), any(), anyDouble());
         verify(trainingEventPublisher).publishCongestionEventReceived(eq(sessionId), eq(List.of()), any());
     }
 
@@ -296,7 +296,7 @@ class CongestionEventServiceTest {
 
         assertThat(result.created()).isFalse();
         verify(trainingEventPublisher, never()).publishCongestionEventReceived(any(), any(), any());
-        verify(routeRecalculationService, never()).trigger(any(), any(), any(), any(), any(), anyDouble());
+        verify(routeRecalculationService, never()).triggerAsync(any(), any(), any(), any(), any(), anyDouble());
         verify(congestionEventRepository, never()).updateEventStatus(anyString(), any(), any());
     }
 
@@ -336,7 +336,7 @@ class CongestionEventServiceTest {
 
         assertThat(result.created()).isFalse();
         verify(trainingEventPublisher).publishCongestionEventReceived(any(), any(), any());
-        verify(routeRecalculationService).trigger(eq(session), any(), eq(CongestionLevel.CROWDED),
+        verify(routeRecalculationService).triggerAsync(eq(session), any(), eq(CongestionLevel.CROWDED),
                 eq(RecalculationTriggerType.STARTED), eq("CCTV_001"), anyDouble());
     }
 
@@ -357,7 +357,32 @@ class CongestionEventServiceTest {
 
         assertThat(result.created()).isFalse();
         verify(trainingEventPublisher, never()).publishCongestionEventReceived(any(), any(), any());
-        verify(routeRecalculationService, never()).trigger(any(), any(), any(), any(), any(), anyDouble());
+        verify(routeRecalculationService, never()).triggerAsync(any(), any(), any(), any(), any(), anyDouble());
+    }
+
+    @Test
+    @DisplayName("CONGESTION_ENDED는 레벨이 NORMAL이어도 복구 후보 탐색을 동기로 트리거한다")
+    void reportCongestionEvent_triggersSynchronousRecalculationForEndedEvent() {
+        TrainingSession session = mock(TrainingSession.class);
+        given(session.getId()).willReturn(sessionId);
+        given(trainingSessionRepository.findByIdAndStatusAndScenario_Building_Id(
+                sessionId, TrainingStatus.RUNNING, buildingId)).willReturn(Optional.of(session));
+        givenSaveCreatesItem();
+        givenProcessingClaimed();
+        givenAffectedEdges(edge(UUID.randomUUID()));
+
+        // headcount=5 -> density=1.25 -> NORMAL (requiresRouteRecalculation()은 false지만,
+        // triggerType=ENDED라서 재탐색 조건의 OR 쪽으로 여전히 트리거돼야 한다)
+        ReportCongestionEventRequest endedRequest = new ReportCongestionEventRequest(
+                UUID.randomUUID(), sessionId, "CCTV_001", CongestionEventType.CONGESTION_ENDED,
+                2_000L, 5, 1.25, CongestionLevel.NORMAL, 1L);
+
+        service.reportCongestionEvent(cctv, endedRequest);
+
+        verify(routeRecalculationService).trigger(eq(session), any(), eq(CongestionLevel.NORMAL),
+                eq(RecalculationTriggerType.ENDED), eq("CCTV_001"), anyDouble());
+        verify(routeRecalculationService, never())
+                .triggerAsync(any(), any(), any(), any(), any(), anyDouble());
     }
 
     @Test

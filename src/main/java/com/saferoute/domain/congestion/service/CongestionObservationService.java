@@ -153,7 +153,10 @@ public class CongestionObservationService {
                             session.getId(), cctv.getCode(), savedLevel
                     );
                 } else {
-                    routeRecalculationService.trigger(
+                    // 관측값은 항상 LEVEL_UP이라 혼잡이 지속되면 5초마다 재시도되므로 비동기로
+                    // 떼어내도 안전하다 (#250) - ENDED는 이 서비스가 다루지 않는다
+                    // (CongestionEventService 참고).
+                    routeRecalculationService.triggerAsync(
                             session, affectedEdges, savedLevel, RecalculationTriggerType.LEVEL_UP,
                             cctv.getCode(), density);
                 }
