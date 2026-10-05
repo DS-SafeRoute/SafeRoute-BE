@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import com.saferoute.domain.building.entity.Building;
@@ -473,6 +474,30 @@ class RouteDeviationServiceTest {
                         && item.getOccurredAt() == 5_000L
         ));
         verify(trainingEventPublisher).publishGeneralMonitoringEventReceived(eq(sessionId), any());
+    }
+
+    @Test
+    @DisplayName("한 유도등 평가에서 예외가 나도 나머지 유도등은 계속 평가한다")
+    void evaluateObservation_oneLightThrows_stillEvaluatesRemainingLights() {
+        IoTLight brokenLight = lightWithGuidance("LIGHT_BROKEN", UUID.randomUUID());
+        given(mapEdgeGridCellRepository.findAllByMapEdge_Id(brokenLight.getLeftEdge().getId()))
+                .willThrow(new RuntimeException("mapping lookup failed"));
+
+        IoTLight healthyLight = lightWithGuidance();
+        mapLightToDistinctCctvs(healthyLight);
+        given(iotLightJpaRepository.findAllByCustomNode_Floor_Building_Id(buildingId))
+                .willReturn(List.of(brokenLight, healthyLight));
+        given(lightDirectionEventRepository.findAllBySessionIdAndLightCode(sessionId.toString(), healthyLight.getCode()))
+                .willReturn(List.of(directionEvent(healthyLight, IoTLightDirection.LEFT, 1_000L)));
+        given(routeDeviationStateRepository.find(sessionId.toString(), healthyLight.getId()))
+                .willReturn(Optional.empty());
+        given(routeDeviationStateRepository.saveIfNewer(any())).willReturn(true);
+
+        ObservationItem observation = observation("CCTV_RIGHT", 3.0, 5_000L);
+        routeDeviationService.evaluateObservation(incomingCctv(), observation);
+
+        verify(routeDeviationStateRepository, times(1)).saveIfNewer(argThat(item ->
+                item.getState() == RouteDeviationState.DEVIATING));
     }
 
     @Test

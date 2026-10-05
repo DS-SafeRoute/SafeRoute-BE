@@ -117,22 +117,35 @@ public class RouteDeviationService {
     // Observation 하나가 들어올 때마다 이 CCTV를 좌/우 CCTV로 쓰는 모든 유도등에 대해 실시간으로
     // 경로 이탈 여부를 판정한다. CongestionObservationService.reportObservation()에서 Observation이
     // 유효하게 저장된 직후(처리 lease 선점 여부와 무관) 호출된다. 경로 재계산/유도등 제어는 호출하지 않는다.
-    // 예외는 여기서 흡수해 Observation 저장 자체(reportObservation() 전체)를 실패시키지 않는다.
+    // 예외는 유도등 하나당 개별로 흡수한다 - 바깥에서 한 번에 흡수하면 유도등 하나(예: edge
+    // 매핑이 깨진 경우)가 던진 예외가 같은 Observation으로 아직 평가 안 한 나머지 유도등 전체를
+    // 건너뛰게 만든다. Observation 저장 자체(reportObservation() 전체)는 어느 쪽이든 실패시키지 않는다.
     @Transactional
     public void evaluateObservation(Cctv cctv, ObservationItem observation) {
+        UUID buildingId;
+        List<IoTLight> lights;
         try {
-            UUID buildingId = cctv.getCustomNode().getFloor().getBuilding().getId();
-            List<IoTLight> lights = iotLightJpaRepository.findAllByCustomNode_Floor_Building_Id(buildingId);
-            for (IoTLight light : lights) {
-                if (light.isGuidanceConfigured()) {
-                    evaluateLight(light, observation);
-                }
-            }
+            buildingId = cctv.getCustomNode().getFloor().getBuilding().getId();
+            lights = iotLightJpaRepository.findAllByCustomNode_Floor_Building_Id(buildingId);
         } catch (RuntimeException exception) {
             log.error(
                     "경로 이탈 판정 중 오류: sessionId={}, cctvCode={}",
                     observation.getTrainingSessionId(), observation.getCctvCode(), exception
             );
+            return;
+        }
+        for (IoTLight light : lights) {
+            if (!light.isGuidanceConfigured()) {
+                continue;
+            }
+            try {
+                evaluateLight(light, observation);
+            } catch (RuntimeException exception) {
+                log.error(
+                        "경로 이탈 판정 중 오류: sessionId={}, cctvCode={}, lightId={}",
+                        observation.getTrainingSessionId(), observation.getCctvCode(), light.getId(), exception
+                );
+            }
         }
     }
 
