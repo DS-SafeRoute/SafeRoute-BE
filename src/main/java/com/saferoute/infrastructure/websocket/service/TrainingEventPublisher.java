@@ -4,6 +4,7 @@ import com.saferoute.domain.device.entity.IoTLight;
 import com.saferoute.domain.device.entity.IoTLightDirection;
 import com.saferoute.domain.evacuation.recalculation.entity.RouteRecalculation;
 import com.saferoute.domain.telemetry.dynamo.entity.CongestionEventItem;
+import com.saferoute.domain.telemetry.dynamo.entity.GeneralMonitoringEventItem;
 import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import com.saferoute.domain.training.entity.FireZone;
 import com.saferoute.domain.training.entity.TrainingSession;
@@ -12,6 +13,7 @@ import com.saferoute.infrastructure.websocket.dto.CongestionEventImageUpdatedDat
 import com.saferoute.infrastructure.websocket.dto.CongestionEventReceivedData;
 import com.saferoute.infrastructure.websocket.dto.CongestionImageUpdatedData;
 import com.saferoute.infrastructure.websocket.dto.FireSpreadEventData;
+import com.saferoute.infrastructure.websocket.dto.GeneralMonitoringEventReceivedData;
 import com.saferoute.infrastructure.websocket.dto.IoTLightEventMessage;
 import com.saferoute.infrastructure.websocket.dto.IoTLightStatusEventData;
 import com.saferoute.infrastructure.websocket.dto.RouteRecalculationEventData;
@@ -206,6 +208,25 @@ public class TrainingEventPublisher {
                 "즉시 혼잡 이벤트 이미지 갱신 발행: sessionId={}, eventId={}",
                 sessionId,
                 item.getEventId()
+        );
+    }
+
+    // AI_ANALYSIS_STARTED/ROUTE_DEVIATION_DETECTED가 새로 저장됐을 때 발행한다
+    // (CongestionObservationService.tryCreateAiAnalysisStartedEvent,
+    // RouteDeviationService.createRouteDeviationDetectedEvent 참고, 이슈 #254).
+    public void publishGeneralMonitoringEventReceived(UUID sessionId, GeneralMonitoringEventItem item) {
+        TrainingEventMessage<GeneralMonitoringEventReceivedData> message = TrainingEventMessage.of(
+                TrainingEventType.GENERAL_MONITORING_EVENT_RECEIVED,
+                sessionId,
+                GeneralMonitoringEventReceivedData.from(item)
+        );
+
+        messagingTemplate.convertAndSend(SESSION_TOPIC_PREFIX + sessionId, message);
+        log.debug(
+                "일반 모니터링 이벤트 발행: sessionId={}, eventId={}, eventType={}",
+                sessionId,
+                item.getEventId(),
+                item.getEventType()
         );
     }
 

@@ -124,6 +124,32 @@ class TrainingSessionServiceTest {
                 .isEqualTo(TrainingErrorCode.TRAINING_SESSION_NOT_FOUND);
     }
 
+    @Test
+    @DisplayName("종료된 세션의 상태를 조회하면 오류 없이 EndedSessionResponse를 반환한다")
+    void getTrainingStatus_endedSession_returnsEndedSessionResponse() {
+        Building building = mock(Building.class);
+        given(building.getName()).willReturn("A동");
+        TrainingScenario scenario = mock(TrainingScenario.class);
+        given(scenario.getBuilding()).willReturn(building);
+
+        Instant startedAt = Instant.now().minus(10, ChronoUnit.MINUTES);
+        TrainingSession session = TrainingSession.create(TrainingStatus.RUNNING, startedAt, mock(User.class), scenario);
+        ReflectionTestUtils.setField(session, "id", sessionId);
+        Instant endedAt = Instant.now();
+        session.complete(endedAt);
+
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME))
+                .willReturn(Optional.of(session));
+
+        var response = (com.saferoute.domain.training.dto.EndedSessionResponse)
+                trainingSessionService.getTrainingStatus(sessionId, EMAIL);
+
+        assertThat(response.getBuildingName()).isEqualTo("A동");
+        assertThat(response.getStatus()).isEqualTo(TrainingStatus.COMPLETED);
+        assertThat(response.getEndedAt()).isEqualTo(endedAt);
+        assertThat(response.getElapsedSeconds()).isEqualTo(endedAt.getEpochSecond() - startedAt.getEpochSecond());
+    }
+
     // === getSessions ===
 
     @Test

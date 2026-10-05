@@ -210,7 +210,7 @@ class FloorServiceTest {
         Building building = mock(Building.class);
         Floor floor = Floor.create(building, 1);
         UploadFloorRequest request = new UploadFloorRequest(
-                1, 400.0, 300.0,
+                1, 4.0, 3.0,
                 new MockMultipartFile("file", "plan.png", "image/png", new byte[]{1, 2, 3}));
 
         given(schoolContextService.getSchoolName(EMAIL)).willReturn(SCHOOL_NAME);

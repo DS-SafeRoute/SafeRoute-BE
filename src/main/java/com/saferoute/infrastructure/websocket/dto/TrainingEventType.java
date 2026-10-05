@@ -18,6 +18,11 @@ public enum TrainingEventType {
     // 즉시 혼잡 이벤트의 이미지가 S3 업로드 완료 후 연결되었을 때 발행된다 (이슈 #93).
     CONGESTION_EVENT_IMAGE_UPDATED,
 
+    // CongestionObservationService.tryCreateAiAnalysisStartedEvent()/RouteDeviationService가
+    // GeneralMonitoringEventItem(AI_ANALYSIS_STARTED/ROUTE_DEVIATION_DETECTED)을 새로 저장했을 때
+    // 발행된다. 저장만 하고 알림이 없으면 화면이 새로고침 전까지 못 보는 문제가 있었다 (이슈 #254).
+    GENERAL_MONITORING_EVENT_RECEIVED,
+
     // RouteRecalculationService.trigger()가 재탐색 결과를 PENDING으로 저장했을 때 발행된다. (이슈 #48)
     ROUTE_RECALCULATION_REQUESTED,
 

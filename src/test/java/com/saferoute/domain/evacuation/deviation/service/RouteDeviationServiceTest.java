@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import com.saferoute.domain.building.entity.Building;
@@ -33,6 +34,7 @@ import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import com.saferoute.domain.telemetry.dynamo.entity.RouteDeviationState;
 import com.saferoute.domain.telemetry.dynamo.entity.RouteDeviationStateItem;
 import com.saferoute.domain.telemetry.dynamo.repository.GeneralMonitoringEventRepository;
+import com.saferoute.domain.telemetry.dynamo.repository.IdempotentSaveResult;
 import com.saferoute.domain.telemetry.dynamo.repository.LightDirectionEventRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.RouteDeviationStateRepository;
@@ -43,6 +45,7 @@ import com.saferoute.domain.user.service.SchoolContextService;
 import com.saferoute.global.api.error.IoTLightErrorCode;
 import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
+import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -92,6 +95,9 @@ class RouteDeviationServiceTest {
     @Mock
     private GeneralMonitoringEventRepository generalMonitoringEventRepository;
 
+    @Mock
+    private TrainingEventPublisher trainingEventPublisher;
+
     private Floor floor;
     private final UUID lightId = UUID.randomUUID();
     private final UUID sessionId = UUID.randomUUID();
@@ -104,6 +110,10 @@ class RouteDeviationServiceTest {
         org.mockito.Mockito.lenient().when(building.getId()).thenReturn(buildingId);
         org.mockito.Mockito.lenient().when(floor.getBuilding()).thenReturn(building);
         org.mockito.Mockito.lenient().when(schoolContextService.getSchoolName(EMAIL)).thenReturn(SCHOOL_NAME);
+        // 실제 리포지토리는 항상 non-null IdempotentSaveResult를 돌려주므로, 그 전제로 동작하는
+        // createRouteDeviationDetectedEvent()의 .created() 체크가 목에서도 NPE 없이 테스트되게 한다.
+        org.mockito.Mockito.lenient().when(generalMonitoringEventRepository.saveIfAbsent(any()))
+                .thenAnswer(invocation -> IdempotentSaveResult.created(invocation.getArgument(0)));
     }
 
     private MapNode node(String code, NodeType type) {
@@ -463,6 +473,31 @@ class RouteDeviationServiceTest {
                         && item.getCctvCode().equals("CCTV_RIGHT")
                         && item.getOccurredAt() == 5_000L
         ));
+        verify(trainingEventPublisher).publishGeneralMonitoringEventReceived(eq(sessionId), any());
+    }
+
+    @Test
+    @DisplayName("한 유도등 평가에서 예외가 나도 나머지 유도등은 계속 평가한다")
+    void evaluateObservation_oneLightThrows_stillEvaluatesRemainingLights() {
+        IoTLight brokenLight = lightWithGuidance("LIGHT_BROKEN", UUID.randomUUID());
+        given(mapEdgeGridCellRepository.findAllByMapEdge_Id(brokenLight.getLeftEdge().getId()))
+                .willThrow(new RuntimeException("mapping lookup failed"));
+
+        IoTLight healthyLight = lightWithGuidance();
+        mapLightToDistinctCctvs(healthyLight);
+        given(iotLightJpaRepository.findAllByCustomNode_Floor_Building_Id(buildingId))
+                .willReturn(List.of(brokenLight, healthyLight));
+        given(lightDirectionEventRepository.findAllBySessionIdAndLightCode(sessionId.toString(), healthyLight.getCode()))
+                .willReturn(List.of(directionEvent(healthyLight, IoTLightDirection.LEFT, 1_000L)));
+        given(routeDeviationStateRepository.find(sessionId.toString(), healthyLight.getId()))
+                .willReturn(Optional.empty());
+        given(routeDeviationStateRepository.saveIfNewer(any())).willReturn(true);
+
+        ObservationItem observation = observation("CCTV_RIGHT", 3.0, 5_000L);
+        routeDeviationService.evaluateObservation(incomingCctv(), observation);
+
+        verify(routeDeviationStateRepository, times(1)).saveIfNewer(argThat(item ->
+                item.getState() == RouteDeviationState.DEVIATING));
     }
 
     @Test
@@ -480,6 +515,7 @@ class RouteDeviationServiceTest {
         verify(routeDeviationStateRepository, never()).find(anyString(), any());
         verify(routeDeviationStateRepository, never()).saveIfNewer(any());
         verify(generalMonitoringEventRepository, never()).saveIfAbsent(any());
+        verify(trainingEventPublisher, never()).publishGeneralMonitoringEventReceived(any(), any());
     }
 
     @Test
@@ -553,6 +589,7 @@ class RouteDeviationServiceTest {
         verify(routeDeviationStateRepository).saveIfNewer(argThat(item ->
                 item.getState() == RouteDeviationState.DEVIATING && item.getLastProcessedCapturedAt() == 6_000L));
         verify(generalMonitoringEventRepository, never()).saveIfAbsent(any());
+        verify(trainingEventPublisher, never()).publishGeneralMonitoringEventReceived(any(), any());
     }
 
     @Test
@@ -577,6 +614,7 @@ class RouteDeviationServiceTest {
                         && item.getZeroStreak() == 0
                         && item.getLastProcessedCapturedAt() == 9_000L));
         verify(generalMonitoringEventRepository, never()).saveIfAbsent(any());
+        verify(trainingEventPublisher, never()).publishGeneralMonitoringEventReceived(any(), any());
     }
 
     @Test
@@ -597,6 +635,7 @@ class RouteDeviationServiceTest {
 
         verify(routeDeviationStateRepository, never()).saveIfNewer(any());
         verify(generalMonitoringEventRepository, never()).saveIfAbsent(any());
+        verify(trainingEventPublisher, never()).publishGeneralMonitoringEventReceived(any(), any());
     }
 
     @Test
@@ -614,6 +653,7 @@ class RouteDeviationServiceTest {
         routeDeviationService.evaluateObservation(incomingCctv(), observation);
 
         verify(generalMonitoringEventRepository, never()).saveIfAbsent(any());
+        verify(trainingEventPublisher, never()).publishGeneralMonitoringEventReceived(any(), any());
     }
 
     @Test
@@ -635,6 +675,7 @@ class RouteDeviationServiceTest {
         verify(generalMonitoringEventRepository).saveIfAbsent(argThat(item ->
                 item.getEventType() == GeneralMonitoringEventType.ROUTE_DEVIATION_DETECTED
                         && item.getCctvCode().equals("CCTV_LEFT")));
+        verify(trainingEventPublisher).publishGeneralMonitoringEventReceived(eq(sessionId), any());
     }
 
     @Test
@@ -674,6 +715,7 @@ class RouteDeviationServiceTest {
                         && item.getZeroStreak() == 1
                         && item.getLastProcessedCapturedAt() == 9_000L));
         verify(generalMonitoringEventRepository, never()).saveIfAbsent(any());
+        verify(trainingEventPublisher, never()).publishGeneralMonitoringEventReceived(any(), any());
     }
 
     @Test
@@ -699,6 +741,7 @@ class RouteDeviationServiceTest {
         verify(generalMonitoringEventRepository).saveIfAbsent(argThat(item ->
                 item.getEventType() == GeneralMonitoringEventType.ROUTE_DEVIATION_DETECTED
                         && item.getOccurredAt() == 12_000L));
+        verify(trainingEventPublisher).publishGeneralMonitoringEventReceived(eq(sessionId), any());
     }
 
     @Test
@@ -719,5 +762,6 @@ class RouteDeviationServiceTest {
 
         verify(routeDeviationStateRepository, never()).saveIfNewer(any());
         verify(generalMonitoringEventRepository, never()).saveIfAbsent(any());
+        verify(trainingEventPublisher, never()).publishGeneralMonitoringEventReceived(any(), any());
     }
 }

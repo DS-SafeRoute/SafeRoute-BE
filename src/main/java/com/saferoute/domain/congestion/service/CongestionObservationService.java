@@ -244,7 +244,11 @@ public class CongestionObservationService {
                     capturedAt,
                     null
             );
-            generalMonitoringEventRepository.saveIfAbsent(item);
+            IdempotentSaveResult<GeneralMonitoringEventItem> result =
+                    generalMonitoringEventRepository.saveIfAbsent(item);
+            if (result.created()) {
+                trainingEventPublisher.publishGeneralMonitoringEventReceived(sessionId, result.item());
+            }
         } catch (RuntimeException exception) {
             log.error(
                     "AI_ANALYSIS_STARTED 이벤트 생성 중 오류: sessionId={}, cctvCode={}",
