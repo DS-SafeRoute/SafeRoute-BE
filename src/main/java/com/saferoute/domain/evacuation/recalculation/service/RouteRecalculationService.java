@@ -23,6 +23,7 @@ import com.saferoute.domain.evacuation.service.EvacuationRouteService;
 import com.saferoute.domain.training.entity.FireZone;
 import com.saferoute.domain.training.entity.TrainingScenario;
 import com.saferoute.domain.training.entity.TrainingSession;
+import com.saferoute.domain.training.entity.TrainingStatus;
 import com.saferoute.domain.training.repository.FireZoneRepository;
 import com.saferoute.domain.training.repository.TrainingSessionRepository;
 import com.saferoute.domain.user.entity.User;
@@ -95,6 +96,15 @@ public class RouteRecalculationService {
         }
 
         TrainingSession lockedSession = trainingSessionRepository.findByIdForUpdate(session.getId()).orElse(session);
+        // triggerAsync()가 실행기 큐에 밀려 있는 동안 세션이 끝날 수 있다 - 그러면
+        // TrainingSessionService.end()/forceEnd()/타임아웃이 이미 cancelAllPendingForSession()으로
+        // 그 시점의 PENDING을 전부 정리한 뒤다. 그 정리 후에 들어온 지연된 트리거까지 걸러주지
+        // 않으면, 아무도 다시 안 치워줄 유령 PENDING이 끝난 세션에 새로 생긴다.
+        if (lockedSession.getStatus() != TrainingStatus.RUNNING) {
+            log.info("세션이 이미 종료되어 재탐색을 건너뜀: sessionId={}, status={}",
+                    lockedSession.getId(), lockedSession.getStatus());
+            return;
+        }
         MapEdge representativeEdge = affectedEdges.get(0);
         // 화재 확산이 만든 PENDING(FIRE_SPREAD)은 혼잡 판단과 무관하므로, 혼잡 트리거가 여기서
         // 건드리는 대상에서 제외한다 - 그대로 두면 혼잡 이벤트 하나가 여전히 유효한 화재 우회
