@@ -9,6 +9,7 @@ import com.saferoute.domain.evacuation.recalculation.dto.response.CurrentRouteRe
 import com.saferoute.domain.evacuation.service.EvacuationRoute;
 import com.saferoute.domain.evacuation.service.EvacuationRouteService;
 import com.saferoute.domain.training.dto.CreateSessionRequest;
+import com.saferoute.domain.training.dto.EndedSessionResponse;
 import com.saferoute.domain.training.dto.RunningSessionResponse;
 import com.saferoute.domain.training.dto.ScheduledSessionResponse;
 import com.saferoute.domain.training.dto.TrainingSessionListResponse;
@@ -139,7 +140,19 @@ public class TrainingSessionService {
           session.getCurrentSurvivalRate() != null ? session.getCurrentSurvivalRate() : BigDecimal.ZERO
       );
     }
-    throw new ApiException(TrainingErrorCode.UNSUPPORTED_STATUS);
+    // COMPLETED/FAILED/CANCELLED/STOPPED - 종료/강제종료/타임아웃 직후 화면이 상태를
+    // 다시 조회해도 오류 없이 마지막 상태를 받을 수 있게 한다 (이슈 #254).
+    Long elapsedSeconds = (session.getStartedAt() != null && session.getEndedAt() != null)
+        ? session.getEndedAt().getEpochSecond() - session.getStartedAt().getEpochSecond()
+        : null;
+    return new EndedSessionResponse(
+        building.getName(),
+        session.getStatus(),
+        session.getEndedAt(),
+        elapsedSeconds,
+        session.getActualParticipants() != null ? session.getActualParticipants() : 0,
+        session.getCurrentSurvivalRate() != null ? session.getCurrentSurvivalRate() : BigDecimal.ZERO
+    );
   }
 
   @Transactional
