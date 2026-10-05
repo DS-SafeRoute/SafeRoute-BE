@@ -75,20 +75,24 @@ public class DashboardController {
   @Operation(
       summary = "훈련 세션 실시간 상태 조회",
       description = """
-          훈련 세션의 현재 상태(SCHEDULED 또는 RUNNING)에 따라 서로 다른 응답 형태를
-          반환합니다. 응답에 상태를 구분하는 별도 필드는 없으므로, 프론트엔드는 응답에 포함된
-          필드 조합(scheduledAt/totalFloors/expectedParticipants가 있으면 예정된 훈련,
-          elapsedSeconds/actualParticipants/currentSurvivalRate가 있으면 진행 중인 훈련)으로
-          두 형태를 구분해야 합니다.
+          훈련 세션의 현재 상태(SCHEDULED/RUNNING/종료됨)에 따라 서로 다른 응답 형태를
+          반환합니다.
 
-          SCHEDULED 상태에서는 건물명, 총 층수, 예정 시각, 예상 참여 인원을 반환합니다.
+          SCHEDULED 상태에서는 건물명, 총 층수, 예정 시각, 예상 참여 인원
+          (scheduledAt/totalFloors/expectedParticipants)을 반환합니다.
 
           RUNNING 상태에서는 건물명과 함께, 세션 시작 시각부터 현재까지 경과한 시간(초)을
-          매 요청마다 서버에서 새로 계산해 반환합니다. actualParticipants와
+          매 요청마다 서버에서 새로 계산해 elapsedSeconds로 반환합니다. actualParticipants와
           currentSurvivalRate는 아직 값이 채워지지 않았으면 각각 0으로 대체되어 내려갑니다.
 
-          SCHEDULED, RUNNING 외의 상태(예: 종료된 세션)는 아직 지원하지 않으며 오류가
-          발생하므로, 실시간 모니터링 용도로만 폴링해 사용해야 합니다.
+          SCHEDULED, RUNNING 외의 상태(COMPLETED/FAILED/CANCELLED/STOPPED - 종료된 세션)는
+          RUNNING과 동일한 elapsedSeconds/actualParticipants/currentSurvivalRate에 더해
+          status(종료 상태)와 endedAt을 함께 반환합니다.
+
+          주의: elapsedSeconds/actualParticipants/currentSurvivalRate만으로는 RUNNING과
+          종료된 세션을 구분할 수 없습니다(두 형태 모두 이 필드들을 포함). 프론트는 응답에
+          status 필드가 있는지로 세션 종료 여부를 판단해야 합니다 - status가 없으면
+          RUNNING이고, status가 있으면 그 값이 종료 상태(및 endedAt)를 뜻합니다.
           """
   )
   @GetMapping("/training-status/{sessionId}")
