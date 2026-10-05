@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -213,7 +214,9 @@ class CongestionEventServiceTest {
         // headcount=5 -> density=1.25 -> NORMAL
         service.reportCongestionEvent(cctv, request(5));
 
-        verify(routeRecalculationService, never()).triggerAsync(any(), any(), any(), any(), any(), anyDouble());
+        verify(routeRecalculationService, never())
+                .triggerAsync(any(), any(), any(), any(), any(), anyDouble(), anyLong());
+        verify(routeRecalculationService, never()).trigger(any(), any(), any(), any(), any(), anyDouble());
     }
 
     @Test
@@ -253,9 +256,9 @@ class CongestionEventServiceTest {
         // headcount=13 -> density=3.25 -> CROWDED
         service.reportCongestionEvent(cctv, request(13));
 
-        verify(routeRecalculationService).triggerAsync(eq(session), eq(List.of(edgeA, edgeB)),
+        verify(routeRecalculationService).triggerAsync(eq(session), eq(expectedEdgeIds),
                 eq(CongestionLevel.CROWDED),
-                eq(RecalculationTriggerType.STARTED), eq("CCTV_001"), anyDouble());
+                eq(RecalculationTriggerType.STARTED), eq("CCTV_001"), anyDouble(), anyLong());
         verify(trainingEventPublisher, times(1))
                 .publishCongestionEventReceived(eq(sessionId), eq(expectedEdgeIds), any());
     }
@@ -275,7 +278,9 @@ class CongestionEventServiceTest {
         // headcount=13 -> density=3.25 -> CROWDED, 그래도 Edge가 없으니 트리거는 없음
         service.reportCongestionEvent(cctv, request(13));
 
-        verify(routeRecalculationService, never()).triggerAsync(any(), any(), any(), any(), any(), anyDouble());
+        verify(routeRecalculationService, never())
+                .triggerAsync(any(), any(), any(), any(), any(), anyDouble(), anyLong());
+        verify(routeRecalculationService, never()).trigger(any(), any(), any(), any(), any(), anyDouble());
         verify(trainingEventPublisher).publishCongestionEventReceived(eq(sessionId), eq(List.of()), any());
     }
 
@@ -296,7 +301,9 @@ class CongestionEventServiceTest {
 
         assertThat(result.created()).isFalse();
         verify(trainingEventPublisher, never()).publishCongestionEventReceived(any(), any(), any());
-        verify(routeRecalculationService, never()).triggerAsync(any(), any(), any(), any(), any(), anyDouble());
+        verify(routeRecalculationService, never())
+                .triggerAsync(any(), any(), any(), any(), any(), anyDouble(), anyLong());
+        verify(routeRecalculationService, never()).trigger(any(), any(), any(), any(), any(), anyDouble());
         verify(congestionEventRepository, never()).updateEventStatus(anyString(), any(), any());
     }
 
@@ -337,7 +344,7 @@ class CongestionEventServiceTest {
         assertThat(result.created()).isFalse();
         verify(trainingEventPublisher).publishCongestionEventReceived(any(), any(), any());
         verify(routeRecalculationService).triggerAsync(eq(session), any(), eq(CongestionLevel.CROWDED),
-                eq(RecalculationTriggerType.STARTED), eq("CCTV_001"), anyDouble());
+                eq(RecalculationTriggerType.STARTED), eq("CCTV_001"), anyDouble(), anyLong());
     }
 
     @Test
@@ -357,7 +364,9 @@ class CongestionEventServiceTest {
 
         assertThat(result.created()).isFalse();
         verify(trainingEventPublisher, never()).publishCongestionEventReceived(any(), any(), any());
-        verify(routeRecalculationService, never()).triggerAsync(any(), any(), any(), any(), any(), anyDouble());
+        verify(routeRecalculationService, never())
+                .triggerAsync(any(), any(), any(), any(), any(), anyDouble(), anyLong());
+        verify(routeRecalculationService, never()).trigger(any(), any(), any(), any(), any(), anyDouble());
     }
 
     @Test
@@ -382,7 +391,7 @@ class CongestionEventServiceTest {
         verify(routeRecalculationService).trigger(eq(session), any(), eq(CongestionLevel.NORMAL),
                 eq(RecalculationTriggerType.ENDED), eq("CCTV_001"), anyDouble());
         verify(routeRecalculationService, never())
-                .triggerAsync(any(), any(), any(), any(), any(), anyDouble());
+                .triggerAsync(any(), any(), any(), any(), any(), anyDouble(), anyLong());
     }
 
     @Test

@@ -4,6 +4,7 @@ import com.saferoute.domain.congestion.entity.CongestionLevel;
 import com.saferoute.domain.device.service.IoTLightService;
 import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
+import com.saferoute.domain.evacuation.graph.repository.MapEdgeJpaRepository;
 import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
 import com.saferoute.domain.evacuation.grid.entity.FloorGridCell;
 import com.saferoute.domain.evacuation.grid.entity.MapEdgeGridCell;
@@ -62,6 +63,12 @@ public class RouteRecalculationService {
     private static final double CAUTION_WEIGHT_MULTIPLIER = 1.5;
     private static final double CROWDED_WEIGHT_MULTIPLIER = 3.0;
 
+    // triggerAsync()가 실행기 큐에 밀려 있다가 너무 늦게(관측 주기 5초의 네 배 가까이) 실행되면
+    // 건너뛴다 - 그 사이 같은 CCTV의 CONGESTION_ENDED가 동기로 먼저 처리돼 복구 PENDING을
+    // 만들어 놨을 수 있는데, 뒤늦게 도착한 낡은 STARTED/LEVEL_UP이 그 복구를 취소하고 이미
+    // 끝난 혼잡 기준으로 다시 우회 PENDING을 만들어버리면 안 되기 때문이다.
+    private static final long MAX_ASYNC_TRIGGER_STALENESS_MS = 20_000L;
+
     private final RouteRecalculationRepository routeRecalculationRepository;
     private final EvacuationRouteService evacuationRouteService;
     private final IoTLightService ioTLightService;
@@ -70,6 +77,7 @@ public class RouteRecalculationService {
     private final SchoolContextService schoolContextService;
     private final TrainingSessionRepository trainingSessionRepository;
     private final MapNodeJpaRepository mapNodeJpaRepository;
+    private final MapEdgeJpaRepository mapEdgeJpaRepository;
     private final FloorGridCellRepository floorGridCellRepository;
     private final MapEdgeGridCellRepository mapEdgeGridCellRepository;
     private final FireZoneRepository fireZoneRepository;
@@ -164,6 +172,15 @@ public class RouteRecalculationService {
     // 받지 않는다는 전제로 짜여 있지 않지만(trigger()에 그대로 위임), 정책상 ENDED는 여기로
     // 오면 안 된다. 호출부(CongestionObservationService/CongestionEventService)가 그 구분을 담당한다.
     //
+    // MapEdge 엔티티가 아니라 id 목록을 받는다: 호출자가 들고 있는 MapEdge는 원래 요청의
+    // 트랜잭션/영속성 컨텍스트에 묶여 있어서, floor 등 지연 로딩 필드가 아직 초기화되지
+    // 않았다면 완전히 다른 스레드에서 도는 이 메서드가 건드리는 순간 LazyInitializationException이
+    // 난다. 그래서 이 메서드 자신의 트랜잭션 안에서 id로 다시 읽어온다(reloadEdges).
+    //
+    // capturedAtMs(요청의 captured/detected 시각)로 신선도도 함께 확인한다 - 실행기 큐가
+    // 밀려서 너무 늦게 실행된 낡은 판단이, 그 사이 동기로 먼저 끝난 ENDED 복구를 되돌리고
+    // 낡은 혼잡 기준으로 새 우회 PENDING을 만드는 것을 막기 위함이다.
+    //
     // self-invocation 주의: @Async는 외부에서 프록시를 통해 호출될 때만 적용되므로 반드시
     // 다른 빈(CongestionObservationService 등)이 호출해야 한다. 이 메서드 자신에 @Transactional을
     // 걸어 둔 이유도 self-invocation 때문이다 - trigger(...)가 내부에서 같은 인스턴스의
@@ -175,9 +192,26 @@ public class RouteRecalculationService {
     // 새 스레드라 애초에 참여할 트랜잭션이 없다).
     @Async(AsyncConfig.CONGESTION_RECALCULATION_EXECUTOR)
     @Transactional
-    public void triggerAsync(TrainingSession session, List<MapEdge> affectedEdges, CongestionLevel level,
-            RecalculationTriggerType triggerType, String cctvCode, double density) {
+    public void triggerAsync(TrainingSession session, List<UUID> affectedEdgeIds, CongestionLevel level,
+            RecalculationTriggerType triggerType, String cctvCode, double density, long capturedAtMs) {
+        long stalenessMs = System.currentTimeMillis() - capturedAtMs;
+        if (stalenessMs > MAX_ASYNC_TRIGGER_STALENESS_MS) {
+            log.warn("재탐색 비동기 작업이 너무 오래 지체돼 건너뜀(낡은 판단이 더 최근 처리를 "
+                            + "덮어쓰는 것을 방지): sessionId={}, cctvCode={}, triggerType={}, stalenessMs={}",
+                    session.getId(), cctvCode, triggerType, stalenessMs);
+            return;
+        }
+        List<MapEdge> affectedEdges = reloadEdges(affectedEdgeIds);
         trigger(session, affectedEdges, level, triggerType, cctvCode, density);
+    }
+
+    // findAllById는 순서를 보장하지 않으므로 호출자가 넘긴 순서로 재정렬한다(trigger()가
+    // affectedEdges.get(0)을 대표 엣지로 쓰므로 순서가 바뀌면 안 된다). 그 사이 삭제된
+    // 엣지는 조용히 걸러낸다.
+    private List<MapEdge> reloadEdges(List<UUID> edgeIds) {
+        Map<UUID, MapEdge> edgesById = mapEdgeJpaRepository.findAllById(edgeIds).stream()
+                .collect(Collectors.toMap(MapEdge::getId, edge -> edge));
+        return edgeIds.stream().map(edgesById::get).filter(Objects::nonNull).toList();
     }
 
     // 화재 확산으로 트리거되는 우회 경로 재탐색.

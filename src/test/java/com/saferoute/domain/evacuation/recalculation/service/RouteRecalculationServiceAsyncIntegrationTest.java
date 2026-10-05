@@ -1,6 +1,8 @@
 package com.saferoute.domain.evacuation.recalculation.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 
 import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.building.entity.BuildingType;
@@ -15,6 +17,7 @@ import com.saferoute.domain.evacuation.recalculation.entity.RecalculationStatus;
 import com.saferoute.domain.evacuation.recalculation.entity.RecalculationTriggerType;
 import com.saferoute.domain.evacuation.recalculation.entity.RouteRecalculation;
 import com.saferoute.domain.evacuation.recalculation.repository.RouteRecalculationRepository;
+import com.saferoute.domain.evacuation.service.EvacuationRouteService;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.floor.repository.FloorRepository;
 import com.saferoute.domain.training.entity.FireSpreadSpeed;
@@ -31,9 +34,13 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.support.TransactionTemplate;
 
 // triggerAsync()가 self-invocation으로 trigger()를 호출하는 구조라, @Async 프록시를 통해
@@ -65,18 +72,16 @@ class RouteRecalculationServiceAsyncIntegrationTest {
     private RouteRecalculationService routeRecalculationService;
     @Autowired
     private TransactionTemplate transactionTemplate;
+    @MockitoSpyBean
+    private EvacuationRouteService evacuationRouteService;
 
     @Test
     void triggerAsync_persistsPendingRecalculationWithoutThrowing() {
         Fixture fixture = transactionTemplate.execute(status -> createFixture());
 
-        // 호출 자체가 블로킹 없이 즉시 반환되는지(동기 trigger()와 달리 호출자가 기다리지
-        // 않는지)는 호출 스레드에서 예외가 전혀 전파되지 않는다는 사실로도 간접 확인된다 -
-        // self-invocation 트랜잭션 버그가 있었다면 비동기 스레드에서 예외가 나고,
-        // AsyncConfig의 핸들러가 삼켜서 호출자는 멀쩡한데 PENDING은 영원히 안 생겼을 것이다.
         routeRecalculationService.triggerAsync(
-                fixture.session(), fixture.congestedCorridor(), CongestionLevel.CROWDED,
-                RecalculationTriggerType.LEVEL_UP, "CCTV_001", 3.5);
+                fixture.session(), edgeIds(fixture.congestedCorridor()), CongestionLevel.CROWDED,
+                RecalculationTriggerType.LEVEL_UP, "CCTV_001", 3.5, System.currentTimeMillis());
 
         RouteRecalculation pending = awaitPendingRecalculation(fixture.session().getId());
 
@@ -88,6 +93,48 @@ class RouteRecalculationServiceAsyncIntegrationTest {
         List<UUID> recalculatedNodeIds = transactionTemplate.execute(status -> List.copyOf(
                 routeRecalculationRepository.findById(pending.getId()).orElseThrow().getRecalculatedNodeIds()));
         assertThat(recalculatedNodeIds).contains(fixture.midRight().getId());
+    }
+
+    // 위 테스트는 "언젠가 PENDING이 생긴다"만 증명해서, triggerAsync()가 실수로 동기 실행되게
+    // 바뀌어도(예: @Async 설정 누락) 똑같이 통과한다. 여기서는 재탐색의 무거운 부분
+    // (findShortestRoute)을 래치로 묶어두고, 호출자가 그 작업이 끝나기 전에 triggerAsync()
+    // 호출에서 돌아오는지를 직접 확인한다 - 동기로 실행된다면 호출자 스레드 자신이 release
+    // 래치를 내리기 전에 먼저 그 안에서 멈춰 데드락이 나고, @Timeout이 테스트를 실패시킨다.
+    @Test
+    @Timeout(value = 5, unit = TimeUnit.SECONDS)
+    void triggerAsync_returnsToCallerBeforeRecalculationWorkCompletes() throws InterruptedException {
+        Fixture fixture = transactionTemplate.execute(status -> createFixture());
+
+        CountDownLatch enteredWork = new CountDownLatch(1);
+        CountDownLatch releaseWork = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            enteredWork.countDown();
+            releaseWork.await();
+            return invocation.callRealMethod();
+        }).when(evacuationRouteService).findShortestRoute(any(), any(), any(), any());
+
+        routeRecalculationService.triggerAsync(
+                fixture.session(), edgeIds(fixture.congestedCorridor()), CongestionLevel.CROWDED,
+                RecalculationTriggerType.LEVEL_UP, "CCTV_001", 3.5, System.currentTimeMillis());
+
+        // triggerAsync() 호출이 여기까지 돌아왔다는 것 자체가, 저 래치 안에 갇힌 작업을
+        // 기다리지 않았다는 뜻이다 - 동기 실행이었다면 바로 위 호출에서 이미 막혀 있었을 것.
+        assertThat(enteredWork.await(2, TimeUnit.SECONDS))
+                .as("비동기 작업이 findShortestRoute까지 진입했어야 한다")
+                .isTrue();
+        assertThat(routeRecalculationRepository
+                .findAllByTrainingSession_IdAndStatus(fixture.session().getId(), RecalculationStatus.PENDING))
+                .as("무거운 작업이 아직 release되지 않았으니 PENDING이 생기면 안 된다")
+                .isEmpty();
+
+        releaseWork.countDown();
+
+        RouteRecalculation pending = awaitPendingRecalculation(fixture.session().getId());
+        assertThat(pending.getTriggerType()).isEqualTo(RecalculationTriggerType.LEVEL_UP);
+    }
+
+    private static List<UUID> edgeIds(List<MapEdge> edges) {
+        return edges.stream().map(MapEdge::getId).toList();
     }
 
     private RouteRecalculation awaitPendingRecalculation(UUID sessionId) {
@@ -140,8 +187,12 @@ class RouteRecalculationServiceAsyncIntegrationTest {
         mapEdgeRepository.save(MapEdge.create(floor, startNode, midRight, 1.5, true));
         mapEdgeRepository.save(MapEdge.create(floor, midRight, exitNode, 1.5, true));
 
+        // 테스트 메서드 두 개가 각자 createFixture()를 호출하므로(같은 인메모리 DB를 공유),
+        // username/email이 고정 문자열이면 두 번째 호출에서 유니크 제약 위반이 난다.
+        // username은 길이 제한(2~20자)이 있어 접두사를 짧게 둔다.
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
         User admin = userRepository.save(User.create(
-                "async-recalc-admin", "password", "async-recalc-admin@saferoute.com",
+                "async-" + suffix, "password", "async-recalc-admin-" + suffix + "@saferoute.com",
                 UserRole.MANAGER, SCHOOL_NAME));
 
         TrainingScenario scenario = trainingScenarioRepository.save(TrainingScenario.create(

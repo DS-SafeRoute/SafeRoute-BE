@@ -128,9 +128,12 @@ public class CongestionEventService {
                             session, affectedEdges, savedLevel, triggerType, cctv.getCode(), density);
                 } else {
                     // STARTED/LEVEL_UP은 혼잡이 지속되는 동안 다음 관측값이 5초마다 재시도해주므로
-                    // 비동기로 떼어내도 안전하다 (#250).
+                    // 비동기로 떼어내도 안전하다 (#250). MapEdge 엔티티가 아니라 id만 넘기고,
+                    // detectedAt을 함께 넘겨 너무 늦게 실행될 낡은 판단은 triggerAsync가 스스로
+                    // 건너뛰게 한다.
                     routeRecalculationService.triggerAsync(
-                            session, affectedEdges, savedLevel, triggerType, cctv.getCode(), density);
+                            session, affectedEdges.stream().map(MapEdge::getId).toList(), savedLevel,
+                            triggerType, cctv.getCode(), density, request.detectedAt());
                 }
             }
             publishAndCompleteAfterCommit(session.getId(), affectedEdges, saveResult.item());
