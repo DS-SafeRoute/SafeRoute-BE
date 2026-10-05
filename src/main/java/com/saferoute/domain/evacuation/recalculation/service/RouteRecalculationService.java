@@ -30,6 +30,7 @@ import com.saferoute.domain.user.service.SchoolContextService;
 import com.saferoute.global.api.error.EvacuationErrorCode;
 import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
+import com.saferoute.global.config.AsyncConfig;
 import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -43,6 +44,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -151,6 +153,31 @@ public class RouteRecalculationService {
 
         savePending(lockedSession, representativeEdge, cctvCode, triggerType, level, density,
                 previous, candidate, candidateNodeIds);
+    }
+
+    // trigger()의 비동기 버전 (#250). STARTED/LEVEL_UP은 Pi가 5초마다 보내는 관측값이 혼잡이
+    // 지속되는 동안 반복 재시도해주므로, 디바이스 응답 경로에서 TrainingSession 행 락 대기와
+    // 경로탐색을 떼어내도 한 번 실패해도 다음 관측값이 자연히 다시 트리거한다.
+    //
+    // ENDED(triggerRecovery로 가는 복구 판단)는 Pi가 보내는 1회성 신호라 재시도 기회가 없으므로
+    // 호출부에서 이 메서드가 아니라 동기 trigger()를 그대로 써야 한다 - 이 메서드는 ENDED를
+    // 받지 않는다는 전제로 짜여 있지 않지만(trigger()에 그대로 위임), 정책상 ENDED는 여기로
+    // 오면 안 된다. 호출부(CongestionObservationService/CongestionEventService)가 그 구분을 담당한다.
+    //
+    // self-invocation 주의: @Async는 외부에서 프록시를 통해 호출될 때만 적용되므로 반드시
+    // 다른 빈(CongestionObservationService 등)이 호출해야 한다. 이 메서드 자신에 @Transactional을
+    // 걸어 둔 이유도 self-invocation 때문이다 - trigger(...)가 내부에서 같은 인스턴스의
+    // trigger()를 직접 호출(this.trigger(...))하면 그 호출은 프록시를 안 타서 trigger() 자신의
+    // @Transactional이 적용되지 않는다. 이 메서드가 먼저 트랜잭션을 열어두면 그 안에서 실행되는
+    // trigger()는 이미 열려 있는 트랜잭션에 그냥 참여(REQUIRED)하게 되어 문제가 없다
+    // (triggerForFireSpread()가 REQUIRES_NEW를 쓰는 것과는 다른 문제 - 거기는 "이미 다른
+    // 트랜잭션의 afterCommit 콜백 안"이라 새 트랜잭션을 강제해야 했던 것이고, 여기는 완전히
+    // 새 스레드라 애초에 참여할 트랜잭션이 없다).
+    @Async(AsyncConfig.CONGESTION_RECALCULATION_EXECUTOR)
+    @Transactional
+    public void triggerAsync(TrainingSession session, List<MapEdge> affectedEdges, CongestionLevel level,
+            RecalculationTriggerType triggerType, String cctvCode, double density) {
+        trigger(session, affectedEdges, level, triggerType, cctvCode, density);
     }
 
     // 화재 확산으로 트리거되는 우회 경로 재탐색.
