@@ -121,6 +121,9 @@ class RouteRecalculationServiceTest {
         session = mock(TrainingSession.class);
         UUID sessionId = UUID.randomUUID();
         org.mockito.Mockito.lenient().when(session.getId()).thenReturn(sessionId);
+        // trigger()가 락 직후 RUNNING 여부를 확인하므로, 종료 후 케이스를 따로 다루는
+        // 테스트가 아니면 기본값은 RUNNING으로 둔다.
+        org.mockito.Mockito.lenient().when(session.getStatus()).thenReturn(TrainingStatus.RUNNING);
         org.mockito.Mockito.lenient().when(trainingSessionRepository.findByIdForUpdate(sessionId))
                 .thenReturn(Optional.of(session));
         org.mockito.Mockito.lenient().when(routeRecalculationRepository
@@ -187,6 +190,33 @@ class RouteRecalculationServiceTest {
     private void givenNoDirectRoute() {
         given(evacuationRouteService.findShortestRoute(floorId, startNodeId))
                 .willThrow(new ApiException(EvacuationErrorCode.EVACUATION_ROUTE_NOT_FOUND));
+    }
+
+    @Test
+    @DisplayName("세션이 이미 종료됐으면 PENDING을 조회/생성하지 않고 건너뛴다")
+    void trigger_skipsWhenSessionAlreadyEnded() {
+        given(session.getStatus()).willReturn(TrainingStatus.COMPLETED);
+
+        routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.CROWDED,
+                RecalculationTriggerType.LEVEL_UP, "CCTV_001", 3.5);
+
+        verify(routeRecalculationRepository, never())
+                .findAllByTrainingSession_IdAndStatus(any(), any());
+        verify(routeRecalculationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("ENDED(복구) 트리거도 세션이 이미 종료됐으면 건너뛴다")
+    void trigger_ended_skipsWhenSessionAlreadyEnded() {
+        given(session.getStatus()).willReturn(TrainingStatus.COMPLETED);
+
+        routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.NORMAL,
+                RecalculationTriggerType.ENDED, "CCTV_001", 1.0);
+
+        verify(routeRecalculationRepository, never())
+                .findAllByTrainingSession_IdAndStatus(any(), any());
+        verify(routeRecalculationRepository, never())
+                .findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(any(), any());
     }
 
     @Test
