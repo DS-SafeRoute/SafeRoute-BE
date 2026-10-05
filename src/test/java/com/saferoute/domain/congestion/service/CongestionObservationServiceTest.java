@@ -259,6 +259,8 @@ class CongestionObservationServiceTest {
         // avgHeadcount=5 -> density=1.25 -> NORMAL
         service.reportObservation(cctv, request(5.0));
 
+        verify(routeRecalculationService, never())
+                .triggerAsync(any(), any(), any(), any(), any(), anyDouble(), anyLong());
         verify(routeRecalculationService, never()).trigger(any(), any(), any(), any(), any(), anyDouble());
         verify(latestMonitoringCaptureRepository).updateIfLatest(argThat(capture ->
                 capture.getTrainingSessionId().equals(sessionId.toString())
@@ -304,9 +306,9 @@ class CongestionObservationServiceTest {
         // avgHeadcount=13 -> density=3.25 -> CROWDED
         service.reportObservation(cctv, request(13.0));
 
-        verify(routeRecalculationService).trigger(eq(session), eq(List.of(edgeA, edgeB)),
+        verify(routeRecalculationService).triggerAsync(eq(session), eq(expectedEdgeIds),
                 eq(CongestionLevel.CROWDED),
-                eq(RecalculationTriggerType.LEVEL_UP), eq("CCTV_001"), anyDouble());
+                eq(RecalculationTriggerType.LEVEL_UP), eq("CCTV_001"), anyDouble(), anyLong());
         verify(trainingEventPublisher, times(1)).publishCongestionUpdated(
                 eq(sessionId), eq(expectedEdgeIds), any());
     }
@@ -343,6 +345,8 @@ class CongestionObservationServiceTest {
         // avgHeadcount=13 -> density=3.25 -> CROWDED, 그래도 Edge가 없으니 트리거는 없음
         service.reportObservation(cctv, request(13.0));
 
+        verify(routeRecalculationService, never())
+                .triggerAsync(any(), any(), any(), any(), any(), anyDouble(), anyLong());
         verify(routeRecalculationService, never()).trigger(any(), any(), any(), any(), any(), anyDouble());
         verify(trainingEventPublisher).publishCongestionUpdated(eq(sessionId), eq(List.of()), any());
     }
@@ -361,6 +365,8 @@ class CongestionObservationServiceTest {
 
         assertThat(result.created()).isFalse();
         verify(trainingEventPublisher, never()).publishCongestionUpdated(any(), any(), any());
+        verify(routeRecalculationService, never())
+                .triggerAsync(any(), any(), any(), any(), any(), anyDouble(), anyLong());
         verify(routeRecalculationService, never()).trigger(any(), any(), any(), any(), any(), anyDouble());
         verify(observationCountRepository, never()).increment(anyString(), anyString());
     }

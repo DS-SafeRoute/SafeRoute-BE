@@ -153,9 +153,14 @@ public class CongestionObservationService {
                             session.getId(), cctv.getCode(), savedLevel
                     );
                 } else {
-                    routeRecalculationService.trigger(
-                            session, affectedEdges, savedLevel, RecalculationTriggerType.LEVEL_UP,
-                            cctv.getCode(), density);
+                    // 관측값은 항상 LEVEL_UP이라 혼잡이 지속되면 5초마다 재시도되므로 비동기로
+                    // 떼어내도 안전하다 (#250) - ENDED는 이 서비스가 다루지 않는다
+                    // (CongestionEventService 참고). MapEdge 엔티티가 아니라 id만 넘기고,
+                    // capturedAt을 함께 넘겨 너무 늦게 실행될 낡은 판단은 triggerAsync가 스스로
+                    // 건너뛰게 한다.
+                    routeRecalculationService.triggerAsync(
+                            session, affectedEdges.stream().map(MapEdge::getId).toList(), savedLevel,
+                            RecalculationTriggerType.LEVEL_UP, cctv.getCode(), density, request.capturedAt());
                 }
             }
             publishAndCompleteAfterCommit(session.getId(), affectedEdges, saveResult.item(), processingOwner);

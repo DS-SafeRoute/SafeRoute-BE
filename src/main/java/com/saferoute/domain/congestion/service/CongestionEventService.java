@@ -118,9 +118,22 @@ public class CongestionEventService {
                                     + "sessionId={}, cctvCode={}, level={}, triggerType={}",
                             session.getId(), cctv.getCode(), savedLevel, triggerType
                     );
-                } else {
+                } else if (triggerType == RecalculationTriggerType.ENDED) {
+                    // ENDED(정상 경로 복구 판단)는 Pi가 보내는 1회성 신호라, 비동기 처리 중
+                    // 실패하면 관측값이 재시도해줄 다음 기회가 없다(관측값은 레벨이 NORMAL이면
+                    // 애초에 재탐색을 트리거하지 않음, CongestionObservationService 참고).
+                    // 그래서 ENDED만큼은 동기로 남겨 디바이스 응답까지 묶어 실패를 바로
+                    // 드러낸다 (#250).
                     routeRecalculationService.trigger(
                             session, affectedEdges, savedLevel, triggerType, cctv.getCode(), density);
+                } else {
+                    // STARTED/LEVEL_UP은 혼잡이 지속되는 동안 다음 관측값이 5초마다 재시도해주므로
+                    // 비동기로 떼어내도 안전하다 (#250). MapEdge 엔티티가 아니라 id만 넘기고,
+                    // detectedAt을 함께 넘겨 너무 늦게 실행될 낡은 판단은 triggerAsync가 스스로
+                    // 건너뛰게 한다.
+                    routeRecalculationService.triggerAsync(
+                            session, affectedEdges.stream().map(MapEdge::getId).toList(), savedLevel,
+                            triggerType, cctv.getCode(), density, request.detectedAt());
                 }
             }
             publishAndCompleteAfterCommit(session.getId(), affectedEdges, saveResult.item());

@@ -17,6 +17,7 @@ import com.saferoute.domain.device.service.IoTLightService;
 import com.saferoute.domain.evacuation.graph.entity.MapEdge;
 import com.saferoute.domain.evacuation.graph.entity.MapNode;
 import com.saferoute.domain.evacuation.graph.entity.NodeType;
+import com.saferoute.domain.evacuation.graph.repository.MapEdgeJpaRepository;
 import com.saferoute.domain.evacuation.graph.repository.MapNodeJpaRepository;
 import com.saferoute.domain.evacuation.grid.entity.FloorGridCell;
 import com.saferoute.domain.evacuation.grid.entity.MapEdgeGridCell;
@@ -93,6 +94,9 @@ class RouteRecalculationServiceTest {
 
     @Mock
     private MapNodeJpaRepository mapNodeJpaRepository;
+
+    @Mock
+    private MapEdgeJpaRepository mapEdgeJpaRepository;
 
     @Mock
     private FloorGridCellRepository floorGridCellRepository;
@@ -650,6 +654,52 @@ class RouteRecalculationServiceTest {
                 session, triggerEdge, List.of(UUID.randomUUID()), 10.0, List.of(UUID.randomUUID()), 12.5);
         ReflectionTestUtils.setField(recalculation, "id", UUID.randomUUID());
         return recalculation;
+    }
+
+    @Test
+    @DisplayName("triggerAsync는 capturedAt이 너무 오래됐으면 엣지를 다시 읽지도 않고 건너뛴다")
+    void triggerAsync_skipsWhenCapturedAtTooStale() {
+        long staleCapturedAtMs = System.currentTimeMillis() - 30_000L;
+
+        routeRecalculationService.triggerAsync(session, List.of(triggerEdge.getId()), CongestionLevel.CROWDED,
+                RecalculationTriggerType.LEVEL_UP, "CCTV_001", 3.5, staleCapturedAtMs);
+
+        verify(mapEdgeJpaRepository, never()).findAllById(any());
+        verify(trainingSessionRepository, never()).findByIdForUpdate(any());
+        verify(routeRecalculationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("triggerAsync는 capturedAt이 신선하면 id로 엣지를 다시 읽어 원래 순서로 trigger()에 넘긴다")
+    void triggerAsync_reloadsEdgesByIdInOriginalOrderThenDelegates() {
+        givenNoExistingPending();
+        givenNoApprovedHistory();
+        givenNoDirectRoute();
+
+        UUID secondEdgeId = UUID.randomUUID();
+        MapEdge secondEdge = MapEdge.create(
+                triggerEdge.getFloor(), mock(MapNode.class), mock(MapNode.class), 4.0, true);
+        ReflectionTestUtils.setField(secondEdge, "id", secondEdgeId);
+        // findAllById는 순서를 보장하지 않는다 - 저장소가 요청과 다른 순서로 돌려줘도
+        // reloadEdges가 원래 순서로 재정렬해야 대표 엣지(affectedEdges.get(0))가 triggerEdge로
+        // 유지된다.
+        given(mapEdgeJpaRepository.findAllById(List.of(triggerEdge.getId(), secondEdgeId)))
+                .willReturn(List.of(secondEdge, triggerEdge));
+
+        MapNode exitNode = MapNode.create(mock(Floor.class), "STAIR1", NodeType.STAIR, "STAIR1", 0, 0, true);
+        ReflectionTestUtils.setField(exitNode, "id", UUID.randomUUID());
+        given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any()))
+                .willReturn(new EvacuationRoute(List.of(exitNode), 12.5));
+        given(routeRecalculationRepository.save(any())).willReturn(pendingRecalculation(CongestionLevel.CROWDED));
+
+        routeRecalculationService.triggerAsync(session, List.of(triggerEdge.getId(), secondEdgeId),
+                CongestionLevel.CROWDED, RecalculationTriggerType.LEVEL_UP, "CCTV_001", 3.5,
+                System.currentTimeMillis());
+
+        verify(trainingSessionRepository).findByIdForUpdate(session.getId());
+        ArgumentCaptor<RouteRecalculation> captor = ArgumentCaptor.forClass(RouteRecalculation.class);
+        verify(routeRecalculationRepository).save(captor.capture());
+        assertThat(captor.getValue().getTriggerEdge()).isEqualTo(triggerEdge);
     }
 
     @Test
