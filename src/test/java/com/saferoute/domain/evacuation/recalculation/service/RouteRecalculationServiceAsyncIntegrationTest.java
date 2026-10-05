@@ -119,15 +119,20 @@ class RouteRecalculationServiceAsyncIntegrationTest {
 
         // triggerAsync() 호출이 여기까지 돌아왔다는 것 자체가, 저 래치 안에 갇힌 작업을
         // 기다리지 않았다는 뜻이다 - 동기 실행이었다면 바로 위 호출에서 이미 막혀 있었을 것.
-        assertThat(enteredWork.await(2, TimeUnit.SECONDS))
-                .as("비동기 작업이 findShortestRoute까지 진입했어야 한다")
-                .isTrue();
-        assertThat(routeRecalculationRepository
-                .findAllByTrainingSession_IdAndStatus(fixture.session().getId(), RecalculationStatus.PENDING))
-                .as("무거운 작업이 아직 release되지 않았으니 PENDING이 생기면 안 된다")
-                .isEmpty();
-
-        releaseWork.countDown();
+        // 아래 단언 중 하나라도 실패해도 releaseWork는 반드시 내려야 한다 - 안 그러면
+        // findShortestRoute 안에서 대기 중인 비동기 스레드가 영원히 풀려나지 못해서, 작은
+        // 전용 스레드풀(core 2개)의 스레드 하나를 테스트가 끝난 뒤에도 영구히 묶어버린다.
+        try {
+            assertThat(enteredWork.await(2, TimeUnit.SECONDS))
+                    .as("비동기 작업이 findShortestRoute까지 진입했어야 한다")
+                    .isTrue();
+            assertThat(routeRecalculationRepository
+                    .findAllByTrainingSession_IdAndStatus(fixture.session().getId(), RecalculationStatus.PENDING))
+                    .as("무거운 작업이 아직 release되지 않았으니 PENDING이 생기면 안 된다")
+                    .isEmpty();
+        } finally {
+            releaseWork.countDown();
+        }
 
         RouteRecalculation pending = awaitPendingRecalculation(fixture.session().getId());
         assertThat(pending.getTriggerType()).isEqualTo(RecalculationTriggerType.LEVEL_UP);
