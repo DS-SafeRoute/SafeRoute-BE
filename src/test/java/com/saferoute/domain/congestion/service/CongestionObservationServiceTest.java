@@ -122,6 +122,10 @@ class CongestionObservationServiceTest {
                 .thenReturn(CongestionConfig.createDefault());
         // 기본은 GridCell 4개(면적 4.0m2)로, avgHeadcount=5 -> density=1.25 (NORMAL)
         org.mockito.Mockito.lenient().when(cctvGridCellRepository.countByCctv_Id(cctvId)).thenReturn(4);
+        // 실제 리포지토리는 항상 non-null IdempotentSaveResult를 돌려주므로, 그 전제로 동작하는
+        // tryCreateAiAnalysisStartedEvent()의 .created() 체크가 목에서도 NPE 없이 테스트되게 한다.
+        org.mockito.Mockito.lenient().when(generalMonitoringEventRepository.saveIfAbsent(any()))
+                .thenAnswer(invocation -> IdempotentSaveResult.created(invocation.getArgument(0)));
     }
 
     private ReportObservationRequest request(double avgHeadcount) {
@@ -565,6 +569,7 @@ class CongestionObservationServiceTest {
                         && item.getOccurredAt() == 2_000L
                         && item.getCongestionLevel() == null
         ));
+        verify(trainingEventPublisher).publishGeneralMonitoringEventReceived(eq(sessionId), any());
     }
 
     @Test

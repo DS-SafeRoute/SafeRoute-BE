@@ -14,6 +14,7 @@ import com.saferoute.domain.telemetry.dynamo.entity.ObservationItem;
 import com.saferoute.domain.telemetry.dynamo.entity.RouteDeviationState;
 import com.saferoute.domain.telemetry.dynamo.entity.RouteDeviationStateItem;
 import com.saferoute.domain.telemetry.dynamo.repository.GeneralMonitoringEventRepository;
+import com.saferoute.domain.telemetry.dynamo.repository.IdempotentSaveResult;
 import com.saferoute.domain.telemetry.dynamo.repository.LightDirectionEventRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.ObservationRepository;
 import com.saferoute.domain.telemetry.dynamo.repository.RouteDeviationStateRepository;
@@ -23,6 +24,7 @@ import com.saferoute.domain.user.service.SchoolContextService;
 import com.saferoute.global.api.error.IoTLightErrorCode;
 import com.saferoute.global.api.error.TrainingErrorCode;
 import com.saferoute.global.api.exception.ApiException;
+import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -62,6 +64,7 @@ public class RouteDeviationService {
     private final SchoolContextService schoolContextService;
     private final RouteDeviationStateRepository routeDeviationStateRepository;
     private final GeneralMonitoringEventRepository generalMonitoringEventRepository;
+    private final TrainingEventPublisher trainingEventPublisher;
 
     public RouteDeviationResponse calculate(UUID lightId, UUID trainingSessionId, String email) {
         String schoolName = schoolContextService.getSchoolName(email);
@@ -220,7 +223,11 @@ public class RouteDeviationService {
                 occurredAt,
                 null
         );
-        generalMonitoringEventRepository.saveIfAbsent(item);
+        IdempotentSaveResult<GeneralMonitoringEventItem> result = generalMonitoringEventRepository.saveIfAbsent(item);
+        if (result.created()) {
+            trainingEventPublisher.publishGeneralMonitoringEventReceived(
+                    UUID.fromString(trainingSessionId), result.item());
+        }
     }
 
     // 유도등 하나에 대해 (관측 구간 수, 이탈 구간 수)를 계산, 경로가 지나는 CCTV를 특정할 수 없으면 empty.
