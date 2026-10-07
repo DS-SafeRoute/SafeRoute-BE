@@ -421,7 +421,25 @@ public class RouteRecalculationService {
         if (firedCellIds.isEmpty()) {
             return List.of();
         }
-        return mapEdgeGridCellRepository.findAllByGridCell_IdIn(firedCellIds).stream()
+        return edgesOfCells(firedCellIds);
+    }
+
+    // 아직 훈련이 시작되지 않은 시나리오의 최초 발화점(관리자가 수동 지정한 셀)이 막는 MapEdge id 집합.
+    // 확산으로 생긴 FireZone은 이전 세션의 이력일 수 있어 포함하지 않는다(TrainingSessionService.start()가
+    // 발화점을 활성화할 때와 같은 기준).
+    private Set<UUID> originEdgeIdsForFloor(UUID scenarioId, UUID floorId) {
+        List<UUID> originCellIds = fireZoneRepository.findByScenario_IdAndIsManualAddTrue(scenarioId).stream()
+                .filter(zone -> floorId.equals(zone.getFloorId()))
+                .map(FireZone::getGridCellId)
+                .toList();
+        if (originCellIds.isEmpty()) {
+            return Set.of();
+        }
+        return edgesOfCells(originCellIds).stream().map(MapEdge::getId).collect(Collectors.toSet());
+    }
+
+    private List<MapEdge> edgesOfCells(List<UUID> gridCellIds) {
+        return mapEdgeGridCellRepository.findAllByGridCell_IdIn(gridCellIds).stream()
                 .map(MapEdgeGridCell::getMapEdge)
                 .distinct()
                 .toList();
@@ -627,7 +645,12 @@ public class RouteRecalculationService {
             throw new ApiException(TrainingErrorCode.START_NODE_NOT_CONFIGURED);
         }
         UUID floorId = representativeStart.getFloor().getId();
-        Set<UUID> excludedEdgeIds = firedEdgeIdsForFloor(scenario.getId(), floorId);
+        // 시작 전(SCHEDULED)에는 발화점 셀이 아직 isFired=false다(evacuation-setup은 isFired를 켜지 않고
+        // 훈련 시작 시점에 켠다). isFired 기준으로만 제외하면 시작 전 화면이 화재를 지나는 경로를 보여주므로,
+        // 시작 전에는 시나리오에 등록된 최초 발화점 구간을 기준으로 제외한다.
+        Set<UUID> excludedEdgeIds = session.getStatus() == TrainingStatus.SCHEDULED
+                ? originEdgeIdsForFloor(scenario.getId(), floorId)
+                : firedEdgeIdsForFloor(scenario.getId(), floorId);
         EvacuationRoute directRoute =
                 evacuationRouteService.findShortestRoute(floorId, representativeStart.getId(), excludedEdgeIds);
         List<CurrentRouteResponse.NodePoint> path = directRoute.path().stream()
