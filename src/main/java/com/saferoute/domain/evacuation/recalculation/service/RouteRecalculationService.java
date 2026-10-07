@@ -61,8 +61,8 @@ public class RouteRecalculationService {
     // VERY_CROWDED는 배율이 아니라 완전 제외(excludedEdgeIds)로 처리한다 - trigger()의
     // requiresRouteRecalculation() 게이트 상 CAUTION은 현재 이 메서드까지 도달하지 않지만,
     // 표 전체를 그대로 반영해둔다.
-    private static final double CAUTION_WEIGHT_MULTIPLIER = 1.5;
-    private static final double CROWDED_WEIGHT_MULTIPLIER = 3.0;
+    static final double CAUTION_WEIGHT_MULTIPLIER = 1.5;
+    static final double CROWDED_WEIGHT_MULTIPLIER = 3.0;
 
     // triggerAsync()가 실행기 큐에 밀려 있다가 너무 늦게(관측 주기 5초의 네 배 가까이) 실행되면
     // 건너뛴다 - 그 사이 같은 CCTV의 CONGESTION_ENDED가 동기로 먼저 처리돼 복구 PENDING을
@@ -82,6 +82,7 @@ public class RouteRecalculationService {
     private final FloorGridCellRepository floorGridCellRepository;
     private final MapEdgeGridCellRepository mapEdgeGridCellRepository;
     private final FireZoneRepository fireZoneRepository;
+    private final CurrentCongestionWeightProvider currentCongestionWeightProvider;
 
     // 혼잡 감지로 트리거되는 우회 경로 재탐색.
     // - CCTV 한 대가 감시하는 모든 엣지를 한 번에 반영해 후보 경로 하나만 만든다.
@@ -228,7 +229,8 @@ public class RouteRecalculationService {
     // - affectedEdges는 "현재 그 층에서 불이 붙은 모든 구간"이어야 한다(이번 틱에 새로 옮겨붙은
     //   구간만이 아니라 누적본). 화재는 꺼지지 않으므로 매번 전체 화재 구간을 다시 완전 제외해야
     //   이전 스텝에서 제외했던 구간이 다시 후보 경로에 섞여 들어가는 일이 없다.
-    // - 혼잡과 달리 화재는 가중치가 아니라 항상 완전 제외(hard exclusion)로 처리한다.
+    // - 혼잡과 달리 화재는 가중치가 아니라 항상 완전 제외(hard exclusion)로 처리한다. 대신 후보 경로는
+    //   그 시점의 층 전체 혼잡 상태(CurrentCongestionWeightProvider)를 가중치로 반영한다.
     // - CongestionLevel/cctvCode/density 개념이 없으므로 별도 팩토리(createPendingForFireSpread)로 저장한다.
     // - 기존 PENDING 중 이번에 새로 화재 구간이 된 엣지를 실제로 지나가는 건은, 새 대안 유무와
     //   무관하게 즉시 무효화한다(관리자가 나중에 화재 통과 경로를 실수로 승인하는 일을 막기 위함).
@@ -280,9 +282,13 @@ public class RouteRecalculationService {
         }
 
         Set<UUID> excludedEdgeIds = affectedEdges.stream().map(MapEdge::getId).collect(Collectors.toSet());
+        // 화재는 완전 제외하되, 지금 혼잡한 복도는 가중치로 피한다(제외가 아니라 페널티라 혼잡한 길밖에
+        // 없어도 후보는 항상 나온다).
+        Map<UUID, Double> congestionMultipliers = currentCongestionMultipliersOrEmpty(lockedSession.getId(), floorId);
         EvacuationRoute candidate;
         try {
-            candidate = evacuationRouteService.findShortestRoute(floorId, startNodeId, excludedEdgeIds, Map.of());
+            candidate = evacuationRouteService.findShortestRoute(
+                    floorId, startNodeId, excludedEdgeIds, congestionMultipliers);
         } catch (ApiException exception) {
             if (exception.getErrorCode() == EvacuationErrorCode.EVACUATION_ROUTE_NOT_FOUND) {
                 log.warn("화재로 막힌 구간을 피해 우회 경로를 찾을 수 없어 재탐색 승인 대기 항목을 생성하지 않음: sessionId={}",
@@ -305,6 +311,19 @@ public class RouteRecalculationService {
                 lockedSession, representativeEdge, previous.nodeIds(), previous.totalWeight(),
                 candidateNodeIds, candidate.totalWeight()));
         trainingEventPublisher.publishRouteRecalculationRequestedAfterCommit(recalculation);
+    }
+
+    // 혼잡 반영은 "더 나은 대안"을 위한 최적화일 뿐이고 화재 우회는 안전 기능이다. 혼잡 상태 저장소
+    // (DynamoDB) 장애 같은 이유로 조회가 실패해도 화재 우회 후보 생성까지 막으면 안 되므로,
+    // 실패하면 혼잡 없이(빈 맵) 계산한다.
+    private Map<UUID, Double> currentCongestionMultipliersOrEmpty(UUID sessionId, UUID floorId) {
+        try {
+            return currentCongestionWeightProvider.currentMultipliers(sessionId, floorId);
+        } catch (RuntimeException exception) {
+            log.warn("현재 혼잡 상태를 조회하지 못해 혼잡 가중치 없이 화재 우회 경로를 계산: sessionId={}, floorId={}",
+                    sessionId, floorId, exception);
+            return Map.of();
+        }
     }
 
     // nodeIds(순서대로 이어진 경로)가 edges 중 하나라도 연속된 두 노드로 포함하면 그 구간을

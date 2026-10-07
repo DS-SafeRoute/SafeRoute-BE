@@ -107,6 +107,9 @@ class RouteRecalculationServiceTest {
     @Mock
     private FireZoneRepository fireZoneRepository;
 
+    @Mock
+    private CurrentCongestionWeightProvider currentCongestionWeightProvider;
+
     private TrainingSession session;
     private TrainingScenario scenario;
     private MapEdge triggerEdge;
@@ -489,7 +492,7 @@ class RouteRecalculationServiceTest {
     }
 
     @Test
-    @DisplayName("화재 확산이면 화재 구간 엣지를 모두 제외하고(가중치 아님) 우회 경로를 계산한다")
+    @DisplayName("화재 확산이면 화재 구간 엣지는 모두 제외하고, 현재 혼잡 엣지는 가중치로 반영해 우회 경로를 계산한다")
     void triggerForFireSpread_excludesAllAffectedEdges() {
         // [설계 결정 가드 - 이슈 #247] 승인된 경로가 없어 resolveActiveRoute가 화재를 모른 채
         // (givenDirectRouteCrossesTriggerEdge) previous를 계산해도, candidate와 달라 PENDING이
@@ -505,6 +508,9 @@ class RouteRecalculationServiceTest {
         ReflectionTestUtils.setField(exitNode, "id", UUID.randomUUID());
         EvacuationRoute route = new EvacuationRoute(List.of(exitNode), 12.5);
         given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any())).willReturn(route);
+        UUID congestedEdgeId = UUID.randomUUID();
+        given(currentCongestionWeightProvider.currentMultipliers(any(), eq(floorId)))
+                .willReturn(Map.of(congestedEdgeId, 3.0));
 
         RouteRecalculation saved = pendingRecalculation(CongestionLevel.CROWDED);
         given(routeRecalculationRepository.save(any())).willReturn(saved);
@@ -518,13 +524,38 @@ class RouteRecalculationServiceTest {
         verify(evacuationRouteService).findShortestRoute(
                 any(), any(), excludedEdgesCaptor.capture(), multipliersCaptor.capture());
         assertThat(excludedEdgesCaptor.getValue()).containsExactlyInAnyOrder(triggerEdge.getId(), secondEdge.getId());
-        assertThat(multipliersCaptor.getValue()).isEmpty();
+        assertThat(multipliersCaptor.getValue()).containsExactly(Map.entry(congestedEdgeId, 3.0));
 
         ArgumentCaptor<RouteRecalculation> savedCaptor = ArgumentCaptor.forClass(RouteRecalculation.class);
         verify(routeRecalculationRepository, times(1)).save(savedCaptor.capture());
         assertThat(savedCaptor.getValue().getTriggerType()).isEqualTo(RecalculationTriggerType.FIRE_SPREAD);
         assertThat(savedCaptor.getValue().getCctvCode()).isNull();
         assertThat(savedCaptor.getValue().getCongestionLevel()).isNull();
+        verify(trainingEventPublisher, times(1)).publishRouteRecalculationRequestedAfterCommit(saved);
+    }
+
+    @Test
+    @DisplayName("현재 혼잡 상태 조회가 실패해도 화재 우회 후보는 혼잡 가중치 없이 계산해 저장한다")
+    void triggerForFireSpread_congestionLookupFails_stillCreatesPendingWithoutWeights() {
+        givenNoExistingPending();
+        givenNoApprovedHistory();
+        givenDirectRouteCrossesTriggerEdge();
+        given(currentCongestionWeightProvider.currentMultipliers(any(), eq(floorId)))
+                .willThrow(new IllegalStateException("DynamoDB 장애"));
+
+        MapNode exitNode = MapNode.create(mock(Floor.class), "STAIR1", NodeType.STAIR, "STAIR1", 0, 0, true);
+        ReflectionTestUtils.setField(exitNode, "id", UUID.randomUUID());
+        given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any()))
+                .willReturn(new EvacuationRoute(List.of(exitNode), 12.5));
+        RouteRecalculation saved = pendingRecalculation(CongestionLevel.CROWDED);
+        given(routeRecalculationRepository.save(any())).willReturn(saved);
+
+        routeRecalculationService.triggerForFireSpread(session, List.of(triggerEdge));
+
+        ArgumentCaptor<Map<UUID, Double>> multipliersCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(evacuationRouteService).findShortestRoute(any(), any(), anySet(), multipliersCaptor.capture());
+        assertThat(multipliersCaptor.getValue()).isEmpty();
+        verify(routeRecalculationRepository, times(1)).save(any());
         verify(trainingEventPublisher, times(1)).publishRouteRecalculationRequestedAfterCommit(saved);
     }
 
