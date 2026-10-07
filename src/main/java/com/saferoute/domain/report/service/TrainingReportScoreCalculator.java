@@ -14,9 +14,9 @@ public final class TrainingReportScoreCalculator {
     public static final double BOTTLENECK_WEIGHT = 0.20;
     public static final double DEVIATION_WEIGHT = 0.15;
 
-    // 병목 1회/시간당 감점 폭. 짧은 훈련과 긴 훈련을 공정하게 비교하기 위해 횟수를 시간당 빈도로
-    // 정규화한 뒤 감점한다 (예: 10분짜리 훈련에서 2번 vs 1시간짜리 훈련에서 2번은 심각도가 다르다).
-    private static final double BOTTLENECK_PENALTY_PER_EVENT_PER_HOUR = 10.0;
+    // 병목 1회당 감점 폭. 병목 10회가 한 훈련에서 발생하면 대피 흐름이 전반적으로 실패했다고
+    // 보고 0점으로 처리한다.
+    private static final double BOTTLENECK_PENALTY_PER_EVENT = 10.0;
 
     private TrainingReportScoreCalculator() {
     }
@@ -45,11 +45,9 @@ public final class TrainingReportScoreCalculator {
         return clampDecimal(rate);
     }
 
-    // 병목 발생 빈도(시간당)에 비례해 감점한다.
-    public static int bottleneckScore(int bottleneckCount, long durationSeconds) {
-        double durationHours = durationSeconds > 0 ? durationSeconds / 3600.0 : 1.0;
-        double eventsPerHour = bottleneckCount / durationHours;
-        double score = 100.0 - eventsPerHour * BOTTLENECK_PENALTY_PER_EVENT_PER_HOUR;
+    // 병목 발생 횟수에 비례해 감점한다.
+    public static int bottleneckScore(int bottleneckCount) {
+        double score = 100.0 - bottleneckCount * BOTTLENECK_PENALTY_PER_EVENT;
         return clamp(Math.round(score));
     }
 

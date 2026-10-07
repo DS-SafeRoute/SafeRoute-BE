@@ -53,20 +53,19 @@ class TrainingReportScoreCalculatorTest {
     @Test
     @DisplayName("병목이 없으면 100점이다")
     void bottleneckScore_noBottleneck_returns100() {
-        assertThat(TrainingReportScoreCalculator.bottleneckScore(0, 600)).isEqualTo(100);
+        assertThat(TrainingReportScoreCalculator.bottleneckScore(0)).isEqualTo(100);
     }
 
     @Test
-    @DisplayName("병목 발생 빈도(시간당)에 비례해 감점된다")
-    void bottleneckScore_penalizesByRatePerHour() {
-        // 10분(600초) 동안 병목 1회 -> 시간당 6회 환산 -> 100 - 6*10 = 40점
-        assertThat(TrainingReportScoreCalculator.bottleneckScore(1, 600)).isEqualTo(40);
+    @DisplayName("병목 발생 횟수 1회당 10점씩 감점된다")
+    void bottleneckScore_penalizesPerEvent() {
+        assertThat(TrainingReportScoreCalculator.bottleneckScore(1)).isEqualTo(90);
     }
 
     @Test
     @DisplayName("점수는 0점 아래로 내려가지 않는다")
     void bottleneckScore_flooredAtZero() {
-        assertThat(TrainingReportScoreCalculator.bottleneckScore(100, 600)).isEqualTo(0);
+        assertThat(TrainingReportScoreCalculator.bottleneckScore(10)).isEqualTo(0);
     }
 
     // === deviationScore ===
