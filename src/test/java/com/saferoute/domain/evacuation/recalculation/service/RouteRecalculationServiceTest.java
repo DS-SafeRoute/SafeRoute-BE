@@ -11,6 +11,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.saferoute.domain.congestion.entity.CongestionLevel;
 import com.saferoute.domain.device.service.IoTLightService;
@@ -290,6 +291,67 @@ class RouteRecalculationServiceTest {
 
         assertThat(firePending.getStatus()).isEqualTo(RecalculationStatus.PENDING);
         verify(trainingEventPublisher, never()).publishRouteRecalculationCancelledAfterCommit(firePending);
+    }
+
+    // 시작 노드(floorId 층)와 다른 층에 있는 혼잡 엣지.
+    private MapEdge edgeOnOtherFloor() {
+        Floor otherFloor = mock(Floor.class);
+        org.mockito.Mockito.lenient().when(otherFloor.getId()).thenReturn(UUID.randomUUID());
+        MapEdge edge = MapEdge.create(otherFloor, mock(MapNode.class), mock(MapNode.class), 5.0, true);
+        ReflectionTestUtils.setField(edge, "id", UUID.randomUUID());
+        ReflectionTestUtils.setField(edge, "floor", otherFloor);
+        return edge;
+    }
+
+    @Test
+    @DisplayName("혼잡 엣지가 시작 노드와 다른 층이면 예외 없이 건너뛰고 경로 탐색/저장을 하지 않는다")
+    void trigger_skipsWhenTriggerEdgeOnDifferentFloorThanStartNode() {
+        routeRecalculationService.trigger(session, List.of(edgeOnOtherFloor()), CongestionLevel.CROWDED,
+                RecalculationTriggerType.STARTED, "CCTV_001", 3.5);
+
+        verifyNoInteractions(evacuationRouteService);
+        verify(routeRecalculationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("다른 층 혼잡 이벤트는 같은 층의 기존 PENDING을 취소하지 않는다")
+    void trigger_differentFloor_doesNotCancelExistingPending() {
+        RouteRecalculation existing = pendingRecalculation(CongestionLevel.CROWDED);
+
+        routeRecalculationService.trigger(session, List.of(edgeOnOtherFloor()), CongestionLevel.VERY_CROWDED,
+                RecalculationTriggerType.LEVEL_UP, "CCTV_002", 5.5);
+
+        assertThat(existing.getStatus()).isEqualTo(RecalculationStatus.PENDING);
+        verify(trainingEventPublisher, never()).publishRouteRecalculationCancelledAfterCommit(any());
+        verify(routeRecalculationRepository, never())
+                .findAllByTrainingSession_IdAndStatus(any(), any());
+    }
+
+    @Test
+    @DisplayName("다른 층 ENDED는 승인 이력이 있어도 예외 없이 건너뛰고 복구 PENDING을 만들지 않는다")
+    void trigger_ended_differentFloor_doesNotThrowAndDoesNotCreateRecovery() {
+        routeRecalculationService.trigger(session, List.of(edgeOnOtherFloor()), CongestionLevel.NORMAL,
+                RecalculationTriggerType.ENDED, "CCTV_002", 1.0);
+
+        verifyNoInteractions(evacuationRouteService);
+        verify(routeRecalculationRepository, never()).save(any());
+        verify(routeRecalculationRepository, never())
+                .findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(any(), any());
+    }
+
+    @Test
+    @DisplayName("여러 층의 엣지가 섞여 있으면 시작 노드 층의 엣지만 남겨 계산한다")
+    void trigger_mixedFloors_usesOnlyStartFloorEdges() {
+        givenNoExistingPending();
+        givenNoApprovedHistory();
+        givenNoDirectRoute();
+        given(evacuationRouteService.findShortestRoute(eq(floorId), eq(startNodeId), anySet(), any()))
+                .willThrow(new ApiException(EvacuationErrorCode.EVACUATION_ROUTE_NOT_FOUND));
+
+        routeRecalculationService.trigger(session, List.of(edgeOnOtherFloor(), triggerEdge),
+                CongestionLevel.CROWDED, RecalculationTriggerType.STARTED, "CCTV_001", 3.5);
+
+        verify(evacuationRouteService).findShortestRoute(eq(floorId), eq(startNodeId), anySet(), any());
     }
 
     @Test
@@ -1112,12 +1174,14 @@ class RouteRecalculationServiceTest {
     @Test
     @DisplayName("시나리오에 대표 startNode가 없으면 재탐색 승인 대기 항목을 만들지 않는다")
     void trigger_noRepresentativeStartNode_doesNothing() {
-        givenNoExistingPending();
+        // startNode 검사가 기존 PENDING 조회/취소보다 앞이라 PENDING 조회 자체가 일어나지 않는다.
         given(scenario.getStartNode()).willReturn(null);
 
         routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.CROWDED,
                 RecalculationTriggerType.STARTED, "CCTV_001", 3.5);
 
+        verify(routeRecalculationRepository, never())
+                .findAllByTrainingSession_IdAndStatus(any(), any());
         verify(routeRecalculationRepository, never()).save(any());
         verify(evacuationRouteService, never()).findShortestRoute(any(), any(), anySet(), any());
     }
