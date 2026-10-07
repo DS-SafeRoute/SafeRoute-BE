@@ -224,17 +224,31 @@ class RouteRecalculationServiceTest {
                 .findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(any(), any());
     }
 
+    // 다른 CCTV가 만든 PENDING이어도(cctvCode가 다름) 새로 계산한 후보가 그 PENDING의 경로와
+    // 같으면(=실제로 바뀐 게 없으면) 건드리지 않는다. 여러 CCTV가 번갈아 보고할 때 매번
+    // 취소+재생성이 반복되던 문제의 직접적인 재현/수정 확인 테스트다.
     @Test
-    @DisplayName("같은 세션+CCTV에 이미 같은 레벨의 PENDING이 있으면 새로 트리거하지 않는다")
-    void trigger_skipsWhenSameLevelPendingExists() {
-        RouteRecalculation existing = pendingRecalculation(CongestionLevel.CROWDED);
+    @DisplayName("다른 CCTV가 만든 PENDING이어도 새로 계산한 후보가 같으면 취소/재생성하지 않는다")
+    void trigger_skipsWhenCandidateMatchesExistingPendingFromDifferentCctv() {
+        MapNode exitNode = MapNode.create(mock(Floor.class), "STAIR1", NodeType.STAIR, "STAIR1", 0, 0, true);
+        UUID exitNodeId = UUID.randomUUID();
+        ReflectionTestUtils.setField(exitNode, "id", exitNodeId);
+
+        RouteRecalculation existingFromOtherCctv = RouteRecalculation.createPending(
+                session, triggerEdge, "CCTV_OTHER", RecalculationTriggerType.STARTED, CongestionLevel.CROWDED, 3.5,
+                List.of(UUID.randomUUID()), 10.0, List.of(exitNodeId), 12.5);
+        ReflectionTestUtils.setField(existingFromOtherCctv, "id", UUID.randomUUID());
         given(routeRecalculationRepository.findAllByTrainingSession_IdAndStatus(
-                session.getId(), RecalculationStatus.PENDING)).willReturn(List.of(existing));
+                session.getId(), RecalculationStatus.PENDING)).willReturn(List.of(existingFromOtherCctv));
+        givenNoApprovedHistory();
+        givenNoDirectRoute();
+        given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any()))
+                .willReturn(new EvacuationRoute(List.of(exitNode), 12.5));
 
         routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.CROWDED,
                 RecalculationTriggerType.LEVEL_UP, "CCTV_001", 3.5);
 
-        verify(evacuationRouteService, never()).findShortestRoute(any(), any(), anySet());
+        verify(trainingEventPublisher, never()).publishRouteRecalculationCancelledAfterCommit(any());
         verify(routeRecalculationRepository, never()).save(any());
     }
 
@@ -446,6 +460,35 @@ class RouteRecalculationServiceTest {
 
         verify(routeRecalculationRepository, times(1)).save(any());
         verify(trainingEventPublisher, times(1)).publishRouteRecalculationRequestedAfterCommit(saved);
+    }
+
+    // #265: 이번 호출 CCTV의 가중치뿐 아니라, 같은 층 다른 CCTV가 지금 보고 중인 혼잡
+    // (CurrentCongestionWeightProvider)도 함께 반영해야 한다.
+    @Test
+    @DisplayName("다른 CCTV가 현재 보고 중인 층 전체 혼잡도 가중치에 함께 반영한다")
+    void trigger_mergesCurrentFloorWideCongestionWithOwnWeights() {
+        givenNoExistingPending();
+        givenNoApprovedHistory();
+        givenNoDirectRoute();
+
+        UUID otherCctvEdgeId = UUID.randomUUID();
+        given(currentCongestionWeightProvider.currentMultipliers(session.getId(), floorId))
+                .willReturn(Map.of(otherCctvEdgeId, 3.0));
+
+        MapNode exitNode = MapNode.create(mock(Floor.class), "STAIR1", NodeType.STAIR, "STAIR1", 0, 0, true);
+        ReflectionTestUtils.setField(exitNode, "id", UUID.randomUUID());
+        given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any()))
+                .willReturn(new EvacuationRoute(List.of(exitNode), 12.5));
+        given(routeRecalculationRepository.save(any())).willReturn(pendingRecalculation(CongestionLevel.CROWDED));
+
+        routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.CROWDED,
+                RecalculationTriggerType.STARTED, "CCTV_001", 3.5);
+
+        ArgumentCaptor<Map<UUID, Double>> multipliersCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(evacuationRouteService).findShortestRoute(any(), any(), anySet(), multipliersCaptor.capture());
+        assertThat(multipliersCaptor.getValue())
+                .containsEntry(triggerEdge.getId(), 3.0)
+                .containsEntry(otherCctvEdgeId, 3.0);
     }
 
     @Test

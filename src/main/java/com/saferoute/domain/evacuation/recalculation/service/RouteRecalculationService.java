@@ -36,6 +36,7 @@ import com.saferoute.global.config.AsyncConfig;
 import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -84,8 +85,13 @@ public class RouteRecalculationService {
     private final CurrentCongestionWeightProvider currentCongestionWeightProvider;
 
     // 혼잡 감지로 트리거되는 우회 경로 재탐색.
-    // - CCTV 한 대가 감시하는 모든 엣지를 한 번에 반영해 후보 경로 하나만 만든다.
-    // - 같은 세션+CCTV에 이미 PENDING이 있고 레벨이 그대로면 반복 트리거를 무시한다.
+    // - 이번 호출 CCTV의 엣지/레벨뿐 아니라, 같은 층 다른 CCTV들의 현재 혼잡 상태
+    //   (CurrentCongestionWeightProvider)까지 합쳐서 후보 경로 하나를 만든다 - CCTV 하나만
+    //   피하다가 다른 CCTV의 혼잡 구간을 그대로 지나는 후보를 제안하지 않기 위함.
+    // - 새로 계산한 후보가 기존 PENDING의 후보 경로와 같으면(실제로 바뀐 게 없으면) 반복
+    //   트리거를 무시한다 - "같은 CCTV+레벨"이 아니라 "같은 후보 경로"가 기준이다. 여러
+    //   CCTV가 번갈아 보고해도 PENDING엔 CCTV 하나만 기록되므로, CCTV 식별자로 비교하면
+    //   실제론 안 바뀐 상황에서도 매번 취소+재생성이 반복된다.
     // - 새 판단이 필요하면 기존 PENDING을 모두 CANCELLED로 무효화하고 새로 계산한다.
     // - triggerType이 ENDED(혼잡 종료)면 우회가 아니라 정상 경로로의 복구 후보를 계산한다.
     @Transactional
@@ -151,32 +157,28 @@ public class RouteRecalculationService {
             return;
         }
 
-        boolean samePendingExists = existingPending.stream().anyMatch(pending ->
-                Objects.equals(pending.getCctvCode(), cctvCode) && pending.getCongestionLevel() == level);
-        if (samePendingExists) {
-            return;
-        }
-        for (RouteRecalculation pending : existingPending) {
-            cancel(pending, "새 혼잡 판단으로 무효화됨");
-        }
-
         RouteSnapshot previous = resolveActiveRoute(lockedSession, floorId, startNodeId);
 
         // 혼잡 우회 후보도 지금 이 시나리오가 그 층에 낸 화재 구간은 항상 제외한다 - 그렇지
         // 않으면 혼잡을 피하려다 화재 구간을 지나는 경로를 제안할 수 있다. 혼잡은(VERY_CROWDED
         // 포함) 더 이상 완전 제외하지 않고 항상 페널티로만 반영한다 - 화재/연기와 달리 실제
-        // 통행 불가 사유가 아니기 때문이다.
+        // 통행 불가 사유가 아니기 때문이다(아래 mergedCongestionMultipliers 참고).
         Set<UUID> excludedEdgeIds = firedEdgeIdsForFloor(lockedSession.getScenario().getId(), floorId);
+        Map<UUID, Double> congestionMultipliers =
+                mergedCongestionMultipliers(lockedSession.getId(), floorId, affectedEdges, level);
 
         EvacuationRoute candidate;
         try {
             candidate = evacuationRouteService.findShortestRoute(
-                    floorId, startNodeId, excludedEdgeIds,
-                    weightMultipliersFor(affectedEdges, level));
+                    floorId, startNodeId, excludedEdgeIds, congestionMultipliers);
         } catch (ApiException exception) {
             if (exception.getErrorCode() == EvacuationErrorCode.EVACUATION_ROUTE_NOT_FOUND) {
                 log.warn("우회 경로를 찾을 수 없어 재탐색 승인 대기 항목을 생성하지 않음: sessionId={}, edgeId={}",
                         lockedSession.getId(), representativeEdge.getId());
+                // 새 후보는 못 찾았지만, 기존 PENDING은 이전 판단 기준이라 이미 낡았으므로 무효화한다.
+                for (RouteRecalculation pending : existingPending) {
+                    cancel(pending, "새 혼잡 판단으로 무효화됨");
+                }
                 return;
             }
             throw exception;
@@ -184,13 +186,45 @@ public class RouteRecalculationService {
 
         List<UUID> candidateNodeIds = candidate.path().stream().map(MapNode::getId).toList();
         if (candidateNodeIds.equals(previous.nodeIds())) {
-            // 혼잡이 지속되는 동안 관측값마다 반복 트리거돼도(CongestionObservationService 참고),
-            // 이미 반영된 경로와 후보가 같으면 동일한 PENDING을 계속 새로 만들 필요가 없다.
+            // 더 이상 우회가 필요 없다 - 떠 있던 PENDING이 있다면(이제는 낡은 제안이므로) 무효화한다.
+            for (RouteRecalculation pending : existingPending) {
+                cancel(pending, "새 혼잡 판단으로 무효화됨");
+            }
+            return;
+        }
+
+        // 이제 후보는 이번 호출 CCTV 하나가 아니라 층 전체 혼잡을 반영하므로, "같은 CCTV+레벨이면
+        // 스킵"은 더 이상 안전하지 않다 - PENDING엔 CCTV 하나만 기록되므로 여러 CCTV가 번갈아
+        // 보고하면 실제로는 아무것도 안 바뀌어도 기존 PENDING의 cctvCode와 계속 달라서 매번
+        // 취소+재생성이 반복된다. 대신 계산된 후보 경로 자체가 기존 PENDING과 같으면 그 PENDING은
+        // 건드리지 않고, 그 외의(=낡은) PENDING만 무효화한다.
+        boolean sameCandidateAlreadyPending = false;
+        for (RouteRecalculation pending : existingPending) {
+            if (pending.getRecalculatedNodeIds().equals(candidateNodeIds)) {
+                sameCandidateAlreadyPending = true;
+            } else {
+                cancel(pending, "새 혼잡 판단으로 무효화됨");
+            }
+        }
+        if (sameCandidateAlreadyPending) {
             return;
         }
 
         savePending(lockedSession, representativeEdge, cctvCode, triggerType, level, density,
                 previous, candidate, candidateNodeIds);
+    }
+
+    // 층 전체의 현재 혼잡 상태(CurrentCongestionWeightProvider, 모든 CCTV의 최신 관측값 기준)와
+    // 이번 호출 자신의 가중치를 합친다(같은 엣지면 더 큰 배율 사용). 이번 호출 몫을 따로 더하는
+    // 이유: CongestionEventService의 즉시 이벤트(STARTED/LEVEL_UP)는 CurrentCctvStateItem을
+    // 갱신하지 않으므로, 막 감지된 이 이벤트 자체가 아직 Provider의 "최신 상태" 집계에
+    // 반영 안 돼 있을 수 있다 - 그래서 이번 호출 몫은 항상 직접 넣어줘야 한다.
+    private Map<UUID, Double> mergedCongestionMultipliers(
+            UUID sessionId, UUID floorId, List<MapEdge> affectedEdges, CongestionLevel level) {
+        Map<UUID, Double> merged = new HashMap<>(currentCongestionMultipliersOrEmpty(sessionId, floorId));
+        weightMultipliersFor(affectedEdges, level)
+                .forEach((edgeId, multiplier) -> merged.merge(edgeId, multiplier, Math::max));
+        return merged;
     }
 
     // trigger()의 비동기 버전 (#250). STARTED/LEVEL_UP은 Pi가 5초마다 보내는 관측값이 혼잡이
