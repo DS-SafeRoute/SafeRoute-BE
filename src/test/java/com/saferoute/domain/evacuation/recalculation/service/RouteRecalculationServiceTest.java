@@ -1114,12 +1114,13 @@ class RouteRecalculationServiceTest {
     }
 
     @Test
-    @DisplayName("승인된 재탐색이 없으면 INITIAL 경로 조회도 현재 화재 구간을 제외하고 계산한다")
-    void getCurrentRoute_withoutApprovedRecalculation_excludesCurrentlyFiredEdges() {
+    @DisplayName("진행 중인 세션에 승인된 재탐색이 없으면 INITIAL 경로 조회도 현재 화재 구간을 제외하고 계산한다")
+    void getCurrentRoute_runningWithoutApprovedRecalculation_excludesCurrentlyFiredEdges() {
         UUID recSessionId = UUID.randomUUID();
         UUID scenarioId = UUID.randomUUID();
         Instant createdAt = Instant.now();
         TrainingSession scheduledSession = TrainingSession.schedule(mock(User.class), scenario);
+        scheduledSession.start(createdAt);
         ReflectionTestUtils.setField(scheduledSession, "id", recSessionId);
         ReflectionTestUtils.setField(scheduledSession, "createdAt", createdAt);
         given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(recSessionId, SCHOOL_NAME))
@@ -1152,6 +1153,75 @@ class RouteRecalculationServiceTest {
         ArgumentCaptor<Set<UUID>> excludedEdgesCaptor = ArgumentCaptor.forClass(Set.class);
         verify(evacuationRouteService).findShortestRoute(eq(floorId), eq(startNodeId), excludedEdgesCaptor.capture());
         assertThat(excludedEdgesCaptor.getValue()).contains(firedEdgeId);
+    }
+
+    @Test
+    @DisplayName("시작 전(SCHEDULED) 세션은 isFired가 아직 꺼져 있어도 시나리오의 최초 발화점 구간을 제외한다")
+    void getCurrentRoute_scheduled_excludesScenarioOriginEdgesEvenIfNotFiredYet() {
+        UUID recSessionId = UUID.randomUUID();
+        UUID scenarioId = UUID.randomUUID();
+        TrainingSession scheduledSession = TrainingSession.schedule(mock(User.class), scenario);
+        ReflectionTestUtils.setField(scheduledSession, "id", recSessionId);
+        ReflectionTestUtils.setField(scheduledSession, "createdAt", Instant.now());
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(recSessionId, SCHOOL_NAME))
+                .willReturn(Optional.of(scheduledSession));
+        given(routeRecalculationRepository.findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(
+                recSessionId, RecalculationStatus.APPROVED))
+                .willReturn(Optional.empty());
+        given(scenario.getId()).willReturn(scenarioId);
+
+        FloorGridCell originCell = mock(FloorGridCell.class);
+        UUID originCellId = UUID.randomUUID();
+        FireZone origin = mock(FireZone.class);
+        given(origin.getFloorId()).willReturn(floorId);
+        given(origin.getGridCellId()).willReturn(originCellId);
+        given(fireZoneRepository.findByScenario_IdAndIsManualAddTrue(scenarioId)).willReturn(List.of(origin));
+
+        MapEdge originEdge = MapEdge.create(triggerEdge.getFloor(), mock(MapNode.class), mock(MapNode.class), 3.0, true);
+        UUID originEdgeId = UUID.randomUUID();
+        ReflectionTestUtils.setField(originEdge, "id", originEdgeId);
+        given(mapEdgeGridCellRepository.findAllByGridCell_IdIn(List.of(originCellId)))
+                .willReturn(List.of(MapEdgeGridCell.create(originEdge, originCell)));
+        given(evacuationRouteService.findShortestRoute(eq(floorId), eq(startNodeId), anySet()))
+                .willReturn(new EvacuationRoute(List.of(representativeStart), 5.0));
+
+        routeRecalculationService.getCurrentRoute(recSessionId, MANAGER_EMAIL);
+
+        ArgumentCaptor<Set<UUID>> excludedEdgesCaptor = ArgumentCaptor.forClass(Set.class);
+        verify(evacuationRouteService).findShortestRoute(eq(floorId), eq(startNodeId), excludedEdgesCaptor.capture());
+        assertThat(excludedEdgesCaptor.getValue()).containsExactly(originEdgeId);
+        // 시작 전에는 동적 화재 상태(isFired)를 보지 않는다.
+        verify(floorGridCellRepository, never()).findAllByFloor_IdAndIsFiredTrue(any());
+    }
+
+    @Test
+    @DisplayName("시작 전(SCHEDULED) 세션에서 다른 층의 발화점은 제외 대상에 섞이지 않는다")
+    void getCurrentRoute_scheduled_ignoresOriginOnOtherFloor() {
+        UUID recSessionId = UUID.randomUUID();
+        UUID scenarioId = UUID.randomUUID();
+        TrainingSession scheduledSession = TrainingSession.schedule(mock(User.class), scenario);
+        ReflectionTestUtils.setField(scheduledSession, "id", recSessionId);
+        ReflectionTestUtils.setField(scheduledSession, "createdAt", Instant.now());
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(recSessionId, SCHOOL_NAME))
+                .willReturn(Optional.of(scheduledSession));
+        given(routeRecalculationRepository.findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(
+                recSessionId, RecalculationStatus.APPROVED))
+                .willReturn(Optional.empty());
+        given(scenario.getId()).willReturn(scenarioId);
+
+        FireZone otherFloorOrigin = mock(FireZone.class);
+        given(otherFloorOrigin.getFloorId()).willReturn(UUID.randomUUID());
+        given(fireZoneRepository.findByScenario_IdAndIsManualAddTrue(scenarioId))
+                .willReturn(List.of(otherFloorOrigin));
+        given(evacuationRouteService.findShortestRoute(eq(floorId), eq(startNodeId), anySet()))
+                .willReturn(new EvacuationRoute(List.of(representativeStart), 5.0));
+
+        routeRecalculationService.getCurrentRoute(recSessionId, MANAGER_EMAIL);
+
+        ArgumentCaptor<Set<UUID>> excludedEdgesCaptor = ArgumentCaptor.forClass(Set.class);
+        verify(evacuationRouteService).findShortestRoute(eq(floorId), eq(startNodeId), excludedEdgesCaptor.capture());
+        assertThat(excludedEdgesCaptor.getValue()).isEmpty();
+        verify(mapEdgeGridCellRepository, never()).findAllByGridCell_IdIn(any());
     }
 
     @Test
