@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
@@ -44,6 +45,7 @@ import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
 import com.saferoute.domain.user.service.SchoolContextService;
 import com.saferoute.domain.building.entity.Building;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -726,6 +728,131 @@ class IoTLightServiceTest {
         assertThat(captor.getValue().getDirection()).isEqualTo(IoTLightDirection.BOTH);
         verify(iotLightDirectionStore).update(succeedingLight.getId(), IoTLightDirection.BOTH);
         verify(trainingEventPublisher).publishIoTLightStatusUpdatedAfterCommit(succeedingLight, IoTLightDirection.BOTH);
+    }
+
+    // === applyFloorGuidance ===
+
+    // decisionNode에서 left/right 두 갈래로 나뉘는, 담당 CCTV까지 연결된 안내 가능 유도등
+    private IoTLight createGuidedLight(String code, MapNode decisionNode, MapNode leftTarget, MapNode rightTarget) {
+        IoTLight light = createLight(code, createNode(code, NodeType.CUSTOM));
+        light.assignCctv(createCctv("CCTV_" + code));
+        light.configureGuidance(decisionNode, createEdge(decisionNode, leftTarget), createEdge(decisionNode, rightTarget));
+        return light;
+    }
+
+    @Test
+    @DisplayName("경로 위 유도등은 nextHops와 달라도 승인 경로 방향을 따른다")
+    void applyFloorGuidance_pathOverridesNextHops() {
+        MapNode decision = createNode("HALLWAY1", NodeType.HALLWAY);
+        MapNode left = createNode("HALLWAY2", NodeType.HALLWAY);
+        MapNode right = createNode("HALLWAY3", NodeType.HALLWAY);
+        IoTLight light = createGuidedLight("LIGHT_001", decision, left, right);
+        given(iotLightJpaRepository.findAllByCustomNode_Floor_Id(floorId)).willReturn(List.of(light));
+
+        iotLightService.applyFloorGuidance(
+                floorId, List.of(decision.getId(), left.getId()), Map.of(decision.getId(), right.getId()));
+
+        verify(iotLightDirectionStore).update(light.getId(), IoTLightDirection.LEFT);
+    }
+
+    @Test
+    @DisplayName("경로 밖 유도등은 nextHops 방향으로 바뀐다 - 옛 경로를 가리키던 유도등의 회귀 테스트")
+    void applyFloorGuidance_offPathLightFollowsNextHop() {
+        MapNode oldPathNode = createNode("HALLWAY1", NodeType.HALLWAY);
+        MapNode towardFire = createNode("HALLWAY2", NodeType.HALLWAY);
+        MapNode detour = createNode("HALLWAY3", NodeType.HALLWAY);
+        IoTLight light = createGuidedLight("LIGHT_001", oldPathNode, towardFire, detour);
+        // 옛 경로 때문에 화재 구간 쪽(LEFT)을 가리키고 있던 상태
+        given(iotLightDirectionStore.get(light.getId())).willReturn(IoTLightDirection.LEFT);
+        given(iotLightJpaRepository.findAllByCustomNode_Floor_Id(floorId)).willReturn(List.of(light));
+
+        // 새 경로는 이 유도등을 지나지 않지만, 층 전체 다음 홉은 우회로(RIGHT)를 가리킨다.
+        iotLightService.applyFloorGuidance(
+                floorId, List.of(UUID.randomUUID(), UUID.randomUUID()), Map.of(oldPathNode.getId(), detour.getId()));
+
+        org.mockito.ArgumentCaptor<LightCommand> captor = org.mockito.ArgumentCaptor.forClass(LightCommand.class);
+        verify(lightCommandJpaRepository).save(captor.capture());
+        assertThat(captor.getValue().getDirection()).isEqualTo(IoTLightDirection.RIGHT);
+        verify(iotLightDirectionStore).update(light.getId(), IoTLightDirection.RIGHT);
+    }
+
+    @Test
+    @DisplayName("다음 홉이 없거나 좌우 엣지와 맞지 않는 유도등은 평상시(BOTH)로 설정한다")
+    void applyFloorGuidance_unmatchedLightsGoBoth() {
+        MapNode noHopDecision = createNode("HALLWAY1", NodeType.HALLWAY);
+        IoTLight noHopLight = createGuidedLight("LIGHT_001", noHopDecision,
+                createNode("HALLWAY2", NodeType.HALLWAY), createNode("HALLWAY3", NodeType.HALLWAY));
+
+        MapNode mismatchDecision = createNode("HALLWAY4", NodeType.HALLWAY);
+        IoTLight mismatchLight = createGuidedLight("LIGHT_002", mismatchDecision,
+                createNode("HALLWAY5", NodeType.HALLWAY), createNode("HALLWAY6", NodeType.HALLWAY));
+        given(iotLightJpaRepository.findAllByCustomNode_Floor_Id(floorId))
+                .willReturn(List.of(noHopLight, mismatchLight));
+
+        // mismatchLight의 다음 홉은 이 유도등의 좌우 엣지 어느 쪽도 아닌 노드다.
+        iotLightService.applyFloorGuidance(
+                floorId, List.of(), Map.of(mismatchDecision.getId(), UUID.randomUUID()));
+
+        verify(iotLightDirectionStore).update(noHopLight.getId(), IoTLightDirection.BOTH);
+        verify(iotLightDirectionStore).update(mismatchLight.getId(), IoTLightDirection.BOTH);
+    }
+
+    @Test
+    @DisplayName("이미 같은 방향이면 명령을 적재하지 않는다")
+    void applyFloorGuidance_skipsWhenDirectionUnchanged() {
+        MapNode decision = createNode("HALLWAY1", NodeType.HALLWAY);
+        MapNode left = createNode("HALLWAY2", NodeType.HALLWAY);
+        IoTLight light = createGuidedLight("LIGHT_001", decision, left, createNode("HALLWAY3", NodeType.HALLWAY));
+        given(iotLightDirectionStore.get(light.getId())).willReturn(IoTLightDirection.LEFT);
+        given(iotLightJpaRepository.findAllByCustomNode_Floor_Id(floorId)).willReturn(List.of(light));
+
+        iotLightService.applyFloorGuidance(floorId, List.of(), Map.of(decision.getId(), left.getId()));
+
+        verifyNoInteractions(lightCommandJpaRepository, trainingEventPublisher);
+        verify(iotLightDirectionStore, never()).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("비활성 유도등과 안내 미설정 유도등은 건너뛴다")
+    void applyFloorGuidance_skipsDisabledOrUnconfiguredLights() {
+        MapNode decision = createNode("HALLWAY1", NodeType.HALLWAY);
+        IoTLight disabledLight = createGuidedLight("LIGHT_001", decision,
+                createNode("HALLWAY2", NodeType.HALLWAY), createNode("HALLWAY3", NodeType.HALLWAY));
+        disabledLight.disable();
+        IoTLight unconfiguredLight = createLight("LIGHT_002", createNode("LIGHT_002", NodeType.CUSTOM));
+        given(iotLightJpaRepository.findAllByCustomNode_Floor_Id(floorId))
+                .willReturn(List.of(disabledLight, unconfiguredLight));
+
+        iotLightService.applyFloorGuidance(floorId, List.of(), Map.of());
+
+        verifyNoInteractions(lightCommandJpaRepository, trainingEventPublisher);
+        verify(iotLightDirectionStore, never()).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("일부 유도등 전환이 실패해도 나머지 유도등은 계속 처리한다")
+    void applyFloorGuidance_individualFailureDoesNotStopOthers() {
+        MapNode decisionA = createNode("HALLWAY1", NodeType.HALLWAY);
+        MapNode leftA = createNode("HALLWAY2", NodeType.HALLWAY);
+        // 담당 CCTV 미연결 -> changeDirection이 CCTV_NOT_ASSIGNED를 던짐
+        IoTLight failingLight = createLight("LIGHT_001", createNode("LIGHT_001", NodeType.CUSTOM));
+        failingLight.configureGuidance(decisionA, createEdge(decisionA, leftA),
+                createEdge(decisionA, createNode("HALLWAY3", NodeType.HALLWAY)));
+
+        MapNode decisionB = createNode("HALLWAY4", NodeType.HALLWAY);
+        MapNode leftB = createNode("HALLWAY5", NodeType.HALLWAY);
+        IoTLight succeedingLight = createGuidedLight("LIGHT_002", decisionB, leftB,
+                createNode("HALLWAY6", NodeType.HALLWAY));
+        given(iotLightJpaRepository.findAllByCustomNode_Floor_Id(floorId))
+                .willReturn(List.of(failingLight, succeedingLight));
+
+        iotLightService.applyFloorGuidance(floorId, List.of(),
+                Map.of(decisionA.getId(), leftA.getId(), decisionB.getId(), leftB.getId()));
+
+        org.mockito.ArgumentCaptor<LightCommand> captor = org.mockito.ArgumentCaptor.forClass(LightCommand.class);
+        verify(lightCommandJpaRepository).save(captor.capture());
+        assertThat(captor.getValue().getLight()).isEqualTo(succeedingLight);
+        assertThat(captor.getValue().getDirection()).isEqualTo(IoTLightDirection.LEFT);
     }
 
     @Test

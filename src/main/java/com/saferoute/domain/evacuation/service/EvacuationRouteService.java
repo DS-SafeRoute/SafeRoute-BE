@@ -120,6 +120,75 @@ public class EvacuationRouteService {
         throw new ApiException(EvacuationErrorCode.EVACUATION_ROUTE_NOT_FOUND);
     }
 
+    // 층의 모든 노드에 대해 "가장 가까운 EXIT 대상으로 가려면 다음에 갈 노드(next hop)"를 계산한다.
+    // 대표 시작점 하나의 경로만으로는 그 경로 밖에 있는 사람(과 유도등)이 어느 쪽으로 가야 하는지
+    // 알 수 없으므로, EXIT 대상들을 출발점으로 한 역방향 다중 출발 Dijkstra를 한 번 돌려 층 전체를
+    // 한꺼번에 구한다. 비용은 findShortestRoute 한 번과 같다.
+    // - EXIT 대상 노드 자신과 EXIT에 도달할 수 없는 노드는 결과 맵의 키에 없다.
+    // - 이 결과는 유도등 안내라는 부가 기능에서만 쓰이므로(승인/훈련 시작이 막히면 안 된다),
+    //   EXIT 대상이 하나도 없어도 findShortestRoute처럼 예외를 던지지 않고 빈 맵을 돌려준다.
+    // - 가중치는 정방향 경로와 비용 정의가 같아야 하므로 calculateWeight를 그대로 쓴다.
+    public Map<UUID, UUID> computeNextHops(
+            UUID floorId, Set<UUID> excludedEdgeIds, Map<UUID, Double> weightMultipliers
+    ) {
+        List<MapNode> nodes = mapGraphRepository.findNodesByFloor(floorId);
+        List<MapEdge> edges = mapGraphRepository.findEdgesByFloor(floorId).stream()
+                .filter(edge -> !excludedEdgeIds.contains(edge.getId()))
+                .toList();
+
+        Map<UUID, Double> distance = new HashMap<>();
+        Map<UUID, UUID> nextHop = new HashMap<>();
+        // 거리가 같으면 nodeId 순으로 꺼내서, 같은 입력이면 항상 같은 다음 홉이 나오게 한다
+        // (동점일 때 유도등 방향이 호출마다 바뀌면 안 된다).
+        PriorityQueue<NodeDistance> queue = new PriorityQueue<>(
+                Comparator.comparingDouble(NodeDistance::distance).thenComparing(NodeDistance::nodeId));
+        for (MapNode node : nodes) {
+            if (node.isExitTarget()) {
+                distance.put(node.getId(), 0.0);
+                queue.add(new NodeDistance(node.getId(), 0.0));
+            }
+        }
+        if (queue.isEmpty()) {
+            return nextHop;
+        }
+
+        Map<UUID, List<MapEdge>> incoming = buildIncomingAdjacencyList(edges);
+        Set<UUID> visited = new HashSet<>();
+        while (!queue.isEmpty()) {
+            NodeDistance current = queue.poll();
+            if (!visited.add(current.nodeId())) {
+                continue;
+            }
+            // current로 들어오는 방향으로 이동할 수 있는 엣지의 반대편 노드가 이동 출발점(predecessor)이다.
+            for (MapEdge edge : incoming.getOrDefault(current.nodeId(), Collections.emptyList())) {
+                UUID predecessor = edge.getToNode().getId().equals(current.nodeId())
+                        ? edge.getFromNode().getId()
+                        : edge.getToNode().getId();
+                double newDistance = current.distance() + calculateWeight(edge, weightMultipliers);
+                if (newDistance < distance.getOrDefault(predecessor, Double.MAX_VALUE)) {
+                    distance.put(predecessor, newDistance);
+                    nextHop.put(predecessor, current.nodeId());
+                    queue.add(new NodeDistance(predecessor, newDistance));
+                }
+            }
+        }
+        return nextHop;
+    }
+
+    // buildAdjacencyList의 역방향 버전: "이 노드로 들어올 수 있는 엣지"를 노드별로 등록한다.
+    // 이동 가능 조건은 정방향과 같다 - 모든 엣지는 from -> to로 이동할 수 있고, bidirectional이면
+    // to -> from도 가능하다. 그래서 toNode 쪽에는 항상, fromNode 쪽에는 양방향일 때만 등록한다.
+    private Map<UUID, List<MapEdge>> buildIncomingAdjacencyList(List<MapEdge> edges) {
+        Map<UUID, List<MapEdge>> incoming = new HashMap<>();
+        for (MapEdge edge : edges) {
+            incoming.computeIfAbsent(edge.getToNode().getId(), k -> new ArrayList<>()).add(edge);
+            if (edge.isBidirectional()) {
+                incoming.computeIfAbsent(edge.getFromNode().getId(), k -> new ArrayList<>()).add(edge);
+            }
+        }
+        return incoming;
+    }
+
     // bidirectional 엣지만 양방향 인접 리스트에 등록, 단방향 엣지는 fromNode -> toNode 방향으로만 등록
     private Map<UUID, List<MapEdge>> buildAdjacencyList(List<MapEdge> edges) {
         Map<UUID, List<MapEdge>> adjacency = new HashMap<>();

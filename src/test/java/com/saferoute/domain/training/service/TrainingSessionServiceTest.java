@@ -3,6 +3,7 @@ package com.saferoute.domain.training.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -361,13 +362,16 @@ class TrainingSessionServiceTest {
         given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME)).willReturn(Optional.of(session));
         given(evacuationRouteService.findShortestRoute(eq(floorId), eq(startNodeId), anySet()))
                 .willReturn(new EvacuationRoute(List.of(startNode, exitNode), 12.0));
+        java.util.Map<UUID, UUID> nextHops = java.util.Map.of(startNodeId, exitNodeId);
+        given(evacuationRouteService.computeNextHops(eq(floorId), anySet(), eq(java.util.Map.of())))
+                .willReturn(nextHops);
 
         trainingSessionService.start(sessionId, EMAIL);
 
         assertThat(session.getStatus()).isEqualTo(TrainingStatus.RUNNING);
         verify(trainingEventPublisher, times(1)).publishTrainingStatusUpdatedAfterCommit(session);
         verify(scenario, times(1)).markInProgress();
-        verify(ioTLightService).applyRouteGuidance(List.of(startNodeId, exitNodeId));
+        verify(ioTLightService).applyFloorGuidance(floorId, List.of(startNodeId, exitNodeId), nextHops);
         // 설정 단계에서는 isFired를 바꾸지 않으므로, 실제 화재 셀 활성화는 훈련 시작 시점에 일어나야 한다.
         verify(fireCell).markFired();
     }
@@ -412,7 +416,51 @@ class TrainingSessionServiceTest {
 
         assertThat(session.getStatus()).isEqualTo(TrainingStatus.RUNNING);
         verify(evacuationRouteService).findShortestRoute(floorId, startNodeId, java.util.Set.of(firedEdgeId));
-        verify(ioTLightService).applyRouteGuidance(List.of(startNodeId, exitNodeId));
+        // 다음 홉 계산에도 최초 경로와 같은 화재 제외 구간이 적용돼야 한다.
+        verify(evacuationRouteService).computeNextHops(floorId, java.util.Set.of(firedEdgeId), java.util.Map.of());
+        verify(ioTLightService).applyFloorGuidance(
+                eq(floorId), eq(List.of(startNodeId, exitNodeId)), anyMap());
+    }
+
+    @Test
+    @DisplayName("다음 홉 계산이 실패해도 훈련 시작은 막히지 않고 최초 경로만 유도등에 반영한다")
+    void start_whenNextHopComputationFails_stillStartsWithPathOnlyGuidance() {
+        UUID scenarioId = UUID.randomUUID();
+        UUID floorId = UUID.randomUUID();
+        UUID startNodeId = UUID.randomUUID();
+        UUID exitNodeId = UUID.randomUUID();
+        MapNode startNode = mock(MapNode.class);
+        Floor floor = mock(Floor.class);
+        given(floor.getId()).willReturn(floorId);
+        given(startNode.getFloor()).willReturn(floor);
+        given(startNode.getId()).willReturn(startNodeId);
+        given(startNode.getType()).willReturn(NodeType.START);
+        MapNode exitNode = mock(MapNode.class);
+        given(exitNode.getId()).willReturn(exitNodeId);
+
+        TrainingScenario scenario = mock(TrainingScenario.class);
+        given(scenario.getId()).willReturn(scenarioId);
+        given(scenario.getStartNode()).willReturn(startNode);
+        FireZone fireOrigin = mock(FireZone.class);
+        given(fireOrigin.getFloorId()).willReturn(floorId);
+        given(fireOrigin.getGridCell()).willReturn(mock(FloorGridCell.class));
+        given(fireZoneRepository.findByScenario_IdAndIsManualAddTrue(scenarioId))
+                .willReturn(List.of(fireOrigin));
+        TrainingSession session =
+                TrainingSession.create(TrainingStatus.SCHEDULED, Instant.now(), mock(User.class), scenario);
+        ReflectionTestUtils.setField(session, "id", sessionId);
+        given(trainingSessionRepository.findByIdAndScenario_Building_SchoolName(sessionId, SCHOOL_NAME))
+                .willReturn(Optional.of(session));
+        given(evacuationRouteService.findShortestRoute(eq(floorId), eq(startNodeId), anySet()))
+                .willReturn(new EvacuationRoute(List.of(startNode, exitNode), 12.0));
+        given(evacuationRouteService.computeNextHops(eq(floorId), anySet(), anyMap()))
+                .willThrow(new IllegalStateException("boom"));
+
+        trainingSessionService.start(sessionId, EMAIL);
+
+        assertThat(session.getStatus()).isEqualTo(TrainingStatus.RUNNING);
+        verify(ioTLightService).applyFloorGuidance(
+                floorId, List.of(startNodeId, exitNodeId), java.util.Map.of());
     }
 
     @Test
@@ -455,7 +503,7 @@ class TrainingSessionServiceTest {
         assertThat(session.getStatus()).isEqualTo(TrainingStatus.SCHEDULED);
         verify(scenario, never()).markInProgress();
         verify(trainingEventPublisher, never()).publishTrainingStatusUpdatedAfterCommit(any());
-        verify(ioTLightService, never()).applyRouteGuidance(any());
+        verify(ioTLightService, never()).applyFloorGuidance(any(), any(), any());
     }
 
     @Test
@@ -494,7 +542,7 @@ class TrainingSessionServiceTest {
         assertThat(session.getStatus()).isEqualTo(TrainingStatus.SCHEDULED);
         verify(scenario, never()).markInProgress();
         verify(trainingEventPublisher, never()).publishTrainingStatusUpdatedAfterCommit(any());
-        verify(ioTLightService, never()).applyRouteGuidance(any());
+        verify(ioTLightService, never()).applyFloorGuidance(any(), any(), any());
     }
 
     @Test

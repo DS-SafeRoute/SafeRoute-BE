@@ -34,7 +34,9 @@ import com.saferoute.global.api.exception.ApiException;
 import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
 import com.saferoute.domain.user.service.SchoolContextService;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -258,30 +260,50 @@ public class IoTLightService {
         }
     }
 
-    // RouteRecalculation 승인 시 호출한다. 승인된 경로가 지나가는 분기점마다 그 경로를 안내하는
-    // 방향으로 유도등을 전환한다. 개별 유도등이 비활성/미설정/기기 unreachable이어도 다른 유도등
-    // 전환을 막지 않도록 여기서 흡수한다 - 유도등 반영은 승인 자체의 성공 여부에 영향을 주지 않는다.
-    public void applyRouteGuidance(List<UUID> routeNodeIds) {
-        for (int i = 0; i < routeNodeIds.size() - 1; i++) {
-            UUID decisionNodeId = routeNodeIds.get(i);
-            UUID nextNodeId = routeNodeIds.get(i + 1);
-            for (IoTLight light : iotLightJpaRepository.findAllByDecisionNode_Id(decisionNodeId)) {
-                IoTLightDirection direction = resolveDirection(light, decisionNodeId, nextNodeId);
-                if (direction == null) {
-                    continue;
-                }
-                try {
-                    changeDirection(light, new ChangeLightDirectionRequest(direction));
-                } catch (ApiException exception) {
-                    log.warn("경로 승인에 따른 유도등 자동 전환 실패: lightId={}, direction={}",
-                            light.getId(), direction, exception);
-                }
+    // RouteRecalculation 승인/훈련 시작 시 호출한다. 해당 층의 안내 가능한 유도등 전체를 "출구로 가는
+    // 다음 노드" 방향으로 갱신한다. 승인된 경로 위 유도등만 바꾸면, 이전 경로에만 있던 유도등이
+    // 혼잡/화재 구간 쪽 옛 방향을 그대로 가리킨 채 남기 때문이다(실제 대피자는 층 전체에 흩어져 있다).
+    // - nextHops: EvacuationRouteService.computeNextHops()의 층 전체 "다음 홉" 트리.
+    // - pathNodeIds: 승인된(또는 최초) 경로. 연속한 두 노드 쌍이 nextHops보다 우선한다 - 관리자가
+    //   승인한 경로를 유도등이 정확히 따라야 하기 때문이다.
+    // - 다음 홉이 없거나(도달 불가, EXIT 노드 자체) 이 유도등의 좌우 엣지와 맞지 않으면 평상시(BOTH)로
+    //   둔다. 옛 방향을 남기지 않는 것이 핵심이다.
+    // 개별 유도등이 비활성/미설정/기기 unreachable이어도 다른 유도등 전환을 막지 않도록 여기서 흡수한다
+    // - 유도등 반영은 승인/훈련 시작 자체의 성공 여부에 영향을 주지 않는다.
+    public void applyFloorGuidance(UUID floorId, List<UUID> pathNodeIds, Map<UUID, UUID> nextHops) {
+        Map<UUID, UUID> guidance = new HashMap<>(nextHops);
+        for (int i = 0; i < pathNodeIds.size() - 1; i++) {
+            guidance.put(pathNodeIds.get(i), pathNodeIds.get(i + 1));
+        }
+
+        for (IoTLight light : iotLightJpaRepository.findAllByCustomNode_Floor_Id(floorId)) {
+            if (!light.isEnabled() || !light.isGuidanceConfigured()) {
+                continue;
+            }
+            UUID decisionNodeId = light.getDecisionNode().getId();
+            UUID nextNodeId = guidance.get(decisionNodeId);
+            IoTLightDirection direction = nextNodeId == null
+                    ? null
+                    : resolveDirection(light, decisionNodeId, nextNodeId);
+            if (direction == null) {
+                direction = IoTLightDirection.BOTH;
+            }
+            // changeDirection은 호출될 때마다 LightCommand를 적재하고 WebSocket을 발행하므로, 층 전체를
+            // 돌 때 이미 같은 방향인 유도등까지 건드리면 Pi 명령 큐에 의미 없는 명령이 쌓인다.
+            if (iotLightDirectionStore.get(light.getId()) == direction) {
+                continue;
+            }
+            try {
+                changeDirection(light, new ChangeLightDirectionRequest(direction));
+            } catch (ApiException exception) {
+                log.warn("경로 반영에 따른 유도등 자동 전환 실패: lightId={}, direction={}",
+                        light.getId(), direction, exception);
             }
         }
     }
 
     // 훈련 종료(정상/강제/타임아웃) 시 호출한다. 건물 내 안내 설정이 끝난 유도등을 모두 평상시(BOTH)
-    // 상태로 되돌린다. applyRouteGuidance와 동일하게 개별 유도등의 실패는 흡수한다.
+    // 상태로 되돌린다. applyFloorGuidance와 동일하게 개별 유도등의 실패는 흡수한다.
     public void resetToNormal(UUID buildingId) {
         for (IoTLight light : iotLightJpaRepository.findAllByCustomNode_Floor_Building_Id(buildingId)) {
             if (!light.isEnabled() || !light.isGuidanceConfigured()) {
