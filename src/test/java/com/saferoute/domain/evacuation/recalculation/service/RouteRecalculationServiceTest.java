@@ -411,9 +411,12 @@ class RouteRecalculationServiceTest {
         verify(trainingEventPublisher, never()).publishRouteRecalculationRequestedAfterCommit(any());
     }
 
+    // VERY_CROWDED도 완전 제외가 아니라 큰 페널티(CurrentCongestionWeightProvider와 동일한
+    // 배율)로만 반영한다 - 화재 우회(triggerForFireSpread)와 같은 정책으로 통일했다. 여러
+    // 구간이 동시에 VERY_CROWDED여도 완전 제외 때문에 경로 자체가 안 나오는 일이 없어야 한다.
     @Test
-    @DisplayName("VERY_CROWDED면 CCTV 영향 엣지를 모두 제외하고 우회 경로를 한 번 계산한다")
-    void trigger_veryCrowded_excludesAllAffectedEdges() {
+    @DisplayName("VERY_CROWDED면 CCTV 영향 엣지 모두에 10배 페널티를 주고(완전 제외하지 않음) 후보에 남긴다")
+    void trigger_veryCrowded_appliesHeavyPenaltyWithoutExcluding() {
         givenNoExistingPending();
         givenNoApprovedHistory();
         givenNoDirectRoute();
@@ -435,8 +438,11 @@ class RouteRecalculationServiceTest {
         ArgumentCaptor<Map<UUID, Double>> multipliersCaptor = ArgumentCaptor.forClass(Map.class);
         verify(evacuationRouteService).findShortestRoute(
                 any(), any(), excludedEdgesCaptor.capture(), multipliersCaptor.capture());
-        assertThat(excludedEdgesCaptor.getValue()).containsExactlyInAnyOrder(triggerEdge.getId(), secondEdge.getId());
-        assertThat(multipliersCaptor.getValue()).isEmpty();
+        assertThat(excludedEdgesCaptor.getValue()).isEmpty();
+        assertThat(multipliersCaptor.getValue()).containsEntry(
+                triggerEdge.getId(), CurrentCongestionWeightProvider.VERY_CROWDED_WEIGHT_MULTIPLIER);
+        assertThat(multipliersCaptor.getValue()).containsEntry(
+                secondEdge.getId(), CurrentCongestionWeightProvider.VERY_CROWDED_WEIGHT_MULTIPLIER);
 
         verify(routeRecalculationRepository, times(1)).save(any());
         verify(trainingEventPublisher, times(1)).publishRouteRecalculationRequestedAfterCommit(saved);

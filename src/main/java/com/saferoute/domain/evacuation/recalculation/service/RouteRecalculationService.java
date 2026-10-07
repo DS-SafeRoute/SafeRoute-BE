@@ -36,7 +36,6 @@ import com.saferoute.global.config.AsyncConfig;
 import com.saferoute.infrastructure.websocket.service.TrainingEventPublisher;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -57,8 +56,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class RouteRecalculationService {
 
-    // CAUTION은 1.5배, CROWDED는 3배 페널티만 주고 여전히 후보에 남긴다.
-    // VERY_CROWDED는 배율이 아니라 완전 제외(excludedEdgeIds)로 처리한다 - trigger()의
+    // CAUTION 1.5배, CROWDED 3배, VERY_CROWDED는 CurrentCongestionWeightProvider와 동일한
+    // 배율(10배) - 전부 페널티로만 반영하고 완전 제외하지 않는다. trigger()의
     // requiresRouteRecalculation() 게이트 상 CAUTION은 현재 이 메서드까지 도달하지 않지만,
     // 표 전체를 그대로 반영해둔다.
     static final double CAUTION_WEIGHT_MULTIPLIER = 1.5;
@@ -164,9 +163,10 @@ public class RouteRecalculationService {
         RouteSnapshot previous = resolveActiveRoute(lockedSession, floorId, startNodeId);
 
         // 혼잡 우회 후보도 지금 이 시나리오가 그 층에 낸 화재 구간은 항상 제외한다 - 그렇지
-        // 않으면 혼잡을 피하려다 화재 구간을 지나는 경로를 제안할 수 있다.
-        Set<UUID> excludedEdgeIds = new HashSet<>(excludedEdgesFor(affectedEdges, level));
-        excludedEdgeIds.addAll(firedEdgeIdsForFloor(lockedSession.getScenario().getId(), floorId));
+        // 않으면 혼잡을 피하려다 화재 구간을 지나는 경로를 제안할 수 있다. 혼잡은(VERY_CROWDED
+        // 포함) 더 이상 완전 제외하지 않고 항상 페널티로만 반영한다 - 화재/연기와 달리 실제
+        // 통행 불가 사유가 아니기 때문이다.
+        Set<UUID> excludedEdgeIds = firedEdgeIdsForFloor(lockedSession.getScenario().getId(), floorId);
 
         EvacuationRoute candidate;
         try {
@@ -445,19 +445,17 @@ public class RouteRecalculationService {
                 .toList();
     }
 
-    // VERY_CROWDED만 완전 제외한다 - 배율만으로는 다른 대안이 훨씬 나쁠 때 여전히 그 엣지를
-    // 통과하는 경로가 선택될 수 있어, "사실상 통행 불가"를 표현하려면 그래프에서 아예 빼야 한다.
-    private Set<UUID> excludedEdgesFor(List<MapEdge> affectedEdges, CongestionLevel level) {
-        return level == CongestionLevel.VERY_CROWDED
-                ? affectedEdges.stream().map(MapEdge::getId).collect(Collectors.toSet())
-                : Set.of();
-    }
-
+    // VERY_CROWDED도 완전 제외가 아니라 큰 페널티(CurrentCongestionWeightProvider와 동일한
+    // 배율)로만 반영한다 - 화재/연기와 달리 혼잡은 실제로 통행이 불가능한 게 아니므로, 여러
+    // 구간이 동시에 VERY_CROWDED여도 경로 자체가 안 나오는(EVACUATION_ROUTE_NOT_FOUND) 일이
+    // 없어야 한다. 화재 우회(triggerForFireSpread)가 이미 이 정책이다 - 시스템 전체를
+    // "화재=완전 차단 / 혼잡=페널티" 하나의 규칙으로 통일한다.
     private Map<UUID, Double> weightMultipliersFor(List<MapEdge> affectedEdges, CongestionLevel level) {
         double multiplier = switch (level) {
             case CAUTION -> CAUTION_WEIGHT_MULTIPLIER;
             case CROWDED -> CROWDED_WEIGHT_MULTIPLIER;
-            case NORMAL, VERY_CROWDED -> 1.0;
+            case VERY_CROWDED -> CurrentCongestionWeightProvider.VERY_CROWDED_WEIGHT_MULTIPLIER;
+            case NORMAL -> 1.0;
         };
         if (multiplier == 1.0) {
             return Map.of();
