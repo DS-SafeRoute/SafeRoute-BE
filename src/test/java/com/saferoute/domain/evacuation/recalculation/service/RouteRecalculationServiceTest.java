@@ -491,6 +491,28 @@ class RouteRecalculationServiceTest {
                 .containsEntry(otherCctvEdgeId, 3.0);
     }
 
+    // 코드래빗 리뷰(#265): 혼잡 재탐색은 화재 우회와 달리 안전 기능이 아니라 최적화이므로, 층
+    // 전체 혼잡 조회가 실패하면 그 불완전한 정보로 기존 PENDING을 취소/대체하지 않고 그대로
+    // 건너뛰어야 한다(triggerForFireSpread의 fail-open과 대비되는 fail-closed).
+    @Test
+    @DisplayName("현재 혼잡 상태 조회가 실패하면 기존 PENDING을 그대로 두고 재탐색을 건너뛴다")
+    void trigger_congestionLookupFails_skipsWithoutTouchingExistingPending() {
+        RouteRecalculation existing = pendingRecalculation(CongestionLevel.CROWDED);
+        given(routeRecalculationRepository.findAllByTrainingSession_IdAndStatus(
+                session.getId(), RecalculationStatus.PENDING)).willReturn(List.of(existing));
+        givenNoApprovedHistory();
+        givenNoDirectRoute();
+        given(currentCongestionWeightProvider.currentMultipliers(session.getId(), floorId))
+                .willThrow(new IllegalStateException("DynamoDB 장애"));
+
+        routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.CROWDED,
+                RecalculationTriggerType.LEVEL_UP, "CCTV_001", 3.5);
+
+        verify(evacuationRouteService, never()).findShortestRoute(any(), any(), anySet(), any());
+        verify(trainingEventPublisher, never()).publishRouteRecalculationCancelledAfterCommit(any());
+        verify(routeRecalculationRepository, never()).save(any());
+    }
+
     @Test
     @DisplayName("CROWDED면 CCTV 영향 엣지 모두에 3배 가중치를 주고 후보에 남긴다")
     void trigger_crowded_appliesWeightMultiplierToAllAffectedEdges() {

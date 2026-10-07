@@ -164,13 +164,20 @@ public class RouteRecalculationService {
         // 포함) 더 이상 완전 제외하지 않고 항상 페널티로만 반영한다 - 화재/연기와 달리 실제
         // 통행 불가 사유가 아니기 때문이다(아래 mergedCongestionMultipliers 참고).
         Set<UUID> excludedEdgeIds = firedEdgeIdsForFloor(lockedSession.getScenario().getId(), floorId);
-        Map<UUID, Double> congestionMultipliers =
+        // 혼잡 재탐색은 화재 우회와 달리 안전 기능이 아니라 최적화이므로, 층 전체 혼잡 조회(다른
+        // CCTV 몫)가 실패하면 그 불완전한 정보로 계산한 후보로 기존 PENDING을 섣불리 취소/대체
+        // 하지 않는다 - 빈 맵으로 조용히 진행하면 다른 CCTV의 혼잡을 반영해 만들어진 정상적인
+        // 기존 PENDING이, 이번 CCTV 가중치만으로 계산한 후보가 다르다는 이유로 취소될 수 있다.
+        Optional<Map<UUID, Double>> congestionMultipliers =
                 mergedCongestionMultipliers(lockedSession.getId(), floorId, affectedEdges, level);
+        if (congestionMultipliers.isEmpty()) {
+            return;
+        }
 
         EvacuationRoute candidate;
         try {
             candidate = evacuationRouteService.findShortestRoute(
-                    floorId, startNodeId, excludedEdgeIds, congestionMultipliers);
+                    floorId, startNodeId, excludedEdgeIds, congestionMultipliers.get());
         } catch (ApiException exception) {
             if (exception.getErrorCode() == EvacuationErrorCode.EVACUATION_ROUTE_NOT_FOUND) {
                 log.warn("우회 경로를 찾을 수 없어 재탐색 승인 대기 항목을 생성하지 않음: sessionId={}, edgeId={}",
@@ -219,12 +226,16 @@ public class RouteRecalculationService {
     // 이유: CongestionEventService의 즉시 이벤트(STARTED/LEVEL_UP)는 CurrentCctvStateItem을
     // 갱신하지 않으므로, 막 감지된 이 이벤트 자체가 아직 Provider의 "최신 상태" 집계에
     // 반영 안 돼 있을 수 있다 - 그래서 이번 호출 몫은 항상 직접 넣어줘야 한다.
-    private Map<UUID, Double> mergedCongestionMultipliers(
+    private Optional<Map<UUID, Double>> mergedCongestionMultipliers(
             UUID sessionId, UUID floorId, List<MapEdge> affectedEdges, CongestionLevel level) {
-        Map<UUID, Double> merged = new HashMap<>(currentCongestionMultipliersOrEmpty(sessionId, floorId));
+        Optional<Map<UUID, Double>> currentFloorWide = currentCongestionMultipliersOrFail(sessionId, floorId);
+        if (currentFloorWide.isEmpty()) {
+            return Optional.empty();
+        }
+        Map<UUID, Double> merged = new HashMap<>(currentFloorWide.get());
         weightMultipliersFor(affectedEdges, level)
                 .forEach((edgeId, multiplier) -> merged.merge(edgeId, multiplier, Math::max));
-        return merged;
+        return Optional.of(merged);
     }
 
     // trigger()의 비동기 버전 (#250). STARTED/LEVEL_UP은 Pi가 5초마다 보내는 관측값이 혼잡이
@@ -385,6 +396,20 @@ public class RouteRecalculationService {
             log.warn("현재 혼잡 상태를 조회하지 못해 혼잡 가중치 없이 화재 우회 경로를 계산: sessionId={}, floorId={}",
                     sessionId, floorId, exception);
             return Map.of();
+        }
+    }
+
+    // currentCongestionMultipliersOrEmpty와 달리 실패를 빈 맵으로 삼키지 않는다 - 혼잡 재탐색
+    // (trigger())은 화재 우회와 달리 안전 기능이 아니라 최적화라서, 조회 실패로 다른 CCTV의
+    // 혼잡을 모르는 채 후보를 계산해 기존 PENDING을 섣불리 취소/대체하기보다는 호출부가 아예
+    // 건너뛰고 기존 PENDING을 그대로 두는 쪽이 안전하다.
+    private Optional<Map<UUID, Double>> currentCongestionMultipliersOrFail(UUID sessionId, UUID floorId) {
+        try {
+            return Optional.of(currentCongestionWeightProvider.currentMultipliers(sessionId, floorId));
+        } catch (RuntimeException exception) {
+            log.warn("현재 혼잡 상태를 조회하지 못해 혼잡 재탐색을 건너뜀(기존 PENDING 유지): sessionId={}, floorId={}",
+                    sessionId, floorId, exception);
+            return Optional.empty();
         }
     }
 

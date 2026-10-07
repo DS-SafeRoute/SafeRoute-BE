@@ -2,6 +2,7 @@ package com.saferoute.domain.evacuation.recalculation.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doAnswer;
 
 import com.saferoute.domain.building.entity.Building;
@@ -32,6 +33,7 @@ import com.saferoute.domain.user.repository.UserRepository;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -40,6 +42,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -74,10 +77,18 @@ class RouteRecalculationServiceAsyncIntegrationTest {
     private TransactionTemplate transactionTemplate;
     @MockitoSpyBean
     private EvacuationRouteService evacuationRouteService;
+    // 실제 DynamoDB 없이 도는 테스트 환경에서 CurrentCongestionWeightProvider.currentMultipliers()를
+    // 그대로 호출하면 항상 실패한다(#265: 조회가 실패하면 trigger()가 기존 PENDING을 그대로 두고
+    // 건너뛰도록 바뀌어서, 목으로 막지 않으면 이 테스트의 "PENDING이 생기는지" 자체를 검증할 수
+    // 없다). 이 테스트는 @Async 플러밍/트랜잭션 경계를 보는 게 목적이라 혼잡 조회는 항상
+    // 성공(= 다른 CCTV 혼잡 없음)으로 고정한다.
+    @MockitoBean
+    private CurrentCongestionWeightProvider currentCongestionWeightProvider;
 
     @Test
     void triggerAsync_persistsPendingRecalculationWithoutThrowing() {
         Fixture fixture = transactionTemplate.execute(status -> createFixture());
+        given(currentCongestionWeightProvider.currentMultipliers(any(), any())).willReturn(Map.of());
 
         routeRecalculationService.triggerAsync(
                 fixture.session(), edgeIds(fixture.congestedCorridor()), CongestionLevel.CROWDED,
@@ -104,6 +115,7 @@ class RouteRecalculationServiceAsyncIntegrationTest {
     @Timeout(value = 5, unit = TimeUnit.SECONDS)
     void triggerAsync_returnsToCallerBeforeRecalculationWorkCompletes() throws InterruptedException {
         Fixture fixture = transactionTemplate.execute(status -> createFixture());
+        given(currentCongestionWeightProvider.currentMultipliers(any(), any())).willReturn(Map.of());
 
         CountDownLatch enteredWork = new CountDownLatch(1);
         CountDownLatch releaseWork = new CountDownLatch(1);
