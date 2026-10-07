@@ -224,17 +224,31 @@ class RouteRecalculationServiceTest {
                 .findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(any(), any());
     }
 
+    // 다른 CCTV가 만든 PENDING이어도(cctvCode가 다름) 새로 계산한 후보가 그 PENDING의 경로와
+    // 같으면(=실제로 바뀐 게 없으면) 건드리지 않는다. 여러 CCTV가 번갈아 보고할 때 매번
+    // 취소+재생성이 반복되던 문제의 직접적인 재현/수정 확인 테스트다.
     @Test
-    @DisplayName("같은 세션+CCTV에 이미 같은 레벨의 PENDING이 있으면 새로 트리거하지 않는다")
-    void trigger_skipsWhenSameLevelPendingExists() {
-        RouteRecalculation existing = pendingRecalculation(CongestionLevel.CROWDED);
+    @DisplayName("다른 CCTV가 만든 PENDING이어도 새로 계산한 후보가 같으면 취소/재생성하지 않는다")
+    void trigger_skipsWhenCandidateMatchesExistingPendingFromDifferentCctv() {
+        MapNode exitNode = MapNode.create(mock(Floor.class), "STAIR1", NodeType.STAIR, "STAIR1", 0, 0, true);
+        UUID exitNodeId = UUID.randomUUID();
+        ReflectionTestUtils.setField(exitNode, "id", exitNodeId);
+
+        RouteRecalculation existingFromOtherCctv = RouteRecalculation.createPending(
+                session, triggerEdge, "CCTV_OTHER", RecalculationTriggerType.STARTED, CongestionLevel.CROWDED, 3.5,
+                List.of(UUID.randomUUID()), 10.0, List.of(exitNodeId), 12.5);
+        ReflectionTestUtils.setField(existingFromOtherCctv, "id", UUID.randomUUID());
         given(routeRecalculationRepository.findAllByTrainingSession_IdAndStatus(
-                session.getId(), RecalculationStatus.PENDING)).willReturn(List.of(existing));
+                session.getId(), RecalculationStatus.PENDING)).willReturn(List.of(existingFromOtherCctv));
+        givenNoApprovedHistory();
+        givenNoDirectRoute();
+        given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any()))
+                .willReturn(new EvacuationRoute(List.of(exitNode), 12.5));
 
         routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.CROWDED,
                 RecalculationTriggerType.LEVEL_UP, "CCTV_001", 3.5);
 
-        verify(evacuationRouteService, never()).findShortestRoute(any(), any(), anySet());
+        verify(trainingEventPublisher, never()).publishRouteRecalculationCancelledAfterCommit(any());
         verify(routeRecalculationRepository, never()).save(any());
     }
 
@@ -411,9 +425,12 @@ class RouteRecalculationServiceTest {
         verify(trainingEventPublisher, never()).publishRouteRecalculationRequestedAfterCommit(any());
     }
 
+    // VERY_CROWDED도 완전 제외가 아니라 큰 페널티(CurrentCongestionWeightProvider와 동일한
+    // 배율)로만 반영한다 - 화재 우회(triggerForFireSpread)와 같은 정책으로 통일했다. 여러
+    // 구간이 동시에 VERY_CROWDED여도 완전 제외 때문에 경로 자체가 안 나오는 일이 없어야 한다.
     @Test
-    @DisplayName("VERY_CROWDED면 CCTV 영향 엣지를 모두 제외하고 우회 경로를 한 번 계산한다")
-    void trigger_veryCrowded_excludesAllAffectedEdges() {
+    @DisplayName("VERY_CROWDED면 CCTV 영향 엣지 모두에 10배 페널티를 주고(완전 제외하지 않음) 후보에 남긴다")
+    void trigger_veryCrowded_appliesHeavyPenaltyWithoutExcluding() {
         givenNoExistingPending();
         givenNoApprovedHistory();
         givenNoDirectRoute();
@@ -435,11 +452,65 @@ class RouteRecalculationServiceTest {
         ArgumentCaptor<Map<UUID, Double>> multipliersCaptor = ArgumentCaptor.forClass(Map.class);
         verify(evacuationRouteService).findShortestRoute(
                 any(), any(), excludedEdgesCaptor.capture(), multipliersCaptor.capture());
-        assertThat(excludedEdgesCaptor.getValue()).containsExactlyInAnyOrder(triggerEdge.getId(), secondEdge.getId());
-        assertThat(multipliersCaptor.getValue()).isEmpty();
+        assertThat(excludedEdgesCaptor.getValue()).isEmpty();
+        assertThat(multipliersCaptor.getValue()).containsEntry(
+                triggerEdge.getId(), CurrentCongestionWeightProvider.VERY_CROWDED_WEIGHT_MULTIPLIER);
+        assertThat(multipliersCaptor.getValue()).containsEntry(
+                secondEdge.getId(), CurrentCongestionWeightProvider.VERY_CROWDED_WEIGHT_MULTIPLIER);
 
         verify(routeRecalculationRepository, times(1)).save(any());
         verify(trainingEventPublisher, times(1)).publishRouteRecalculationRequestedAfterCommit(saved);
+    }
+
+    // #265: 이번 호출 CCTV의 가중치뿐 아니라, 같은 층 다른 CCTV가 지금 보고 중인 혼잡
+    // (CurrentCongestionWeightProvider)도 함께 반영해야 한다.
+    @Test
+    @DisplayName("다른 CCTV가 현재 보고 중인 층 전체 혼잡도 가중치에 함께 반영한다")
+    void trigger_mergesCurrentFloorWideCongestionWithOwnWeights() {
+        givenNoExistingPending();
+        givenNoApprovedHistory();
+        givenNoDirectRoute();
+
+        UUID otherCctvEdgeId = UUID.randomUUID();
+        given(currentCongestionWeightProvider.currentMultipliers(session.getId(), floorId))
+                .willReturn(Map.of(otherCctvEdgeId, 3.0));
+
+        MapNode exitNode = MapNode.create(mock(Floor.class), "STAIR1", NodeType.STAIR, "STAIR1", 0, 0, true);
+        ReflectionTestUtils.setField(exitNode, "id", UUID.randomUUID());
+        given(evacuationRouteService.findShortestRoute(any(), any(), anySet(), any()))
+                .willReturn(new EvacuationRoute(List.of(exitNode), 12.5));
+        given(routeRecalculationRepository.save(any())).willReturn(pendingRecalculation(CongestionLevel.CROWDED));
+
+        routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.CROWDED,
+                RecalculationTriggerType.STARTED, "CCTV_001", 3.5);
+
+        ArgumentCaptor<Map<UUID, Double>> multipliersCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(evacuationRouteService).findShortestRoute(any(), any(), anySet(), multipliersCaptor.capture());
+        assertThat(multipliersCaptor.getValue())
+                .containsEntry(triggerEdge.getId(), 3.0)
+                .containsEntry(otherCctvEdgeId, 3.0);
+    }
+
+    // 코드래빗 리뷰(#265): 혼잡 재탐색은 화재 우회와 달리 안전 기능이 아니라 최적화이므로, 층
+    // 전체 혼잡 조회가 실패하면 그 불완전한 정보로 기존 PENDING을 취소/대체하지 않고 그대로
+    // 건너뛰어야 한다(triggerForFireSpread의 fail-open과 대비되는 fail-closed).
+    @Test
+    @DisplayName("현재 혼잡 상태 조회가 실패하면 기존 PENDING을 그대로 두고 재탐색을 건너뛴다")
+    void trigger_congestionLookupFails_skipsWithoutTouchingExistingPending() {
+        RouteRecalculation existing = pendingRecalculation(CongestionLevel.CROWDED);
+        given(routeRecalculationRepository.findAllByTrainingSession_IdAndStatus(
+                session.getId(), RecalculationStatus.PENDING)).willReturn(List.of(existing));
+        givenNoApprovedHistory();
+        givenNoDirectRoute();
+        given(currentCongestionWeightProvider.currentMultipliers(session.getId(), floorId))
+                .willThrow(new IllegalStateException("DynamoDB 장애"));
+
+        routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.CROWDED,
+                RecalculationTriggerType.LEVEL_UP, "CCTV_001", 3.5);
+
+        verify(evacuationRouteService, never()).findShortestRoute(any(), any(), anySet(), any());
+        verify(trainingEventPublisher, never()).publishRouteRecalculationCancelledAfterCommit(any());
+        verify(routeRecalculationRepository, never()).save(any());
     }
 
     @Test
