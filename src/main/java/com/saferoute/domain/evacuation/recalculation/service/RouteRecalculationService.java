@@ -106,6 +106,36 @@ public class RouteRecalculationService {
                     lockedSession.getId(), lockedSession.getStatus());
             return;
         }
+        // 현재 유효 경로는 항상 "시나리오 대표 startNode -> EXIT" 완전한 한 경로여야 하므로,
+        // 혼잡 엣지의 fromNode가 아니라 시나리오의 대표 startNode에서 다시 계산한다.
+        MapNode representativeStart = lockedSession.getScenario().getStartNode();
+        if (representativeStart == null) {
+            log.warn("시나리오에 대표 startNode가 없어 재탐색 승인 대기 항목을 생성하지 않음: sessionId={}",
+                    lockedSession.getId());
+            return;
+        }
+        UUID startNodeId = representativeStart.getId();
+        UUID floorId = representativeStart.getFloor().getId();
+
+        // 경로 탐색(findShortestRoute)은 한 층의 노드/엣지만 읽고 층간(계단) 연결은 그래프에 없다.
+        // 그래서 시작 노드와 다른 층에서 감지된 혼잡은 어떤 우회 경로로도 반영할 수 없고, 그대로
+        // 탐색하면 시작 노드를 그 층에서 찾지 못해 MAP_NODE_NOT_FOUND가 난다(시나리오는 건물
+        // 단위라 CCTV가 시작 노드와 다른 층에 있는 조합이 실제로 가능하다). 설정 오류가 아니라
+        // 정상 상황이므로 WARN이 아닌 INFO로 남기고 건너뛴다.
+        // 이 검사는 ENDED 분기와 기존 PENDING 취소보다 앞이어야 한다 - 다른 층 이벤트가 같은 층의
+        // 유효한 PENDING을 취소하거나, 승인 이력이 있는 세션의 복구 계산을 예외로 터뜨려
+        // Pi 응답(EVENT_PROCESSING_FAILED)까지 번지게 하면 안 된다. LAZY 연관 때문에 엔티티
+        // 동일성이 아니라 id 값으로 비교한다.
+        List<MapEdge> sameFloorEdges = affectedEdges.stream()
+                .filter(edge -> floorId.equals(edge.getFloor().getId()))
+                .toList();
+        if (sameFloorEdges.isEmpty()) {
+            log.info("혼잡 구간이 시나리오 시작 노드와 다른 층이라 재탐색을 건너뜀: sessionId={}, cctvCode={}, "
+                            + "edgeFloorId={}, startFloorId={}",
+                    lockedSession.getId(), cctvCode, affectedEdges.get(0).getFloor().getId(), floorId);
+            return;
+        }
+        affectedEdges = sameFloorEdges;
         MapEdge representativeEdge = affectedEdges.get(0);
         // 화재 확산이 만든 PENDING(FIRE_SPREAD)은 혼잡 판단과 무관하므로, 혼잡 트리거가 여기서
         // 건드리는 대상에서 제외한다 - 그대로 두면 혼잡 이벤트 하나가 여전히 유효한 화재 우회
@@ -130,17 +160,6 @@ public class RouteRecalculationService {
         for (RouteRecalculation pending : existingPending) {
             cancel(pending, "새 혼잡 판단으로 무효화됨");
         }
-
-        UUID floorId = representativeEdge.getFloor().getId();
-        // 현재 유효 경로는 항상 "시나리오 대표 startNode -> EXIT" 완전한 한 경로여야 하므로,
-        // 혼잡 엣지의 fromNode가 아니라 시나리오의 대표 startNode에서 다시 계산한다.
-        MapNode representativeStart = lockedSession.getScenario().getStartNode();
-        if (representativeStart == null) {
-            log.warn("시나리오에 대표 startNode가 없어 재탐색 승인 대기 항목을 생성하지 않음: sessionId={}",
-                    lockedSession.getId());
-            return;
-        }
-        UUID startNodeId = representativeStart.getId();
 
         RouteSnapshot previous = resolveActiveRoute(lockedSession, floorId, startNodeId);
 
@@ -269,6 +288,15 @@ public class RouteRecalculationService {
             return;
         }
         UUID startNodeId = representativeStart.getId();
+        // TrainingSessionService.start()의 FIRE_ORIGIN_START_FLOOR_MISMATCH 검사와 화재가 같은 층
+        // 인접 셀로만 번지는 규칙 때문에 화재 구간은 항상 시작 노드 층에 있어 실제로는 타지 않는
+        // 방어 코드다. 그래도 탐색이 시작 노드를 못 찾아 예외로 터지는 것보다는 건너뛰는 편이 안전하다.
+        if (!floorId.equals(representativeStart.getFloor().getId())) {
+            log.info("화재 구간이 시나리오 시작 노드와 다른 층이라 재탐색을 건너뜀: sessionId={}, "
+                            + "edgeFloorId={}, startFloorId={}",
+                    lockedSession.getId(), floorId, representativeStart.getFloor().getId());
+            return;
+        }
 
         RouteSnapshot previous = resolveActiveRoute(lockedSession, floorId, startNodeId);
 
@@ -432,7 +460,6 @@ public class RouteRecalculationService {
         }
         RouteRecalculation activeDetour = latestApproved.get();
 
-        UUID floorId = triggerEdge.getFloor().getId();
         MapNode representativeStart = session.getScenario().getStartNode();
         if (representativeStart == null) {
             log.warn("시나리오에 대표 startNode가 없어 재탐색 승인 대기 항목을 생성하지 않음: sessionId={}",
@@ -440,6 +467,9 @@ public class RouteRecalculationService {
             return;
         }
         UUID startNodeId = representativeStart.getId();
+        // trigger()가 이미 트리거 엣지가 시작 노드와 같은 층임을 보장하지만, 탐색 층은 항상 시작
+        // 노드의 층이라는 의도를 분명히 하려고 시작 노드 기준으로 잡는다.
+        UUID floorId = representativeStart.getFloor().getId();
 
         // 혼잡이 끝나 정상 경로로 복구하려는 순간에도 그 사이 화재가 번졌을 수 있으므로, 복구
         // 후보 역시 지금 이 시나리오가 낸 화재 구간은 제외한다 - 그렇지 않으면 "정상 경로"라는
