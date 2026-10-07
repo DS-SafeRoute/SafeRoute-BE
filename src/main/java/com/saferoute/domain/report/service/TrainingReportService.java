@@ -74,7 +74,7 @@ public class TrainingReportService {
     // 병목은 CONGESTION_STARTED이면서 congestionLevel이 CROWDED/VERY_CROWDED로 판정된 경우만
     // "병목 구간이 시작된 횟수"로 센다 - LEVEL_UP/ENDED는 같은 구간의 상태 변화라 제외한다.
     int bottleneckCount = congestionEventRepository.countBottlenecksBySessionId(sessionId.toString());
-    int bottleneckScore = TrainingReportScoreCalculator.bottleneckScore(bottleneckCount, evacuationSec);
+    int bottleneckScore = TrainingReportScoreCalculator.bottleneckScore(bottleneckCount);
 
     SessionDeviationResult deviation = routeDeviationService.calculateForSession(sessionId, email);
     int deviationScore = TrainingReportScoreCalculator.deviationScore(deviation.deviationRate());
