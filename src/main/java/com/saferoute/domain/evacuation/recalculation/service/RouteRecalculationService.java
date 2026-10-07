@@ -714,9 +714,32 @@ public class RouteRecalculationService {
                 .filter(pending -> !pending.getId().equals(recalculation.getId()))
                 .forEach(pending -> cancel(pending, "다른 경로 승인으로 무효화됨"));
         trainingEventPublisher.publishEvacuationRouteUpdatedAfterCommit(recalculation);
-        ioTLightService.applyRouteGuidance(recalculation.getRecalculatedNodeIds());
+        applyApprovedRouteGuidance(sessionId, recalculation);
 
         return RouteRecalculationResponse.from(recalculation);
+    }
+
+    // 승인된 경로 위 유도등만 바꾸면 이전 경로에만 있던 유도등이 혼잡/화재 구간 쪽 옛 방향을 그대로
+    // 가리키므로, 그 층 전체 유도등을 "출구로 가는 다음 노드" 방향으로 갱신한다(승인 경로가 우선).
+    // IoTLightService가 이 서비스를 의존하면 순환이 생기므로 제외 엣지(화재)와 혼잡 배율은 여기서
+    // 계산해 넘긴다. 혼잡은 CurrentCongestionWeightProvider 정책 그대로 VERY_CROWDED도 제외하지 않고
+    // 페널티로만 반영한다 - 혼잡한 길밖에 없어도 경로 밖 유도등이 평상시로 꺼져버리지 않게 하기 위함이다.
+    // approve()는 noRollbackFor = ApiException이라 여기서 예외가 나면 승인이 반쯤 커밋된 상태로 남을
+    // 수 있다. 다음 홉은 부가 정보일 뿐이므로 계산이 실패하면 승인 경로만 반영하도록 흡수한다.
+    private void applyApprovedRouteGuidance(UUID sessionId, RouteRecalculation recalculation) {
+        UUID floorId = recalculation.getTriggerEdge().getFloor().getId();
+        Map<UUID, UUID> nextHops;
+        try {
+            Set<UUID> excludedEdgeIds = firedEdgeIdsForFloor(
+                    recalculation.getTrainingSession().getScenario().getId(), floorId);
+            Map<UUID, Double> congestionMultipliers = currentCongestionMultipliersOrEmpty(sessionId, floorId);
+            nextHops = evacuationRouteService.computeNextHops(floorId, excludedEdgeIds, congestionMultipliers);
+        } catch (RuntimeException exception) {
+            log.warn("층 전체 다음 홉 계산에 실패해 승인된 경로 위 유도등만 반영: sessionId={}, floorId={}",
+                    sessionId, floorId, exception);
+            nextHops = Map.of();
+        }
+        ioTLightService.applyFloorGuidance(floorId, recalculation.getRecalculatedNodeIds(), nextHops);
     }
 
     @Transactional

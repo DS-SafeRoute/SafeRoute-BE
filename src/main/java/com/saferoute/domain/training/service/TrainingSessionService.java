@@ -37,6 +37,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -201,7 +202,19 @@ public class TrainingSessionService {
 
     session.start(Instant.now());
     session.getScenario().markInProgress();
-    ioTLightService.applyRouteGuidance(initialRoute.path().stream().map(MapNode::getId).toList());
+    // 경로 위 유도등만 지정하면 그 밖의 유도등은 방향이 정해지지 않은 채(직전 상태 그대로) 남으므로,
+    // 층 전체를 "출구로 가는 다음 노드" 방향으로 안내한다(최초 경로가 우선). 시작 시점에는 혼잡
+    // 데이터가 없어 배율은 비운다. 다음 홉은 부가 정보라 계산이 실패해도 훈련 시작을 막지 않는다.
+    Map<UUID, UUID> nextHops;
+    try {
+      nextHops = evacuationRouteService.computeNextHops(startFloorId, firedEdgeIds, Map.of());
+    } catch (RuntimeException exception) {
+      log.warn("층 전체 다음 홉 계산에 실패해 최초 경로 위 유도등만 반영: sessionId={}, floorId={}",
+          session.getId(), startFloorId, exception);
+      nextHops = Map.of();
+    }
+    ioTLightService.applyFloorGuidance(
+        startFloorId, initialRoute.path().stream().map(MapNode::getId).toList(), nextHops);
     trainingEventPublisher.publishTrainingStatusUpdatedAfterCommit(session);
 
     return TrainingSessionResponse.from(session);

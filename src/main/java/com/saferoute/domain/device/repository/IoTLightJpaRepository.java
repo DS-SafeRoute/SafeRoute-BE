@@ -25,9 +25,6 @@ public interface IoTLightJpaRepository extends JpaRepository<IoTLight, UUID> {
 
     Optional<IoTLight> findByCustomNode_Id(UUID customNodeId);
 
-    // 특정 분기점에 설치된 유도등 (경로 재계산 시 방향 지시 대상 조회용)
-    List<IoTLight> findAllByDecisionNode_Id(UUID mapNodeId);
-
     // 경로 설정이 아직 안 된 기기 (훈련 시작 전 점검용)
     List<IoTLight> findAllByCustomNode_Floor_IdAndDecisionNodeIsNull(UUID floorId);
 

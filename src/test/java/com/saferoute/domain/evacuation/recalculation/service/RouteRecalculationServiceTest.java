@@ -3,6 +3,7 @@ package com.saferoute.domain.evacuation.recalculation.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -894,7 +895,7 @@ class RouteRecalculationServiceTest {
         assertThat(recalculation.getStatus()).isEqualTo(RecalculationStatus.CANCELLED);
         assertThat(recalculation.getCancelReason()).isNotBlank();
         verify(trainingEventPublisher).publishRouteRecalculationCancelledAfterCommit(recalculation);
-        verify(ioTLightService, never()).applyRouteGuidance(any());
+        verify(ioTLightService, never()).applyFloorGuidance(any(), any(), any());
         verify(trainingEventPublisher, never()).publishEvacuationRouteUpdatedAfterCommit(any());
     }
 
@@ -928,6 +929,8 @@ class RouteRecalculationServiceTest {
         User manager = mock(User.class);
         org.mockito.Mockito.lenient().when(manager.getUsername()).thenReturn("manager");
         given(userRepository.findByEmail(MANAGER_EMAIL)).willReturn(Optional.of(manager));
+        Map<UUID, UUID> nextHops = Map.of(UUID.randomUUID(), UUID.randomUUID());
+        given(evacuationRouteService.computeNextHops(eq(floorId), anySet(), anyMap())).willReturn(nextHops);
 
         RouteRecalculationResponse response = routeRecalculationService.approve(recalculation.getId(), MANAGER_EMAIL);
 
@@ -936,7 +939,8 @@ class RouteRecalculationServiceTest {
         assertThat(recalculation.getResolvedAt()).isNotNull();
         assertThat(recalculation.getResolvedBy()).isEqualTo(manager);
         verify(trainingEventPublisher, times(1)).publishEvacuationRouteUpdatedAfterCommit(recalculation);
-        verify(ioTLightService, times(1)).applyRouteGuidance(recalculation.getRecalculatedNodeIds());
+        verify(ioTLightService, times(1)).applyFloorGuidance(
+                floorId, recalculation.getRecalculatedNodeIds(), nextHops);
         InOrder approvalOrder = inOrder(routeRecalculationRepository, trainingSessionRepository);
         approvalOrder.verify(routeRecalculationRepository)
                 .findTrainingSessionIdByIdAndSchoolName(recalculation.getId(), SCHOOL_NAME);
@@ -964,6 +968,24 @@ class RouteRecalculationServiceTest {
         assertThat(sibling.getStatus()).isEqualTo(RecalculationStatus.CANCELLED);
         assertThat(sibling.getCancelReason()).isEqualTo("다른 경로 승인으로 무효화됨");
         verify(trainingEventPublisher).publishRouteRecalculationCancelledAfterCommit(sibling);
+    }
+
+    @Test
+    @DisplayName("층 전체 다음 홉 계산이 실패해도 승인은 유지되고 승인 경로만 유도등에 반영한다")
+    void approve_whenNextHopComputationFails_stillApprovesWithPathOnlyGuidance() {
+        RouteRecalculation recalculation = pendingRecalculation(CongestionLevel.CROWDED);
+        given(routeRecalculationRepository
+                .findByIdAndTrainingSession_Scenario_Building_SchoolName(
+                        recalculation.getId(), SCHOOL_NAME)).willReturn(Optional.of(recalculation));
+        given(userRepository.findByEmail(MANAGER_EMAIL)).willReturn(Optional.of(mock(User.class)));
+        given(evacuationRouteService.computeNextHops(eq(floorId), anySet(), anyMap()))
+                .willThrow(new IllegalStateException("boom"));
+
+        routeRecalculationService.approve(recalculation.getId(), MANAGER_EMAIL);
+
+        assertThat(recalculation.getStatus()).isEqualTo(RecalculationStatus.APPROVED);
+        verify(ioTLightService).applyFloorGuidance(
+                floorId, recalculation.getRecalculatedNodeIds(), Map.of());
     }
 
     @Test
@@ -998,7 +1020,7 @@ class RouteRecalculationServiceTest {
         assertThat(recalculation.getRejectReason()).isEqualTo("현장 확인 결과 통행 가능");
         verify(trainingEventPublisher, never()).publishEvacuationRouteUpdatedAfterCommit(any());
         verify(trainingEventPublisher, times(1)).publishRouteRecalculationRejectedAfterCommit(recalculation);
-        verify(ioTLightService, never()).applyRouteGuidance(any());
+        verify(ioTLightService, never()).applyFloorGuidance(any(), any(), any());
     }
 
     // === getCurrentRoute ===
