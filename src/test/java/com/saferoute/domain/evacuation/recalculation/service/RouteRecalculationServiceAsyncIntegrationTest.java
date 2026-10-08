@@ -210,7 +210,7 @@ class RouteRecalculationServiceAsyncIntegrationTest {
         approved.approve(Instant.now(), fixture.session().getAdmin());
         routeRecalculationRepository.save(approved);
 
-        // 이 경로는 동기(trigger -> triggerRecovery)라, 가드가 없으면 MAP_NODE_NOT_FOUND가 그대로
+        // 이 경로는 동기(trigger -> handleCongestionEnded)라, 가드가 없으면 MAP_NODE_NOT_FOUND가 그대로
         // Pi 요청(EVENT_PROCESSING_FAILED)까지 올라간다.
         assertThatCode(() -> routeRecalculationService.trigger(
                 fixture.session(), List.of(fixture.otherFloorEdge()), CongestionLevel.NORMAL,
