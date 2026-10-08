@@ -93,7 +93,8 @@ public class RouteRecalculationService {
     //   CCTV가 번갈아 보고해도 PENDING엔 CCTV 하나만 기록되므로, CCTV 식별자로 비교하면
     //   실제론 안 바뀐 상황에서도 매번 취소+재생성이 반복된다.
     // - 새 판단이 필요하면 기존 PENDING을 모두 CANCELLED로 무효화하고 새로 계산한다.
-    // - triggerType이 ENDED(혼잡 종료)면 우회가 아니라 정상 경로로의 복구 후보를 계산한다.
+    // - triggerType이 ENDED(혼잡 종료)면 끝난 CCTV 몫만 뺀 층 전체 혼잡 기준으로 복구 후보를 계산하고
+    //   기존 PENDING을 정리한다(handleCongestionEnded 참고).
     @Transactional
     public void trigger(TrainingSession session, List<MapEdge> affectedEdges, CongestionLevel level,
             RecalculationTriggerType triggerType, String cctvCode, double density) {
@@ -152,8 +153,8 @@ public class RouteRecalculationService {
                 .toList();
 
         if (triggerType == RecalculationTriggerType.ENDED) {
-            existingPending.forEach(pending -> cancel(pending, "혼잡 종료로 무효화됨"));
-            triggerRecovery(lockedSession, representativeEdge, level, cctvCode, density);
+            handleCongestionEnded(lockedSession, floorId, startNodeId, representativeEdge, existingPending,
+                    level, cctvCode, density);
             return;
         }
 
@@ -242,7 +243,7 @@ public class RouteRecalculationService {
     // 지속되는 동안 반복 재시도해주므로, 디바이스 응답 경로에서 TrainingSession 행 락 대기와
     // 경로탐색을 떼어내도 한 번 실패해도 다음 관측값이 자연히 다시 트리거한다.
     //
-    // ENDED(triggerRecovery로 가는 복구 판단)는 Pi가 보내는 1회성 신호라 재시도 기회가 없으므로
+    // ENDED(handleCongestionEnded로 가는 혼잡 종료 판단)는 Pi가 보내는 1회성 신호라 재시도 기회가 없으므로
     // 호출부에서 이 메서드가 아니라 동기 trigger()를 그대로 써야 한다 - 이 메서드는 ENDED를
     // 받지 않는다는 전제로 짜여 있지 않지만(trigger()에 그대로 위임), 정책상 ENDED는 여기로
     // 오면 안 된다. 호출부(CongestionObservationService/CongestionEventService)가 그 구분을 담당한다.
@@ -413,6 +414,19 @@ public class RouteRecalculationService {
         }
     }
 
+    // 끝난 CCTV 몫을 뺀 층 전체 혼잡을 조회한다(혼잡 종료 처리용). 실패 처리는 위와 같다.
+    private Optional<Map<UUID, Double>> currentCongestionMultipliersOrFail(
+            UUID sessionId, UUID floorId, Set<String> excludedCctvCodes) {
+        try {
+            return Optional.of(currentCongestionWeightProvider.currentMultipliers(
+                    sessionId, floorId, excludedCctvCodes));
+        } catch (RuntimeException exception) {
+            log.warn("현재 혼잡 상태를 조회하지 못해 혼잡 종료 판단을 건너뜀(기존 PENDING 유지): sessionId={}, floorId={}",
+                    sessionId, floorId, exception);
+            return Optional.empty();
+        }
+    }
+
     // nodeIds(순서대로 이어진 경로)가 edges 중 하나라도 연속된 두 노드로 포함하면 그 구간을
     // 지나간다고 본다. 엣지 저장 방향과 실제 이동 방향이 다를 수 있어(양방향 통행) 순서 상관없이
     // 두 노드 쌍이 일치하는지만 확인한다.
@@ -523,56 +537,72 @@ public class RouteRecalculationService {
                 MapEdge::getId, edge -> multiplier, (left, right) -> left));
     }
 
-    // 혼잡 종료 시 정상(트리거 엣지를 포함한 직행) 경로로의 복구 후보를 계산한다.
-    // 현재 활성 경로가 이미 그 엣지를 포함한 직행 경로라면(=승인된 우회가 없다면) 복구할 게 없으므로 아무것도 하지 않는다.
-    private void triggerRecovery(TrainingSession session, MapEdge triggerEdge, CongestionLevel level,
+    // 혼잡 종료(ENDED) 처리. 끝난 CCTV 하나만 보고 "정상(직행) 경로로 복구"하면 다른 CCTV가 아직 혼잡한
+    // 구간으로 다시 안내될 수 있으므로, 층 전체의 현재 혼잡(끝난 CCTV 몫만 제외)과 화재를 반영한 경로를
+    // 기준으로 삼는다 - trigger()의 혼잡 우회와 같은 기준이다.
+    // - 혼잡 상태 조회가 실패하면 불완전한 정보로 판단하지 않고 기존 PENDING을 그대로 둔 채 건너뛴다.
+    // - 기존 PENDING은 일괄 취소하지 않는다. 이번 후보와 같은 PENDING은 남기고(다른 CCTV 혼잡 때문에
+    //   생긴 여전히 유효한 제안일 수 있다) 다른 것만 취소한다.
+    // - 새 PENDING(복구 제안)은 승인된 우회가 있을 때만 만든다. 승인된 우회가 없는 상태의 우회 제안은
+    //   각 CCTV의 LEVEL_UP이 전담하므로, ENDED가 다른 CCTV의 우회를 새로 제안하지 않는다(관리자가
+    //   반려한 제안이 다른 CCTV의 종료로 되살아나는 일을 막는다).
+    private void handleCongestionEnded(TrainingSession session, UUID floorId, UUID startNodeId,
+            MapEdge triggerEdge, List<RouteRecalculation> existingPending, CongestionLevel level,
             String cctvCode, double density) {
-        Optional<RouteRecalculation> latestApproved = routeRecalculationRepository
-                .findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(
-                        session.getId(), RecalculationStatus.APPROVED);
-        if (latestApproved.isEmpty()) {
+        Set<String> endedCctvCodes = cctvCode == null ? Set.of() : Set.of(cctvCode);
+        Optional<Map<UUID, Double>> congestionMultipliers =
+                currentCongestionMultipliersOrFail(session.getId(), floorId, endedCctvCodes);
+        if (congestionMultipliers.isEmpty()) {
             return;
         }
-        RouteRecalculation activeDetour = latestApproved.get();
 
-        MapNode representativeStart = session.getScenario().getStartNode();
-        if (representativeStart == null) {
-            log.warn("시나리오에 대표 startNode가 없어 재탐색 승인 대기 항목을 생성하지 않음: sessionId={}",
-                    session.getId());
-            return;
-        }
-        UUID startNodeId = representativeStart.getId();
-        // trigger()가 이미 트리거 엣지가 시작 노드와 같은 층임을 보장하지만, 탐색 층은 항상 시작
-        // 노드의 층이라는 의도를 분명히 하려고 시작 노드 기준으로 잡는다.
-        UUID floorId = representativeStart.getFloor().getId();
-
-        // 혼잡이 끝나 정상 경로로 복구하려는 순간에도 그 사이 화재가 번졌을 수 있으므로, 복구
-        // 후보 역시 지금 이 시나리오가 낸 화재 구간은 제외한다 - 그렇지 않으면 "정상 경로"라는
-        // 이유로 화재 구간을 지나는 복구 후보를 제안할 수 있다.
+        // 혼잡이 끝나 복구하려는 순간에도 그 사이 화재가 번졌을 수 있으므로, 후보 역시 지금 이
+        // 시나리오가 낸 화재 구간은 제외한다 - 그렇지 않으면 "정상 경로"라는 이유로 화재 구간을
+        // 지나는 복구 후보를 제안할 수 있다.
         Set<UUID> excludedEdgeIds = firedEdgeIdsForFloor(session.getScenario().getId(), floorId);
-        EvacuationRoute recovery;
+        EvacuationRoute candidate;
         try {
-            recovery = evacuationRouteService.findShortestRoute(floorId, startNodeId, excludedEdgeIds);
+            candidate = evacuationRouteService.findShortestRoute(
+                    floorId, startNodeId, excludedEdgeIds, congestionMultipliers.get());
         } catch (ApiException exception) {
             if (exception.getErrorCode() == EvacuationErrorCode.EVACUATION_ROUTE_NOT_FOUND) {
                 log.warn("화재를 피한 복구 경로를 찾을 수 없어 재탐색 승인 대기 항목을 생성하지 않음: sessionId={}, edgeId={}",
                         session.getId(), triggerEdge.getId());
+                // 새 후보는 못 찾았지만, 기존 PENDING은 이전 판단 기준이라 이미 낡았으므로 무효화한다.
+                existingPending.forEach(pending -> cancel(pending, "혼잡 종료로 무효화됨"));
                 return;
             }
             throw exception;
         }
+        List<UUID> candidateNodeIds = candidate.path().stream().map(MapNode::getId).toList();
 
-        List<UUID> recoveryNodeIds = recovery.path().stream().map(node -> node.getId()).toList();
-        if (recoveryNodeIds.equals(activeDetour.getRecalculatedNodeIds())) {
-            // 복구 후보가 현재 활성 경로와 동일 - 새로운 승인 요청을 만들 필요가 없다.
+        Optional<RouteRecalculation> latestApproved = routeRecalculationRepository
+                .findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(
+                        session.getId(), RecalculationStatus.APPROVED);
+        RouteSnapshot previous = latestApproved
+                .map(approved -> new RouteSnapshot(approved.getRecalculatedNodeIds(), approved.getTotalWeight()))
+                .orElseGet(() -> resolveActiveRoute(session, floorId, startNodeId));
+
+        if (candidateNodeIds.equals(previous.nodeIds())) {
+            // 후보가 현재 활성 경로와 같다 - 바꿀 게 없으므로 떠 있던 PENDING은 낡은 제안이다.
+            existingPending.forEach(pending -> cancel(pending, "혼잡 종료로 무효화됨"));
             return;
         }
 
-        RouteSnapshot previous = new RouteSnapshot(activeDetour.getRecalculatedNodeIds(), activeDetour.getTotalWeight());
-        RouteRecalculation recalculation = save(RouteRecalculation.createPending(
-                session, triggerEdge, cctvCode, RecalculationTriggerType.ENDED, level, density,
-                previous.nodeIds(), previous.totalWeight(), recoveryNodeIds, recovery.totalWeight()));
-        trainingEventPublisher.publishRouteRecalculationRequestedAfterCommit(recalculation);
+        boolean sameCandidateAlreadyPending = false;
+        for (RouteRecalculation pending : existingPending) {
+            if (pending.getRecalculatedNodeIds().equals(candidateNodeIds)) {
+                sameCandidateAlreadyPending = true;
+            } else {
+                cancel(pending, "혼잡 종료로 무효화됨");
+            }
+        }
+        if (sameCandidateAlreadyPending || latestApproved.isEmpty()) {
+            return;
+        }
+
+        savePending(session, triggerEdge, cctvCode, RecalculationTriggerType.ENDED, level, density,
+                previous, candidate, candidateNodeIds);
     }
 
     // "현재 활성 경로"를 별도로 저장하지 않으므로, 세션에서 가장 최근 승인된 경로가 있으면 그것을,

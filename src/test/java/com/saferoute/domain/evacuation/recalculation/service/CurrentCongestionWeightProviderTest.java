@@ -157,6 +157,37 @@ class CurrentCongestionWeightProviderTest {
     }
 
     @Test
+    @DisplayName("제외 지정한 CCTV의 혼잡은 집계에서 빼고 나머지 CCTV의 혼잡은 그대로 반영한다")
+    void currentMultipliers_excludedCctvIsIgnoredOthersKept() {
+        UUID keptEdgeId = UUID.randomUUID();
+        FloorGridCell keptCell = cell(UUID.randomUUID());
+        Cctv keptCctv = cctv(UUID.randomUUID(), "CCTV-KEPT");
+        Cctv endedCctv = mock(Cctv.class);
+        given(endedCctv.getCode()).willReturn("CCTV-ENDED");
+
+        given(currentCctvStateRepository.findAllBySessionId(sessionId.toString())).willReturn(List.of(
+                state("CCTV-KEPT", CongestionLevel.CROWDED), state("CCTV-ENDED", CongestionLevel.VERY_CROWDED)));
+        given(cctvJpaRepository.findAllByCustomNode_Floor_Id(floorId)).willReturn(List.of(keptCctv, endedCctv));
+        List<CctvGridCell> cctvCells = List.of(watching(keptCctv, keptCell));
+        List<MapEdgeGridCell> edgeCells = List.of(crossing(keptEdgeId, keptCell));
+        given(cctvGridCellRepository.findAllByCctvIdsWithGridCell(any())).willReturn(cctvCells);
+        given(mapEdgeGridCellRepository.findAllByGridCell_IdIn(any())).willReturn(edgeCells);
+
+        assertThat(provider.currentMultipliers(sessionId, floorId, java.util.Set.of("CCTV-ENDED")))
+                .containsOnly(Map.entry(keptEdgeId, RouteRecalculationService.CROWDED_WEIGHT_MULTIPLIER));
+    }
+
+    @Test
+    @DisplayName("제외한 CCTV 말고는 혼잡한 곳이 없으면 이후 조회 없이 빈 맵을 반환한다")
+    void currentMultipliers_onlyExcludedCctvCongested_returnsEmpty() {
+        given(currentCctvStateRepository.findAllBySessionId(sessionId.toString()))
+                .willReturn(List.of(state("CCTV-ENDED", CongestionLevel.CROWDED)));
+
+        assertThat(provider.currentMultipliers(sessionId, floorId, java.util.Set.of("CCTV-ENDED"))).isEmpty();
+        verifyNoInteractions(cctvJpaRepository, cctvGridCellRepository, mapEdgeGridCellRepository);
+    }
+
+    @Test
     @DisplayName("혼잡한 CCTV가 없으면 이후 조회 없이 빈 맵을 반환한다")
     void currentMultipliers_noCongestion_returnsEmptyWithoutFurtherQueries() {
         given(currentCctvStateRepository.findAllBySessionId(sessionId.toString()))

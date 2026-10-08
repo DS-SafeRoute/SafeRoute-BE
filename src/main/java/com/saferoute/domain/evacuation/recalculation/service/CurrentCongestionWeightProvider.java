@@ -45,8 +45,19 @@ public class CurrentCongestionWeightProvider {
 
     // 혼잡하지 않은 엣지(배율 1.0)는 담지 않는다. 여러 CCTV가 같은 엣지를 감시하면 가장 큰 배율을 쓴다.
     public Map<UUID, Double> currentMultipliers(UUID sessionId, UUID floorId) {
+        return currentMultipliers(sessionId, floorId, Set.of());
+    }
+
+    // excludedCctvCodes에 든 CCTV의 현재 상태는 집계에서 뺀다. 혼잡 종료(ENDED) 직후에는 5초 주기 관측값이
+    // 아직 갱신되기 전이라 방금 끝난 CCTV가 여전히 혼잡으로 남아 있을 수 있어, 그 CCTV 몫만 제외하고 나머지
+    // CCTV의 혼잡은 그대로 반영해야 한다. 엣지 단위로 빼면 같은 엣지를 감시하는 다른 CCTV의 혼잡까지
+    // 사라지므로 CCTV 코드 기준으로 제외한다.
+    public Map<UUID, Double> currentMultipliers(UUID sessionId, UUID floorId, Set<String> excludedCctvCodes) {
         Map<String, Double> multiplierByCctvCode = new HashMap<>();
         for (CurrentCctvStateItem state : currentCctvStateRepository.findAllBySessionId(sessionId.toString())) {
+            if (excludedCctvCodes.contains(state.getCctvCode())) {
+                continue;
+            }
             double multiplier = multiplierFor(state.getCongestionLevel());
             if (multiplier > 1.0) {
                 multiplierByCctvCode.put(state.getCctvCode(), multiplier);

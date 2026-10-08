@@ -300,6 +300,9 @@ class RouteRecalculationServiceTest {
         given(routeRecalculationRepository.findAllByTrainingSession_IdAndStatus(
                 session.getId(), RecalculationStatus.PENDING)).willReturn(List.of(firePending));
         givenNoApprovedHistory();
+        UUID sameNode = UUID.randomUUID();
+        given(evacuationRouteService.findShortestRoute(floorId, startNodeId)).willReturn(routeOf(8.0, sameNode));
+        givenEndedCandidate(routeOf(8.0, sameNode));
 
         routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.NORMAL,
                 RecalculationTriggerType.ENDED, "CCTV_001", 1.0);
@@ -568,31 +571,29 @@ class RouteRecalculationServiceTest {
     }
 
     @Test
-    @DisplayName("ENDED인데 승인된 우회 경로가 없으면 복구할 게 없어 아무것도 하지 않는다")
+    @DisplayName("ENDED인데 승인된 우회 경로가 없고 후보가 직행 경로와 같으면 아무것도 만들지 않는다")
     void trigger_ended_doesNothingWithoutApprovedDetour() {
         givenNoExistingPending();
         givenNoApprovedHistory();
+        UUID sameNode = UUID.randomUUID();
+        given(evacuationRouteService.findShortestRoute(floorId, startNodeId)).willReturn(routeOf(8.0, sameNode));
+        givenEndedCandidate(routeOf(8.0, sameNode));
 
         routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.NORMAL,
                 RecalculationTriggerType.ENDED, "CCTV_001", 1.0);
 
         verify(routeRecalculationRepository, never()).save(any());
-        verify(evacuationRouteService, never()).findShortestRoute(any(), any());
     }
 
     @Test
-    @DisplayName("ENDED이고 승인된 우회 경로가 있으면 정상 경로로의 복구 후보를 PENDING으로 만든다")
+    @DisplayName("ENDED이고 승인된 우회 경로가 있으면 복구 후보를 PENDING으로 만든다")
     void trigger_ended_createsRecoveryCandidateWhenApprovedDetourExists() {
         givenNoExistingPending();
         RouteRecalculation approvedDetour = approvedRecalculation(List.of(UUID.randomUUID()), 20.0);
         given(routeRecalculationRepository.findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(
                 session.getId(), RecalculationStatus.APPROVED))
                 .willReturn(Optional.of(approvedDetour));
-
-        MapNode exitNode = MapNode.create(mock(Floor.class), "STAIR1", NodeType.STAIR, "STAIR1", 0, 0, true);
-        ReflectionTestUtils.setField(exitNode, "id", UUID.randomUUID());
-        EvacuationRoute directRoute = new EvacuationRoute(List.of(exitNode), 12.5);
-        given(evacuationRouteService.findShortestRoute(eq(floorId), eq(startNodeId), anySet())).willReturn(directRoute);
+        givenEndedCandidate(routeOf(12.5, UUID.randomUUID()));
 
         RouteRecalculation saved = pendingRecalculation(CongestionLevel.NORMAL);
         given(routeRecalculationRepository.save(any())).willReturn(saved);
@@ -600,7 +601,9 @@ class RouteRecalculationServiceTest {
         routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.NORMAL,
                 RecalculationTriggerType.ENDED, "CCTV_001", 1.0);
 
-        verify(routeRecalculationRepository, times(1)).save(any());
+        ArgumentCaptor<RouteRecalculation> savedCaptor = ArgumentCaptor.forClass(RouteRecalculation.class);
+        verify(routeRecalculationRepository, times(1)).save(savedCaptor.capture());
+        assertThat(savedCaptor.getValue().getTriggerType()).isEqualTo(RecalculationTriggerType.ENDED);
         verify(trainingEventPublisher, times(1)).publishRouteRecalculationRequestedAfterCommit(saved);
     }
 
@@ -613,15 +616,128 @@ class RouteRecalculationServiceTest {
         given(routeRecalculationRepository.findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(
                 session.getId(), RecalculationStatus.APPROVED))
                 .willReturn(Optional.of(approvedDetour));
-
-        MapNode exitNode = MapNode.create(mock(Floor.class), "STAIR1", NodeType.STAIR, "STAIR1", 0, 0, true);
-        ReflectionTestUtils.setField(exitNode, "id", sharedNodeId);
-        EvacuationRoute directRoute = new EvacuationRoute(List.of(exitNode), 20.0);
-        given(evacuationRouteService.findShortestRoute(eq(floorId), eq(startNodeId), anySet())).willReturn(directRoute);
+        givenEndedCandidate(routeOf(20.0, sharedNodeId));
 
         routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.NORMAL,
                 RecalculationTriggerType.ENDED, "CCTV_001", 1.0);
 
+        verify(routeRecalculationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("ENDED 복구 후보는 끝난 CCTV 몫만 뺀 층 전체 혼잡을 가중치로 반영해 계산한다")
+    void trigger_ended_recoveryAvoidsEdgesOtherCctvStillCongested() {
+        givenNoExistingPending();
+        RouteRecalculation approvedDetour = approvedRecalculation(List.of(UUID.randomUUID()), 20.0);
+        given(routeRecalculationRepository.findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(
+                session.getId(), RecalculationStatus.APPROVED))
+                .willReturn(Optional.of(approvedDetour));
+        UUID stillCongestedEdgeId = UUID.randomUUID();
+        given(currentCongestionWeightProvider.currentMultipliers(any(), eq(floorId), eq(Set.of("CCTV_001"))))
+                .willReturn(Map.of(stillCongestedEdgeId, 3.0));
+        givenEndedCandidate(routeOf(12.5, UUID.randomUUID()));
+        given(routeRecalculationRepository.save(any())).willReturn(pendingRecalculation(CongestionLevel.NORMAL));
+
+        routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.NORMAL,
+                RecalculationTriggerType.ENDED, "CCTV_001", 1.0);
+
+        ArgumentCaptor<Map<UUID, Double>> multipliersCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(evacuationRouteService).findShortestRoute(
+                eq(floorId), eq(startNodeId), anySet(), multipliersCaptor.capture());
+        assertThat(multipliersCaptor.getValue()).containsExactly(Map.entry(stillCongestedEdgeId, 3.0));
+    }
+
+    @Test
+    @DisplayName("ENDED여도 이번 후보와 같은 PENDING(다른 CCTV 혼잡으로 생긴 제안)은 남기고 다른 것만 취소한다")
+    void trigger_ended_keepsPendingMatchingCandidateAndCancelsOthers() {
+        UUID candidateNode = UUID.randomUUID();
+        RouteRecalculation stillValid = pendingWithNodes(List.of(candidateNode));
+        RouteRecalculation stale = pendingWithNodes(List.of(UUID.randomUUID()));
+        given(routeRecalculationRepository.findAllByTrainingSession_IdAndStatus(
+                session.getId(), RecalculationStatus.PENDING)).willReturn(List.of(stillValid, stale));
+        RouteRecalculation approvedDetour = approvedRecalculation(List.of(UUID.randomUUID()), 20.0);
+        given(routeRecalculationRepository.findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(
+                session.getId(), RecalculationStatus.APPROVED))
+                .willReturn(Optional.of(approvedDetour));
+        givenEndedCandidate(routeOf(12.5, candidateNode));
+
+        routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.NORMAL,
+                RecalculationTriggerType.ENDED, "CCTV_001", 1.0);
+
+        assertThat(stillValid.getStatus()).isEqualTo(RecalculationStatus.PENDING);
+        assertThat(stale.getStatus()).isEqualTo(RecalculationStatus.CANCELLED);
+        verify(routeRecalculationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("ENDED 후보가 현재 활성 경로와 같으면 떠 있던 PENDING은 낡은 제안이므로 취소한다")
+    void trigger_ended_cancelsPendingWhenCandidateMatchesActiveRoute() {
+        UUID sharedNodeId = UUID.randomUUID();
+        RouteRecalculation pending = pendingWithNodes(List.of(UUID.randomUUID()));
+        given(routeRecalculationRepository.findAllByTrainingSession_IdAndStatus(
+                session.getId(), RecalculationStatus.PENDING)).willReturn(List.of(pending));
+        RouteRecalculation approvedDetour = approvedRecalculation(List.of(sharedNodeId), 20.0);
+        given(routeRecalculationRepository.findFirstByTrainingSession_IdAndStatusOrderByResolvedAtDesc(
+                session.getId(), RecalculationStatus.APPROVED))
+                .willReturn(Optional.of(approvedDetour));
+        givenEndedCandidate(routeOf(20.0, sharedNodeId));
+
+        routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.NORMAL,
+                RecalculationTriggerType.ENDED, "CCTV_001", 1.0);
+
+        assertThat(pending.getStatus()).isEqualTo(RecalculationStatus.CANCELLED);
+        verify(routeRecalculationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("ENDED인데 승인된 우회가 없으면 다른 CCTV 혼잡 PENDING은 남기고, 새 우회 제안은 만들지 않는다")
+    void trigger_ended_withoutApprovedDetour_keepsMatchingPendingAndCreatesNothing() {
+        UUID candidateNode = UUID.randomUUID();
+        RouteRecalculation stillValid = pendingWithNodes(List.of(candidateNode));
+        given(routeRecalculationRepository.findAllByTrainingSession_IdAndStatus(
+                session.getId(), RecalculationStatus.PENDING)).willReturn(List.of(stillValid));
+        givenNoApprovedHistory();
+        given(evacuationRouteService.findShortestRoute(floorId, startNodeId))
+                .willReturn(routeOf(8.0, UUID.randomUUID()));
+        givenEndedCandidate(routeOf(12.5, candidateNode));
+
+        routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.NORMAL,
+                RecalculationTriggerType.ENDED, "CCTV_001", 1.0);
+
+        assertThat(stillValid.getStatus()).isEqualTo(RecalculationStatus.PENDING);
+        verify(routeRecalculationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("ENDED 중 현재 혼잡 조회가 실패하면 기존 PENDING을 건드리지 않고 건너뛴다")
+    void trigger_ended_congestionLookupFails_keepsPendingAndSkips() {
+        RouteRecalculation pending = pendingWithNodes(List.of(UUID.randomUUID()));
+        given(routeRecalculationRepository.findAllByTrainingSession_IdAndStatus(
+                session.getId(), RecalculationStatus.PENDING)).willReturn(List.of(pending));
+        given(currentCongestionWeightProvider.currentMultipliers(any(), eq(floorId), eq(Set.of("CCTV_001"))))
+                .willThrow(new IllegalStateException("DynamoDB 장애"));
+
+        routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.NORMAL,
+                RecalculationTriggerType.ENDED, "CCTV_001", 1.0);
+
+        assertThat(pending.getStatus()).isEqualTo(RecalculationStatus.PENDING);
+        verify(routeRecalculationRepository, never()).save(any());
+        verify(evacuationRouteService, never()).findShortestRoute(any(), any(), anySet(), any());
+    }
+
+    @Test
+    @DisplayName("ENDED 후보 경로를 찾을 수 없으면 낡은 PENDING을 취소하고 새로 만들지 않는다")
+    void trigger_ended_routeNotFound_cancelsStalePending() {
+        RouteRecalculation pending = pendingWithNodes(List.of(UUID.randomUUID()));
+        given(routeRecalculationRepository.findAllByTrainingSession_IdAndStatus(
+                session.getId(), RecalculationStatus.PENDING)).willReturn(List.of(pending));
+        given(evacuationRouteService.findShortestRoute(eq(floorId), eq(startNodeId), anySet(), any()))
+                .willThrow(new ApiException(EvacuationErrorCode.EVACUATION_ROUTE_NOT_FOUND));
+
+        routeRecalculationService.trigger(session, List.of(triggerEdge), CongestionLevel.NORMAL,
+                RecalculationTriggerType.ENDED, "CCTV_001", 1.0);
+
+        assertThat(pending.getStatus()).isEqualTo(RecalculationStatus.CANCELLED);
         verify(routeRecalculationRepository, never()).save(any());
     }
 
@@ -825,6 +941,30 @@ class RouteRecalculationServiceTest {
         assertThat(pendingB.getStatus()).isEqualTo(RecalculationStatus.CANCELLED);
         assertThat(pendingA.getCancelReason()).isEqualTo("훈련 종료로 무효화됨");
         verify(trainingEventPublisher, times(2)).publishRouteRecalculationCancelledAfterCommit(any());
+    }
+
+    private MapNode nodeWithId(UUID id) {
+        MapNode node = MapNode.create(mock(Floor.class), "N", NodeType.STAIR, "N", 0, 0, true);
+        ReflectionTestUtils.setField(node, "id", id);
+        return node;
+    }
+
+    private EvacuationRoute routeOf(double weight, UUID... nodeIds) {
+        return new EvacuationRoute(java.util.Arrays.stream(nodeIds).map(this::nodeWithId).toList(), weight);
+    }
+
+    // ENDED 후보(층 전체 혼잡 + 화재 반영)로 계산되는 경로.
+    private void givenEndedCandidate(EvacuationRoute route) {
+        given(evacuationRouteService.findShortestRoute(eq(floorId), eq(startNodeId), anySet(), any()))
+                .willReturn(route);
+    }
+
+    private RouteRecalculation pendingWithNodes(List<UUID> candidateNodeIds) {
+        RouteRecalculation recalculation = RouteRecalculation.createPending(
+                session, triggerEdge, "CCTV_OTHER", RecalculationTriggerType.LEVEL_UP, CongestionLevel.CROWDED, 3.5,
+                List.of(UUID.randomUUID()), 10.0, candidateNodeIds, 12.5);
+        ReflectionTestUtils.setField(recalculation, "id", UUID.randomUUID());
+        return recalculation;
     }
 
     private RouteRecalculation pendingRecalculation(CongestionLevel level) {
