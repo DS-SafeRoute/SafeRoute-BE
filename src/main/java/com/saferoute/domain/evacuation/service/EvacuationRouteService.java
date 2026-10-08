@@ -128,6 +128,11 @@ public class EvacuationRouteService {
     // - 이 결과는 유도등 안내라는 부가 기능에서만 쓰이므로(승인/훈련 시작이 막히면 안 된다),
     //   EXIT 대상이 하나도 없어도 findShortestRoute처럼 예외를 던지지 않고 빈 맵을 돌려준다.
     // - 가중치는 정방향 경로와 비용 정의가 같아야 하므로 calculateWeight를 그대로 쓴다.
+    // - 호출부(approve()/start())가 이 메서드의 실패를 잡아 다음 홉 없이 계속 진행한다. 예외가 이 프록시를
+    //   통과하면서 호출부 트랜잭션을 rollback-only로 만들어버리면, 호출부가 예외를 삼켜도 커밋 시점에
+    //   UnexpectedRollbackException이 나서 승인/훈련 시작이 통째로 롤백된다 - 읽기 전용이라 되돌릴
+    //   변경도 없으므로 롤백 대상에서 제외한다 (CurrentCongestionWeightProvider와 같은 이유).
+    @Transactional(readOnly = true, noRollbackFor = RuntimeException.class)
     public Map<UUID, UUID> computeNextHops(
             UUID floorId, Set<UUID> excludedEdgeIds, Map<UUID, Double> weightMultipliers
     ) {

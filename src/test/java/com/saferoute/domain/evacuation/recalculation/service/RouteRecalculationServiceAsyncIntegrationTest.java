@@ -1,9 +1,13 @@
 package com.saferoute.domain.evacuation.recalculation.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 import com.saferoute.domain.building.entity.Building;
 import com.saferoute.domain.building.entity.BuildingType;
@@ -21,6 +25,7 @@ import com.saferoute.domain.evacuation.recalculation.repository.RouteRecalculati
 import com.saferoute.domain.evacuation.service.EvacuationRouteService;
 import com.saferoute.domain.floor.entity.Floor;
 import com.saferoute.domain.floor.repository.FloorRepository;
+import com.saferoute.global.config.AsyncConfig;
 import com.saferoute.domain.training.entity.FireSpreadSpeed;
 import com.saferoute.domain.training.entity.TrainingScenario;
 import com.saferoute.domain.training.entity.TrainingSession;
@@ -37,12 +42,15 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -75,6 +83,9 @@ class RouteRecalculationServiceAsyncIntegrationTest {
     private RouteRecalculationService routeRecalculationService;
     @Autowired
     private TransactionTemplate transactionTemplate;
+    @Autowired
+    @Qualifier(AsyncConfig.CONGESTION_RECALCULATION_EXECUTOR)
+    private Executor congestionRecalculationExecutor;
     @MockitoSpyBean
     private EvacuationRouteService evacuationRouteService;
     // 실제 DynamoDB 없이 도는 테스트 환경에서 CurrentCongestionWeightProvider.currentMultipliers()를
@@ -150,6 +161,83 @@ class RouteRecalculationServiceAsyncIntegrationTest {
         assertThat(pending.getTriggerType()).isEqualTo(RecalculationTriggerType.LEVEL_UP);
     }
 
+    // === 시작 노드와 다른 층의 혼잡 (#258) ===
+    // 경로 탐색은 한 층의 그래프만 읽어서, 시작 노드와 다른 층의 CCTV 혼잡을 그대로 탐색하면
+    // MAP_NODE_NOT_FOUND가 난다. 단위 테스트는 가드의 분기만 확인할 뿐, 실제 비동기 스레드/동기 ENDED
+    // 경로에서 예외 없이 끝나는지는 못 잡는다.
+
+    @Test
+    void triggerAsync_triggerEdgeOnDifferentFloorThanStartNode_skipsWithoutPendingOrRouteSearch() {
+        Fixture fixture = transactionTemplate.execute(status -> createFixture());
+
+        routeRecalculationService.triggerAsync(
+                fixture.session(), edgeIds(List.of(fixture.otherFloorEdge())), CongestionLevel.CROWDED,
+                RecalculationTriggerType.LEVEL_UP, "CCTV_OTHER_FLOOR", 3.5, System.currentTimeMillis());
+        awaitAsyncExecutorIdle();
+
+        // 가드가 없으면 시작 노드를 다른 층에서 찾다가 비동기 스레드에서 예외가 나므로 탐색 호출까지 간다.
+        verify(evacuationRouteService, never()).findShortestRoute(any(), any(), any(), any());
+        assertThat(routeRecalculationRepository
+                .findAllByTrainingSession_IdAndStatus(fixture.session().getId(), RecalculationStatus.PENDING))
+                .isEmpty();
+    }
+
+    @Test
+    void trigger_triggerEdgeOnDifferentFloor_doesNotCancelExistingPending() {
+        Fixture fixture = transactionTemplate.execute(status -> createFixture());
+        UUID existingId = routeRecalculationRepository.save(RouteRecalculation.createPending(
+                fixture.session(), fixture.congestedCorridor().get(0), "CCTV_001",
+                RecalculationTriggerType.LEVEL_UP, CongestionLevel.CROWDED, 3.5,
+                List.of(UUID.randomUUID()), 2.0, List.of(fixture.midRight().getId()), 3.0)).getId();
+
+        assertThatCode(() -> routeRecalculationService.trigger(
+                fixture.session(), List.of(fixture.otherFloorEdge()), CongestionLevel.VERY_CROWDED,
+                RecalculationTriggerType.LEVEL_UP, "CCTV_OTHER_FLOOR", 5.5))
+                .doesNotThrowAnyException();
+
+        // 다른 층 이벤트가 같은 층의 유효한 PENDING을 "새 혼잡 판단으로 무효화"해버리면 안 된다.
+        RouteRecalculation existing = routeRecalculationRepository.findById(existingId).orElseThrow();
+        assertThat(existing.getStatus()).isEqualTo(RecalculationStatus.PENDING);
+    }
+
+    @Test
+    void trigger_ended_triggerEdgeOnDifferentFloor_withApprovedHistory_doesNotThrowAndCreatesNothing() {
+        Fixture fixture = transactionTemplate.execute(status -> createFixture());
+        RouteRecalculation approved = RouteRecalculation.createPending(
+                fixture.session(), fixture.congestedCorridor().get(0), "CCTV_001",
+                RecalculationTriggerType.LEVEL_UP, CongestionLevel.CROWDED, 3.5,
+                List.of(UUID.randomUUID()), 2.0, List.of(fixture.midRight().getId()), 3.0);
+        approved.approve(Instant.now(), fixture.session().getAdmin());
+        routeRecalculationRepository.save(approved);
+
+        // 이 경로는 동기(trigger -> triggerRecovery)라, 가드가 없으면 MAP_NODE_NOT_FOUND가 그대로
+        // Pi 요청(EVENT_PROCESSING_FAILED)까지 올라간다.
+        assertThatCode(() -> routeRecalculationService.trigger(
+                fixture.session(), List.of(fixture.otherFloorEdge()), CongestionLevel.NORMAL,
+                RecalculationTriggerType.ENDED, "CCTV_OTHER_FLOOR", 1.0))
+                .doesNotThrowAnyException();
+
+        verify(evacuationRouteService, never()).findShortestRoute(any(), any(), anySet());
+        assertThat(routeRecalculationRepository
+                .findAllByTrainingSession_IdAndStatus(fixture.session().getId(), RecalculationStatus.PENDING))
+                .isEmpty();
+    }
+
+    // 비동기 작업이 끝났음을 확인할 신호가 없는(아무것도 저장하지 않는) 케이스를 위해, 전용 실행기가
+    // 제출받은 작업을 모두 끝낼 때까지 기다린다.
+    private void awaitAsyncExecutorIdle() {
+        ThreadPoolTaskExecutor executor = (ThreadPoolTaskExecutor) congestionRecalculationExecutor;
+        Instant deadline = Instant.now().plus(Duration.ofSeconds(3));
+        while (Instant.now().isBefore(deadline)) {
+            if (executor.getThreadPoolExecutor().getTaskCount()
+                    == executor.getThreadPoolExecutor().getCompletedTaskCount()) {
+                return;
+            }
+            sleepQuietly();
+        }
+        throw new AssertionError("비동기 실행기가 제한 시간 내에 작업을 마치지 못했습니다");
+    }
+
     private static List<UUID> edgeIds(List<MapEdge> edges) {
         return edges.stream().map(MapEdge::getId).toList();
     }
@@ -204,7 +292,17 @@ class RouteRecalculationServiceAsyncIntegrationTest {
         mapEdgeRepository.save(MapEdge.create(floor, startNode, midRight, 1.5, true));
         mapEdgeRepository.save(MapEdge.create(floor, midRight, exitNode, 1.5, true));
 
-        // 테스트 메서드 두 개가 각자 createFixture()를 호출하므로(같은 인메모리 DB를 공유),
+        // 시작 노드와 다른 층(2층)에 있는 혼잡 엣지
+        Floor otherFloor = Floor.create(building, 2);
+        otherFloor.upload(3.0, 4.0, "floors/async-recalculation-2.png");
+        floorRepository.save(otherFloor);
+        MapNode otherFrom = mapNodeRepository.save(MapNode.create(
+                otherFloor, "OTHER_FROM", NodeType.HALLWAY, "다른 층 출발", 0.2, 0.5, false));
+        MapNode otherTo = mapNodeRepository.save(MapNode.create(
+                otherFloor, "OTHER_TO", NodeType.HALLWAY, "다른 층 도착", 0.8, 0.5, false));
+        MapEdge otherFloorEdge = mapEdgeRepository.save(MapEdge.create(otherFloor, otherFrom, otherTo, 1.0, true));
+
+        // 테스트 메서드 여러 개가 각자 createFixture()를 호출하므로(같은 인메모리 DB를 공유),
         // username/email이 고정 문자열이면 두 번째 호출에서 유니크 제약 위반이 난다.
         // username은 길이 제한(2~20자)이 있어 접두사를 짧게 둔다.
         String suffix = UUID.randomUUID().toString().substring(0, 8);
@@ -220,9 +318,10 @@ class RouteRecalculationServiceAsyncIntegrationTest {
                 TrainingStatus.RUNNING, Instant.now().minusSeconds(30), admin, scenario);
         trainingSessionRepository.save(session);
 
-        return new Fixture(session, List.of(leftIn, leftOut), midRight);
+        return new Fixture(session, List.of(leftIn, leftOut), midRight, otherFloorEdge);
     }
 
-    private record Fixture(TrainingSession session, List<MapEdge> congestedCorridor, MapNode midRight) {
+    private record Fixture(TrainingSession session, List<MapEdge> congestedCorridor, MapNode midRight,
+            MapEdge otherFloorEdge) {
     }
 }
