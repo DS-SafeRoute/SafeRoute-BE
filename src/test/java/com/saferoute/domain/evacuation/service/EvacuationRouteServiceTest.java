@@ -346,4 +346,55 @@ class EvacuationRouteServiceTest {
                     .containsEntry(room1.getId(), expected);
         }
     }
+
+    // === 동점 타이브레이크 ===
+    // findEdgesByFloor()는 정렬이 없어 DB가 돌려주는 순서가 호출마다 달라질 수 있다. 같은 엣지를
+    // 정순/역순으로 돌려주는 두 번의 호출이 같은 경로를 내는지로 그 비결정성을 재현한다.
+
+    private EvacuationRoute findRouteWithEdgeOrder(
+            List<MapNode> nodes, List<MapEdge> edges, MapNode start, boolean reversed) {
+        List<MapEdge> ordered = new ArrayList<>(edges);
+        if (reversed) {
+            Collections.reverse(ordered);
+        }
+        given(mapGraphRepository.findNodesByFloor(floorId)).willReturn(nodes);
+        given(mapGraphRepository.findEdgesByFloor(floorId)).willReturn(ordered);
+        return evacuationRouteService.findShortestRoute(floorId, start.getId());
+    }
+
+    @Test
+    @DisplayName("길이가 같은 경로가 둘이어도 엣지 조회 순서와 무관하게 같은 경로를 반환한다")
+    void findShortestRoute_tiedPaths_returnsSameRouteRegardlessOfEdgeOrder() {
+        // room1 -> hallway1 -> stair1, room1 -> hallway2 -> stair1: 두 경로 모두 길이 2
+        MapEdge e1 = createEdge(room1, hallway1, 1);
+        MapEdge e2 = createEdge(room1, hallway2, 1);
+        MapEdge e3 = createEdge(hallway1, stair1, 1);
+        MapEdge e4 = createEdge(hallway2, stair1, 1);
+        List<MapNode> nodes = List.of(room1, hallway1, hallway2, stair1);
+        List<MapEdge> edges = List.of(e1, e2, e3, e4);
+
+        EvacuationRoute forward = findRouteWithEdgeOrder(nodes, edges, room1, false);
+        EvacuationRoute backward = findRouteWithEdgeOrder(nodes, edges, room1, true);
+
+        assertThat(backward.path()).isEqualTo(forward.path());
+        // 거리가 같으면 nodeId가 작은 노드를 먼저 꺼내므로 그 노드가 경로를 차지한다.
+        MapNode expectedMiddle = hallway1.getId().compareTo(hallway2.getId()) < 0 ? hallway1 : hallway2;
+        assertThat(forward.path()).containsExactly(room1, expectedMiddle, stair1);
+    }
+
+    @Test
+    @DisplayName("거리가 같은 EXIT이 둘이어도 엣지 조회 순서와 무관하게 같은 EXIT을 고른다")
+    void findShortestRoute_tiedExits_picksSameExitRegardlessOfEdgeOrder() {
+        MapEdge toStair1 = createEdge(room1, stair1, 3);
+        MapEdge toStair2 = createEdge(room1, stair2, 3);
+        List<MapNode> nodes = List.of(room1, stair1, stair2);
+        List<MapEdge> edges = List.of(toStair1, toStair2);
+
+        EvacuationRoute forward = findRouteWithEdgeOrder(nodes, edges, room1, false);
+        EvacuationRoute backward = findRouteWithEdgeOrder(nodes, edges, room1, true);
+
+        assertThat(backward.path()).isEqualTo(forward.path());
+        MapNode expectedExit = stair1.getId().compareTo(stair2.getId()) < 0 ? stair1 : stair2;
+        assertThat(forward.path()).containsExactly(room1, expectedExit);
+    }
 }

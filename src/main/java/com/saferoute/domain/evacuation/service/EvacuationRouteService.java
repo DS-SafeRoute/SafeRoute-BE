@@ -32,6 +32,16 @@ public class EvacuationRouteService {
     // TODO: 위험도(화재 확산 단계) 가중치 계수 - 확정 필요
     private static final double DANGER_WEIGHT = 1.0; // β
 
+    // 우선순위 큐에서 꺼내는 순서. 거리가 같으면 nodeId 순으로 고정한다.
+    // 거리만으로 비교하면 거리가 같은 노드는 힙에 들어간 순서, 즉 인접 리스트 순서(=정렬 없는
+    // findEdgesByFloor() 결과 순서)대로 꺼내져서, 길이가 같은 경로나 출구가 둘 이상일 때 같은
+    // 입력에서도 호출마다 다른 경로가 나온다. 후보 경로가 기존 PENDING과 같은지 비교해 취소/재생성을
+    // 결정하는 RouteRecalculationService(#265, #270)는 같은 입력이면 같은 결과가 나온다고 전제하므로,
+    // 흔들리면 실제 상황은 그대로인데 PENDING이 취소와 재생성을 반복한다. findShortestRoute와
+    // computeNextHops가 서로 다른 규칙을 쓰지 않도록 상수 하나를 공유한다.
+    private static final Comparator<NodeDistance> QUEUE_ORDER =
+            Comparator.comparingDouble(NodeDistance::distance).thenComparing(NodeDistance::nodeId);
+
     private final MapGraphRepository mapGraphRepository;
     private final FloorRepository floorRepository;
     private final SchoolContextService schoolContextService;
@@ -86,7 +96,7 @@ public class EvacuationRouteService {
         Map<UUID, UUID> previous = new HashMap<>();
         distance.put(startNodeId, 0.0);
 
-        PriorityQueue<NodeDistance> queue = new PriorityQueue<>(Comparator.comparingDouble(NodeDistance::distance));
+        PriorityQueue<NodeDistance> queue = new PriorityQueue<>(QUEUE_ORDER);
         queue.add(new NodeDistance(startNodeId, 0.0));
         Set<UUID> visited = new HashSet<>();
 
@@ -143,10 +153,8 @@ public class EvacuationRouteService {
 
         Map<UUID, Double> distance = new HashMap<>();
         Map<UUID, UUID> nextHop = new HashMap<>();
-        // 거리가 같으면 nodeId 순으로 꺼내서, 같은 입력이면 항상 같은 다음 홉이 나오게 한다
-        // (동점일 때 유도등 방향이 호출마다 바뀌면 안 된다).
-        PriorityQueue<NodeDistance> queue = new PriorityQueue<>(
-                Comparator.comparingDouble(NodeDistance::distance).thenComparing(NodeDistance::nodeId));
+        // 동점일 때 유도등 방향이 호출마다 바뀌면 안 되므로 findShortestRoute와 같은 QUEUE_ORDER를 쓴다.
+        PriorityQueue<NodeDistance> queue = new PriorityQueue<>(QUEUE_ORDER);
         for (MapNode node : nodes) {
             if (node.isExitTarget()) {
                 distance.put(node.getId(), 0.0);
